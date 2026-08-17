@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "../../../../server/db";
 import { verifySignature, verifyChallenge } from "../../../../lib/verify-signature";
-import { handleInboundMessage, handleComment } from "../../../../server/trigger-dispatch";
+import { handleInboundMessage, handleComment, handlePostback } from "../../../../server/trigger-dispatch";
 import { fetchProfile } from "../../../../server/instagram";
 import { tickDelayedSessions, runBroadcast } from "../../../../server/broadcast-worker";
 
@@ -66,6 +66,24 @@ async function processPayload(payload: MetaWebhook): Promise<void> {
       await handleInboundMessage(db, contact.id, event.message.text);
     }
 
+    // Button and quick-reply taps arrive as postbacks, a separate event from
+    // messages. Without this branch a tapped button does nothing at all.
+    for (const event of entry.messaging ?? []) {
+      const pb = event.postback ?? event.message?.quick_reply;
+      if (!pb?.payload) continue;
+
+      const dedupId = event.postback?.mid ?? `qr:${event.message?.mid ?? ""}`;
+      if (dedupId && (await seen(dedupId, "postback", event))) continue;
+
+      const contact = await db.contact.upsert({
+        where: { igScopedId: event.sender.id },
+        create: { igScopedId: event.sender.id, lastInboundAt: new Date() },
+        update: { lastInboundAt: new Date() },
+      });
+
+      await handlePostback(db, contact.id, pb.payload);
+    }
+
     for (const change of entry.changes ?? []) {
       if (change.field !== "comments") continue;
       const v = change.value;
@@ -127,7 +145,15 @@ type MetaWebhook = {
   entry?: Array<{
     messaging?: Array<{
       sender: { id: string };
-      message?: { mid?: string; text?: string; is_echo?: boolean };
+      message?: {
+        mid?: string;
+        text?: string;
+        is_echo?: boolean;
+        /** Present when the text came from tapping a quick reply. */
+        quick_reply?: { payload?: string };
+      };
+      /** Present when a template button was tapped. */
+      postback?: { mid?: string; title?: string; payload?: string };
     }>;
     changes?: Array<{
       field: string;

@@ -1,5 +1,5 @@
 import type { PrismaClient, Trigger } from "@prisma/client";
-import { startFlow, resumeWithInput } from "./flow-runner";
+import { startFlow, resumeWithInput, resumeWithPostback } from "./flow-runner";
 import { sendPrivateReply } from "./instagram";
 
 /**
@@ -35,6 +35,26 @@ export async function handleInboundMessage(
     orderBy: { priority: "desc" },
   });
   if (fallback) await startFlow(db, fallback.flowId, contactId);
+}
+
+/**
+ * Route a button or quick-reply tap to the session waiting on it.
+ *
+ * A tap on a stale button (the contact scrolled up and pressed an old one)
+ * is ignored rather than rewinding the conversation — resumeWithPostback
+ * checks that the payload names the node the session actually sits on.
+ */
+export async function handlePostback(
+  db: PrismaClient,
+  contactId: string,
+  payload: string,
+): Promise<void> {
+  const waiting = await db.flowSession.findFirst({
+    where: { contactId, status: "WAITING_INPUT" },
+    orderBy: { updatedAt: "desc" },
+  });
+  if (!waiting) return;
+  await resumeWithPostback(db, waiting, payload);
 }
 
 /**

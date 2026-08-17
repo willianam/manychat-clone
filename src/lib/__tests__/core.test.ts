@@ -95,7 +95,7 @@ describe("flow graph", () => {
       ],
       edges: [{ id: "e", source: "c", target: "b", sourceHandle: "true" }],
     });
-    expect(validateGraph(g).some((i) => i.message.includes("true and a false"))).toBe(true);
+    expect(validateGraph(g).some((i) => i.message.includes("sim e não"))).toBe(true);
   });
 
   it("detects a graph with no entry point", () => {
@@ -109,7 +109,7 @@ describe("flow graph", () => {
         { id: "e2", source: "b", target: "a" },
       ],
     });
-    expect(validateGraph(g).some((i) => i.message.includes("No entry node"))).toBe(true);
+    expect(validateGraph(g).some((i) => i.message.includes("Nenhum nó de entrada"))).toBe(true);
   });
 
   it("rejects an invalid saveAs identifier", () => {

@@ -2,20 +2,26 @@
 
 import { FlowEditor } from "../../../components/FlowEditor";
 import type { FlowGraph } from "../../../lib/flow-schema";
+import type { FlowStats } from "../../../server/flow-metrics";
+import { saveFlow } from "./actions";
 
-/**
- * Client boundary for the preview. Save is a no-op that just logs — the
- * point here is to exercise the canvas and the live validator, not to
- * persist.
- */
-export function EditorShell({ flowId, initial }: { flowId: string; initial: FlowGraph }) {
+/** Client boundary for the editor; saving goes through a server action. */
+export function EditorShell({
+  flowId,
+  initial,
+  stats,
+}: {
+  flowId: string;
+  initial: FlowGraph;
+  stats?: FlowStats;
+}) {
   return (
     <FlowEditor
       flowId={flowId}
       initial={initial}
+      stats={stats}
       onSave={async (graph) => {
-        console.log("[preview] save is disabled; graph would be:", graph);
-        alert(`Preview: ${graph.nodes.length} nós validados com sucesso (nada foi salvo).`);
+        await saveFlow(flowId, graph);
       }}
     />
   );

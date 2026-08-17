@@ -36,18 +36,33 @@ function authHeaders(): Record<string, string> {
   };
 }
 
-/**
- * Send a DM, enforcing the messaging window before we spend an API call.
- *
- * Every attempt is persisted as a Message row — including failures — so the
- * inbox reflects reality rather than only what succeeded.
- */
+/** Shorthand for the common case: a plain text DM. */
 export async function sendText(
   db: PrismaClient,
   contactId: string,
   text: string,
   opts: { tag?: MessageTag } = {},
 ): Promise<void> {
+  return sendMessage(db, contactId, { text }, { ...opts, preview: text });
+}
+
+/**
+ * Send any message payload, enforcing the messaging window before we spend
+ * an API call.
+ *
+ * `preview` is what shows in the inbox for non-text payloads — a carousel
+ * has no text of its own, and an empty inbox row reads as a bug.
+ *
+ * Every attempt is persisted as a Message row — including failures — so the
+ * inbox reflects reality rather than only what succeeded.
+ */
+export async function sendMessage(
+  db: PrismaClient,
+  contactId: string,
+  payload: Record<string, unknown>,
+  opts: { tag?: MessageTag; preview?: string } = {},
+): Promise<void> {
+  const text = opts.preview ?? "";
   const contact = await db.contact.findUniqueOrThrow({ where: { id: contactId } });
 
   const decision = canSend(contact.lastInboundAt, { tag: opts.tag });
@@ -59,7 +74,13 @@ export async function sendText(
   }
 
   const message = await db.message.create({
-    data: { contactId, direction: "OUTBOUND", text, status: "PENDING" },
+    data: {
+      contactId,
+      direction: "OUTBOUND",
+      text,
+      status: "PENDING",
+      payload: payload as never,
+    },
   });
 
   try {
@@ -68,7 +89,7 @@ export async function sendText(
       headers: authHeaders(),
       body: JSON.stringify({
         recipient: { id: contact.igScopedId },
-        message: { text },
+        message: payload,
         ...(decision.tag ? { messaging_type: "MESSAGE_TAG", tag: decision.tag } : {}),
       }),
     });
