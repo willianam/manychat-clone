@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   buildMessage, buildQuickReply, buildCarousel, buildImage,
+  buildMedia, buildAlbum,
   postbackPayload, parsePostback, resumeAtFor, previewOf,
 } from "../message-payload";
 import { LIMITS } from "../../lib/flow-schema";
@@ -129,6 +130,62 @@ describe("buildImage", () => {
   });
 });
 
+/**
+ * These assert the exact wire shape, because this is where a mistake hides:
+ * a wrong key name still type-checks, still passes JSON.stringify, and only
+ * surfaces as a 400 from Meta against a live conversation.
+ *
+ * Shapes confirmed against developers.facebook.com/docs/instagram-platform
+ * (Instagram API with Instagram Login → Messaging → Send Messages).
+ */
+describe("buildMedia", () => {
+  it("sends video under the singular attachment key with type video", () => {
+    expect(buildMedia({ kind: "video", url: "https://cdn/v.mp4" })).toEqual({
+      attachment: { type: "video", payload: { url: "https://cdn/v.mp4", is_reusable: true } },
+    });
+  });
+
+  it("sends audio with type audio", () => {
+    expect(buildMedia({ kind: "audio", url: "https://cdn/a.m4a" })).toEqual({
+      attachment: { type: "audio", payload: { url: "https://cdn/a.m4a", is_reusable: true } },
+    });
+  });
+
+  it("sends a PDF as type file, not 'pdf' or 'document'", () => {
+    const out = buildMedia({
+      kind: "file",
+      url: "https://cdn/p.pdf",
+      filename: "proposta.pdf",
+    }) as { attachment: { type: string; payload: Record<string, unknown> } };
+
+    expect(out.attachment.type).toBe("file");
+    // filename is ours, for the canvas — it must not leak into the payload.
+    expect(out.attachment.payload).toEqual({ url: "https://cdn/p.pdf", is_reusable: true });
+  });
+});
+
+describe("buildAlbum", () => {
+  it("uses the PLURAL attachments array, not a singular attachment", () => {
+    const out = buildAlbum({
+      kind: "album",
+      urls: ["https://cdn/1.jpg", "https://cdn/2.jpg"],
+    }) as { attachment?: unknown; attachments: Array<Record<string, unknown>> };
+
+    // The distinction that matters: an array under "attachment" is rejected.
+    expect(out.attachment).toBeUndefined();
+    expect(out.attachments).toEqual([
+      { type: "image", payload: { url: "https://cdn/1.jpg", is_reusable: true } },
+      { type: "image", payload: { url: "https://cdn/2.jpg", is_reusable: true } },
+    ]);
+  });
+
+  it("caps the album at ten attachments, the documented maximum", () => {
+    const urls = Array.from({ length: 14 }, (_, i) => `https://cdn/${i}.jpg`);
+    const out = buildAlbum({ kind: "album", urls }) as { attachments: unknown[] };
+    expect(out.attachments).toHaveLength(LIMITS.albumImages);
+  });
+});
+
 describe("previewOf", () => {
   it("summarises payloads that carry no text", () => {
     expect(previewOf({
@@ -136,6 +193,14 @@ describe("previewOf", () => {
       cards: [{ id: "a", title: "Básico" }, { id: "b", title: "Pro" }],
     })).toBe("[carrossel: Básico, Pro]");
     expect(previewOf({ kind: "image", url: "https://x/y.png" })).toBe("[imagem]");
+    expect(previewOf({ kind: "video", url: "https://x/y.mp4" })).toBe("[vídeo]");
+    expect(previewOf({ kind: "audio", url: "https://x/y.m4a" })).toBe("[áudio]");
+    expect(previewOf({ kind: "file", url: "https://x/y.pdf", filename: "y.pdf" })).toBe(
+      "[pdf: y.pdf]",
+    );
+    expect(previewOf({ kind: "album", urls: ["https://x/1.jpg", "https://x/2.jpg"] })).toBe(
+      "[álbum: 2 imagens]",
+    );
   });
 });
 

@@ -1,8 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "../../../../server/db";
 import { verifySignature, verifyChallenge } from "../../../../lib/verify-signature";
-import { handleInboundMessage, handleComment, handlePostback } from "../../../../server/trigger-dispatch";
-import { fetchProfile } from "../../../../server/instagram";
+import {
+  handleInboundMessage,
+  handleComment,
+  handlePostback,
+  handleStoryReply,
+  handleStoryMention,
+  handleRefLink,
+  handleProfilePostback,
+} from "../../../../server/trigger-dispatch";
+import { fetchProfile, sendSenderAction } from "../../../../server/instagram";
+import { recordInboundMessage } from "../../../../server/inbound-attachments";
+import {
+  parseStoryReply,
+  parseStoryMention,
+  parseReferral,
+  normalizeRefCode,
+  type MessagingEvent,
+} from "../../../../lib/entry-events";
+import { parseFlowPayload } from "../../../../lib/messenger-profile";
 import { tickDelayedSessions, runBroadcast } from "../../../../server/broadcast-worker";
 
 export const runtime = "nodejs"; // crypto + Prisma need Node, not Edge
@@ -51,31 +68,57 @@ export async function POST(req: NextRequest) {
 async function processPayload(payload: MetaWebhook): Promise<void> {
   for (const entry of payload.entry ?? []) {
     for (const event of entry.messaging ?? []) {
-      if (!event.message?.text || event.message.is_echo) continue;
+      // A ref can ride along on a message, a postback, or its own event, and
+      // in the first two cases the message below still needs handling. So
+      // referrals are resolved first and their outcome decides whether the
+      // ordinary paths should also run: a link that started a flow must not
+      // then have the same message start a second one.
+      const refHandled = await processReferral(event);
+
+      // Story replies and mentions arrive on the `messages` field too, but
+      // route differently, so they are claimed before the plain-text path.
+      if (await processStoryEvent(event, refHandled)) continue;
+
+      // Media-only messages have no text. Dropping them on `!text` is what
+      // silently lost every photo and audio note the account ever received.
+      const hasAttachments = Boolean(event.message?.attachments?.length);
+      if (!event.message || event.message.is_echo) continue;
+      if (!event.message.text && !hasAttachments) continue;
 
       const mid = event.message.mid;
       if (mid && (await seen(mid, "message", event))) continue;
 
       const igsid = event.sender.id;
+
+      // Mark read before the slower work, so the blue tick lands while the
+      // flow is still thinking. Never throws — a failure here must not cost
+      // us the message.
+      await sendSenderAction(igsid, "mark_seen");
+
       const profile = await fetchProfile(igsid);
 
       const contact = await db.contact.upsert({
         where: { igScopedId: igsid },
-        create: { igScopedId: igsid, lastInboundAt: new Date(), ...profile },
+        create: { igScopedId: igsid, lastInboundAt: new Date(), source: "dm", ...profile },
         update: { lastInboundAt: new Date(), ...profile },
       });
 
-      await db.message.create({
-        data: {
-          contactId: contact.id,
-          direction: "INBOUND",
-          text: event.message.text,
-          status: "DELIVERED",
-          externalId: mid,
-        },
+      // Persists attachments with their expiry: Meta's media URLs die after
+      // 7 days, so the record is the only trace that survives.
+      await recordInboundMessage(db, {
+        contactId: contact.id,
+        mid,
+        text: event.message.text,
+        attachments: event.message.attachments,
       });
 
-      await handleInboundMessage(db, contact.id, event.message.text);
+      // The ref link already picked the flow for this first message; running
+      // the keyword path too would start a second, competing flow.
+      if (refHandled) continue;
+
+      if (event.message.text) {
+        await handleInboundMessage(db, contact.id, event.message.text);
+      }
     }
 
     // Button and quick-reply taps arrive as postbacks, a separate event from
@@ -89,11 +132,19 @@ async function processPayload(payload: MetaWebhook): Promise<void> {
 
       const contact = await db.contact.upsert({
         where: { igScopedId: event.sender.id },
-        create: { igScopedId: event.sender.id, lastInboundAt: new Date() },
+        create: { igScopedId: event.sender.id, lastInboundAt: new Date(), source: "dm" },
         update: { lastInboundAt: new Date() },
       });
 
-      await handlePostback(db, contact.id, pb.payload);
+      // Ice breakers and menu items carry FLOW:<id> and name a flow to start.
+      // Flow buttons carry a node id and resume the running session. Sending
+      // one down the other's path silently does nothing.
+      const flowId = parseFlowPayload(pb.payload);
+      if (flowId) {
+        await handleProfilePostback(db, contact.id, flowId);
+      } else {
+        await handlePostback(db, contact.id, pb.payload);
+      }
     }
 
     for (const change of entry.changes ?? []) {
@@ -111,6 +162,106 @@ async function processPayload(payload: MetaWebhook): Promise<void> {
       });
     }
   }
+}
+
+/**
+ * Story reply / story mention. Returns true if this event was one of them
+ * and is fully handled — the caller must then skip the plain-message path.
+ *
+ * Both open the 24h window exactly like a DM: Meta treats them as inbound
+ * user messages, and the private-reply carve-out does not apply.
+ *
+ * `refSkip` means a ref link already chose the flow for this event; we still
+ * record the contact and the message, but do not route a second flow.
+ */
+async function processStoryEvent(event: MessagingEvent, refSkip: boolean): Promise<boolean> {
+  const reply = parseStoryReply(event);
+  const mention = reply ? null : parseStoryMention(event);
+  if (!reply && !mention) return false;
+
+  const igsid = reply?.igScopedId ?? mention?.igScopedId ?? "";
+  if (!igsid) return true; // malformed, but it was a story event — don't fall through
+
+  const kind = reply ? "story_reply" : "story_mention";
+  const mid = reply?.mid ?? mention?.mid;
+  if (mid && (await seen(mid, kind, event))) return true;
+
+  const profile = await fetchProfile(igsid);
+  const contact = await db.contact.upsert({
+    where: { igScopedId: igsid },
+    // `source` is create-only: it records where someone first arrived, and
+    // overwriting it on every visit would erase that.
+    create: { igScopedId: igsid, lastInboundAt: new Date(), source: kind, ...profile },
+    update: { lastInboundAt: new Date(), ...profile },
+  });
+
+  await db.message.create({
+    data: {
+      contactId: contact.id,
+      direction: "INBOUND",
+      // A mention has no text of its own; label it so the inbox isn't blank.
+      text: reply?.text ?? mention?.text ?? "[menção em story]",
+      status: "DELIVERED",
+      externalId: mid,
+      payload: {
+        kind,
+        storyId: reply?.storyId,
+        storyUrl: reply?.storyUrl ?? mention?.storyUrl,
+      },
+    },
+  });
+
+  if (refSkip) return true;
+
+  if (reply) await handleStoryReply(db, contact.id, reply.text);
+  else await handleStoryMention(db, contact.id);
+
+  return true;
+}
+
+/**
+ * An ig.me?ref= arrival. Returns true if a tracked link started a flow.
+ *
+ * Clicks are counted for any known code, conversions only when a flow
+ * actually ran — the gap between the two is exactly "link works, flow is
+ * off", which is the failure worth seeing in the list.
+ */
+async function processReferral(event: MessagingEvent): Promise<boolean> {
+  const referral = parseReferral(event);
+  if (!referral) return false;
+
+  const code = normalizeRefCode(referral.ref);
+
+  // Dedup on the mid so a Meta replay doesn't inflate the click count. A
+  // standalone referral event has no mid; fall back to sender+code, which
+  // is stable for the one arrival it represents.
+  const dedupId = event.message?.mid ?? event.postback?.mid ?? `ref:${event.sender?.id ?? ""}:${code}`;
+  if (await seen(dedupId, "referral", event)) return false;
+
+  const link = await db.refLink.findUnique({ where: { code } });
+  if (!link) return false;
+
+  await db.refLink.update({ where: { id: link.id }, data: { clicks: { increment: 1 } } });
+
+  const igsid = event.sender?.id ?? "";
+  if (!igsid) return false;
+
+  const profile = await fetchProfile(igsid);
+  const contact = await db.contact.upsert({
+    where: { igScopedId: igsid },
+    create: { igScopedId: igsid, lastInboundAt: new Date(), source: `ref:${code}`, ...profile },
+    update: { lastInboundAt: new Date(), ...profile },
+  });
+
+  const started = await handleRefLink(db, contact.id, code);
+  if (started) {
+    await db.refLink.update({
+      where: { id: link.id },
+      data: { conversions: { increment: 1 } },
+    });
+  }
+
+  return started;
 }
 
 /**
@@ -155,18 +306,12 @@ async function seen(externalId: string, kind: string, raw: unknown): Promise<boo
 
 type MetaWebhook = {
   entry?: Array<{
-    messaging?: Array<{
-      sender: { id: string };
-      message?: {
-        mid?: string;
-        text?: string;
-        is_echo?: boolean;
-        /** Present when the text came from tapping a quick reply. */
-        quick_reply?: { payload?: string };
-      };
-      /** Present when a template button was tapped. */
-      postback?: { mid?: string; title?: string; payload?: string };
-    }>;
+    /**
+     * One messaging event. The full shape — including reply_to.story,
+     * story_mention attachments and referral — lives in lib/entry-events.ts,
+     * next to the parsers that read it.
+     */
+    messaging?: Array<MessagingEvent & { sender: { id: string } }>;
     changes?: Array<{
       field: string;
       value?: {

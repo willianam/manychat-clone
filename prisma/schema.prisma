@@ -28,8 +28,14 @@ model Contact {
   lastInboundAt DateTime?
 
   subscribed Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+
+  /// Where this contact came in from. Free-form so it survives new entry
+  /// points without a migration: "dm", "comment", "story_reply",
+  /// "story_mention", or "ref:<code>" for a tracked ig.me link.
+  source String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   tags          ContactTag[]
   messages      Message[]
@@ -118,12 +124,60 @@ model Flow {
 
   triggers Trigger[]
   sessions FlowSession[]
+  refLinks RefLink[]
+}
+
+/// A trackable ig.me entry point: ig.me/m/<username>?ref=<code>.
+///
+/// Meta echoes the `ref` back on the first message of the conversation
+/// (referral event, or `message.referral` when the thread is new), which is
+/// what lets one link open the DM already running a chosen flow.
+model RefLink {
+  id     String @id @default(cuid())
+  /// The value carried in ?ref=. Unique because it is the routing key.
+  code   String @unique
+  label  String
+  flowId String
+
+  /// Every time the ref arrived on a webhook.
+  clicks      Int @default(0)
+  /// Clicks that actually started the flow.
+  conversions Int @default(0)
+
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  flow Flow @relation(fields: [flowId], references: [id], onDelete: Cascade)
+
+  @@index([enabled])
+}
+
+/// Ice breakers and persistent menu, mirrored locally.
+///
+/// Meta's /me/messenger_profile is write-mostly and slow to read back, so the
+/// editable copy lives here and is pushed on save. A single row (id "default").
+model MessengerProfile {
+  id String @id @default("default")
+
+  /// [{ question, flowId }] — up to 4, in display order.
+  iceBreakers Json @default("[]")
+  /// [{ title, type: "postback"|"web_url", flowId?, url? }]
+  menuItems   Json @default("[]")
+
+  /// Result of the last push to Meta, for the UI to show.
+  syncedAt  DateTime?
+  syncError String?
+
+  updatedAt DateTime @updatedAt
 }
 
 enum TriggerKind {
   KEYWORD
   COMMENT
   STORY_REPLY
+  STORY_MENTION
+  REF
   DEFAULT
 }
 
@@ -226,4 +280,35 @@ model WebhookEvent {
   receivedAt DateTime @default(now())
 
   @@index([receivedAt])
+}
+
+/// An inbound message that matched no trigger.
+///
+/// Aggregated by `normalized` (see lib/text-normalize.ts) so that forty
+/// people asking the price is ONE row with count 40 — the panel exists to
+/// rank the gaps, and per-message rows would bury the signal.
+///
+/// Deliberately not a relation to Contact: this outlives individual contacts
+/// and must not cascade-delete the aggregate when one contact is removed.
+model UnmatchedMessage {
+  id String @id @default(cuid())
+
+  /// Grouping key: accent-folded, emoji/punctuation-stripped, lowercased.
+  normalized String @unique
+  /// One verbatim example, for showing the owner what was really typed.
+  sample     String
+  count      Int    @default(1)
+
+  /// Most recent sender, for jumping to a real conversation. Plain id, no FK.
+  lastContactId String?
+
+  /// Set once the owner turns this into a trigger, so it drops off the list
+  /// without losing the history of what was asked.
+  resolvedAt DateTime?
+
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
+
+  @@index([resolvedAt, count])
+  @@index([lastSeenAt])
 }

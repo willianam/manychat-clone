@@ -417,6 +417,115 @@ export function ImageNode({ data }: NodeProps<WithStats>) {
   );
 }
 
+/**
+ * Video, audio and PDF.
+ *
+ * These have no thumbnail we can render — the URL points at a file we do not
+ * fetch — so the preview is an honest placeholder plus the filename, which is
+ * the part that tells you *which* asset this block sends. Showing a fake
+ * player would suggest a preview we don't have.
+ */
+function MediaCard({ icon, url, label }: { icon: string; url: string; label: string }) {
+  return (
+    <div className="flex items-center gap-2 rounded-lg bg-neutral-100 px-2.5 py-2 dark:bg-neutral-800">
+      <span className="text-[18px] leading-none">{icon}</span>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[11px] font-medium text-neutral-700 dark:text-neutral-200">
+          {label}
+        </div>
+        <div className="truncate text-[9px] text-neutral-400" title={url}>
+          {basenameOf(url)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function VideoNode({ data }: NodeProps<WithStats>) {
+  const d = data as Extract<FlowNodeData, { kind: "video" }>;
+  return (
+    <div className={`${SHELL} w-[248px]`}>
+      <Handle type="target" position={T} />
+      <Head tone="bg-fuchsia-50 text-fuchsia-700 dark:bg-fuchsia-950/50 dark:text-fuchsia-300" label="Vídeo" />
+      <Stats s={data._stats} />
+      <div className="p-2.5">
+        <MediaCard icon="▶" url={d.url} label="Vídeo" />
+      </div>
+      <Handle type="source" position={B} />
+    </div>
+  );
+}
+
+export function AudioNode({ data }: NodeProps<WithStats>) {
+  const d = data as Extract<FlowNodeData, { kind: "audio" }>;
+  return (
+    <div className={`${SHELL} w-[248px]`}>
+      <Handle type="target" position={T} />
+      <Head tone="bg-cyan-50 text-cyan-700 dark:bg-cyan-950/50 dark:text-cyan-300" label="Áudio" />
+      <Stats s={data._stats} />
+      <div className="p-2.5">
+        <MediaCard icon="♪" url={d.url} label="Áudio" />
+      </div>
+      <Handle type="source" position={B} />
+    </div>
+  );
+}
+
+export function FileNode({ data }: NodeProps<WithStats>) {
+  const d = data as Extract<FlowNodeData, { kind: "file" }>;
+  return (
+    <div className={`${SHELL} w-[248px]`}>
+      <Handle type="target" position={T} />
+      <Head tone="bg-stone-100 text-stone-700 dark:bg-stone-800 dark:text-stone-300" label="PDF" />
+      <Stats s={data._stats} />
+      <div className="p-2.5">
+        <MediaCard icon="▤" url={d.url} label={d.filename ?? "Documento PDF"} />
+      </div>
+      <Handle type="source" position={B} />
+    </div>
+  );
+}
+
+/** Album: a thumbnail grid, since these URLs *are* images we can render. */
+export function AlbumNode({ data }: NodeProps<WithStats>) {
+  const d = data as Extract<FlowNodeData, { kind: "album" }>;
+  return (
+    <div className={`${SHELL} w-[248px]`}>
+      <Handle type="target" position={T} />
+      <Head
+        tone="bg-sky-50 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300"
+        label={`Álbum · ${d.urls.length} ${d.urls.length === 1 ? "imagem" : "imagens"}`}
+      />
+      <Stats s={data._stats} />
+      <div className="grid grid-cols-3 gap-1 p-2.5">
+        {d.urls.slice(0, 6).map((u, i) => (
+          <div
+            key={`${u}-${i}`}
+            className="h-[46px] rounded bg-neutral-100 dark:bg-neutral-800"
+            style={{ backgroundImage: `url(${u})`, backgroundSize: "cover", backgroundPosition: "center" }}
+          />
+        ))}
+        {d.urls.length > 6 && (
+          <div className="flex h-[46px] items-center justify-center rounded bg-neutral-100 text-[10px] text-neutral-500 dark:bg-neutral-800">
+            +{d.urls.length - 6}
+          </div>
+        )}
+      </div>
+      <Handle type="source" position={B} />
+    </div>
+  );
+}
+
+/** Last path segment of a URL, for naming a file we can't preview. */
+function basenameOf(url: string): string {
+  try {
+    const path = new URL(url).pathname;
+    return decodeURIComponent(path.split("/").filter(Boolean).pop() ?? url);
+  } catch {
+    return url;
+  }
+}
+
 export function ConditionNode({ data }: NodeProps<WithStats>) {
   const d = data as Extract<FlowNodeData, { kind: "condition" }>;
   return (
@@ -547,6 +656,10 @@ export const nodeTypes = {
   quickreply: QuickReplyNode,
   carousel: CarouselNode,
   image: ImageNode,
+  video: VideoNode,
+  audio: AudioNode,
+  file: FileNode,
+  album: AlbumNode,
   condition: ConditionNode,
   delay: DelayNode,
   action: ActionNode,

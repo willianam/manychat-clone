@@ -18,6 +18,21 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Link href="/contacts" className="text-sm text-neutral-600 hover:text-neutral-900">
               Contatos
             </Link>
+            <Link href="/tags" className="text-sm text-neutral-600 hover:text-neutral-900">
+              Etiquetas
+            </Link>
+            <Link href="/broadcasts" className="text-sm text-neutral-600 hover:text-neutral-900">
+              Disparos
+            </Link>
+            <Link href="/insights" className="text-sm text-neutral-600 hover:text-neutral-900">
+              Insights
+            </Link>
+            <Link href="/ref-links" className="text-sm text-neutral-600 hover:text-neutral-900">
+              Links
+            </Link>
+            <Link href="/configuracoes" className="text-sm text-neutral-600 hover:text-neutral-900">
+              Configurações
+            </Link>
             <span className="ml-auto rounded-full bg-emerald-100 px-3 py-1 text-xs text-emerald-800">
               produção
             </span>

@@ -1,6 +1,7 @@
 import type { PrismaClient, Trigger } from "@prisma/client";
 import { startFlow, resumeWithInput, resumeWithPostback } from "./flow-runner";
 import { sendPrivateReply } from "./instagram";
+import { normalizeText, containsWord, normalizeForGrouping } from "../lib/text-normalize";
 
 /**
  * Decides what an inbound event should do.
@@ -30,11 +31,54 @@ export async function handleInboundMessage(
     return;
   }
 
+  // Nothing matched. Record it before running the fallback: this is the raw
+  // material for /insights — the words people actually type that we have no
+  // keyword for. A DEFAULT trigger firing does not make the miss less real.
+  await recordUnmatched(db, contactId, text);
+
   const fallback = await db.trigger.findFirst({
     where: { kind: "DEFAULT", enabled: true, flow: { enabled: true } },
     orderBy: { priority: "desc" },
   });
   if (fallback) await startFlow(db, fallback.flowId, contactId);
+}
+
+/**
+ * Aggregate a miss by its normalized form.
+ *
+ * Forty people typing "preço", "Preco" and "PREÇO?" are one row with a count
+ * of 40, not forty rows — the whole point of the panel is to surface the
+ * frequent gaps, and unaggregated rows bury them. `lastContactId` keeps a
+ * way back to a real conversation without storing a growing list.
+ *
+ * Never throws: a failure to record analytics must not stop us replying.
+ */
+async function recordUnmatched(
+  db: PrismaClient,
+  contactId: string,
+  text: string,
+): Promise<void> {
+  const normalized = normalizeForGrouping(text);
+  if (!normalized) return; // a sticker or a bare emoji has no keyword to suggest
+
+  try {
+    await db.unmatchedMessage.upsert({
+      where: { normalized },
+      create: {
+        normalized,
+        sample: text.slice(0, 500),
+        lastContactId: contactId,
+        count: 1,
+      },
+      update: {
+        count: { increment: 1 },
+        lastSeenAt: new Date(),
+        lastContactId: contactId,
+      },
+    });
+  } catch {
+    // Analytics is best-effort; the reply matters more.
+  }
 }
 
 /**
@@ -88,6 +132,115 @@ export async function handleComment(
   await startFlow(db, trigger.flowId, contact.id);
 }
 
+/**
+ * A story reply. The user answered one of our stories, which is an inbound
+ * DM in every sense: the 24h window opens and a keyword can match.
+ *
+ * STORY_REPLY triggers are tested first — a story-specific trigger should
+ * beat a generic keyword answering the same word. Falling through to the
+ * ordinary inbound path is deliberate: a reply carrying a keyword should
+ * still fire that keyword's flow rather than dead-end.
+ */
+export async function handleStoryReply(
+  db: PrismaClient,
+  contactId: string,
+  text: string,
+): Promise<void> {
+  // A session parked on a question owns the reply, same as any message.
+  const waiting = await db.flowSession.findFirst({
+    where: { contactId, status: "WAITING_INPUT" },
+    orderBy: { updatedAt: "desc" },
+  });
+  if (waiting) {
+    await resumeWithInput(db, waiting, text);
+    return;
+  }
+
+  const trigger = await matchByKind(db, "STORY_REPLY", text);
+  if (trigger) {
+    await startFlow(db, trigger.flowId, contactId);
+    return;
+  }
+
+  await handleInboundMessage(db, contactId, text);
+}
+
+/**
+ * A story mention. The user put us in their story — there is no text to
+ * match, so the only routing possible is "the" story-mention trigger.
+ *
+ * Patternless by nature: whichever enabled STORY_MENTION trigger has the
+ * highest priority wins.
+ */
+export async function handleStoryMention(
+  db: PrismaClient,
+  contactId: string,
+): Promise<void> {
+  const trigger = await db.trigger.findFirst({
+    where: { kind: "STORY_MENTION", enabled: true, flow: { enabled: true } },
+    orderBy: { priority: "desc" },
+  });
+  if (!trigger) return;
+  await startFlow(db, trigger.flowId, contactId);
+}
+
+/**
+ * An ig.me?ref= arrival. The code names the flow directly, so no matching is
+ * involved — but the link must still be enabled and point at a live flow.
+ *
+ * Returns whether a flow actually started, which is what the caller records
+ * as a conversion (a click on a link whose flow is switched off is a click,
+ * not a conversion).
+ */
+export async function handleRefLink(
+  db: PrismaClient,
+  contactId: string,
+  code: string,
+): Promise<boolean> {
+  const link = await db.refLink.findUnique({ where: { code } });
+  if (!link || !link.enabled) return false;
+
+  const result = await startFlow(db, link.flowId, contactId);
+  return result !== null;
+}
+
+/**
+ * A tap on an ice breaker or a persistent-menu item.
+ *
+ * These payloads name a FLOW, not a node, so they must never reach
+ * resumeWithPostback — which would compare the flow id against the node the
+ * session sits on and discard it as a stale button.
+ */
+export async function handleProfilePostback(
+  db: PrismaClient,
+  contactId: string,
+  flowId: string,
+): Promise<void> {
+  // Starting a flow while another is mid-question would leave the old
+  // session orphaned and waiting forever. An explicit menu tap is a clear
+  // intent to switch, so abandon what was running.
+  await db.flowSession.updateMany({
+    where: { contactId, status: { in: ["ACTIVE", "WAITING_INPUT"] } },
+    data: { status: "ABANDONED" },
+  });
+
+  await startFlow(db, flowId, contactId);
+}
+
+/** Highest-priority enabled trigger of `kind` whose pattern matches `text`. */
+async function matchByKind(
+  db: PrismaClient,
+  kind: "STORY_REPLY",
+  text: string,
+): Promise<Trigger | null> {
+  const candidates = await db.trigger.findMany({
+    where: { kind, enabled: true, flow: { enabled: true } },
+    orderBy: { priority: "desc" },
+  });
+  // A patternless trigger of this kind is a catch-all for the whole kind.
+  return candidates.find((t) => (t.pattern ? matches(t, text) : true)) ?? null;
+}
+
 async function matchKeyword(db: PrismaClient, text: string): Promise<Trigger | null> {
   const candidates = await db.trigger.findMany({
     where: { kind: "KEYWORD", enabled: true, flow: { enabled: true } },
@@ -113,30 +266,44 @@ async function matchComment(
   return candidates.find((t) => matches(t, text)) ?? null;
 }
 
-function matches(trigger: Trigger, text: string): boolean {
+/**
+ * Does this trigger fire for this text?
+ *
+ * EXACT and CONTAINS compare normalized forms on BOTH sides, so an accent,
+ * a trailing "!!!" or a waving emoji never decides whether a keyword fires.
+ * See lib/text-normalize.ts for what normalization folds away.
+ *
+ * REGEX is left alone on purpose: the owner wrote that pattern against the
+ * literal message, and silently folding accents out from under it would
+ * break patterns that match accents deliberately.
+ */
+export function matches(
+  trigger: Pick<Trigger, "pattern" | "match">,
+  text: string,
+): boolean {
   if (!trigger.pattern) return false;
-  const haystack = text.toLowerCase().trim();
-  const needle = trigger.pattern.toLowerCase().trim();
+
+  if (trigger.match === "REGEX") {
+    try {
+      return new RegExp(trigger.pattern, "i").test(text);
+    } catch {
+      return false; // a bad pattern must not take the webhook down
+    }
+  }
+
+  const haystack = normalizeText(text);
+  const needle = normalizeText(trigger.pattern);
+  if (!needle) return false;
 
   switch (trigger.match) {
     case "EXACT":
       return haystack === needle;
     case "CONTAINS":
       // Word-boundary match so "oi" doesn't fire inside "coisa".
-      return new RegExp(`\\b${escapeRegex(needle)}\\b`, "i").test(haystack);
-    case "REGEX":
-      try {
-        return new RegExp(trigger.pattern, "i").test(text);
-      } catch {
-        return false; // a bad pattern must not take the webhook down
-      }
+      return containsWord(haystack, needle);
     default:
       return false;
   }
-}
-
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function openingLine(flowName: string): string {

@@ -4,6 +4,7 @@ import type { Node } from "reactflow";
 import {
   ConditionOp,
   LIMITS,
+  MEDIA_FORMATS,
   type FlowButton,
   type FlowNodeData,
 } from "../lib/flow-schema";
@@ -85,6 +86,12 @@ function Body({ data, onChange }: { data: FlowNodeData; onChange: Update }) {
       return <CarouselProps data={data} onChange={onChange} />;
     case "image":
       return <ImageProps data={data} onChange={onChange} />;
+    case "video":
+    case "audio":
+    case "file":
+      return <MediaProps data={data} onChange={onChange} />;
+    case "album":
+      return <AlbumProps data={data} onChange={onChange} />;
     case "condition":
       return <ConditionProps data={data} onChange={onChange} />;
     case "delay":
@@ -661,6 +668,115 @@ function ImageProps({
   );
 }
 
+/**
+ * Video, audio and PDF.
+ *
+ * The size ceiling is stated but not enforced: the file lives at a URL we do
+ * not fetch, so the editor genuinely cannot know how big it is. Saying "máx.
+ * 25 MB" next to the field is the honest version — a validation that always
+ * passes would be worse than none, because it would imply a check happened.
+ */
+const MEDIA_COPY = {
+  video: { label: "URL do vídeo", title: "Vídeo", mb: LIMITS.mediaMb, formats: MEDIA_FORMATS.video },
+  audio: { label: "URL do áudio", title: "Áudio", mb: LIMITS.mediaMb, formats: MEDIA_FORMATS.audio },
+  file: { label: "URL do PDF", title: "PDF", mb: LIMITS.mediaMb, formats: MEDIA_FORMATS.file },
+} as const;
+
+function MediaProps({
+  data,
+  onChange,
+}: {
+  data: Extract<FlowNodeData, { kind: "video" | "audio" | "file" }>;
+  onChange: Update;
+}) {
+  const copy = MEDIA_COPY[data.kind];
+
+  return (
+    <>
+      <Field
+        label={copy.label}
+        hint={`Endereço público (https). Formatos: ${copy.formats}. Máx. ${copy.mb} MB.`}
+      >
+        <TextInput
+          value={data.url}
+          placeholder="https://…"
+          onChange={(url) => onChange({ ...data, url })}
+        />
+      </Field>
+
+      {data.kind === "file" && (
+        <Field label="Nome do arquivo" hint="Só para identificar o bloco no canvas.">
+          <TextInput
+            value={data.filename ?? ""}
+            max={120}
+            placeholder="proposta.pdf"
+            onChange={(v) => onChange({ ...data, filename: v === "" ? undefined : v })}
+          />
+        </Field>
+      )}
+
+      <p className="rounded-lg bg-neutral-50 px-2.5 py-2 text-[11px] text-neutral-500 dark:bg-neutral-800">
+        O Instagram baixa o arquivo do endereço no momento do envio. Se o link
+        sair do ar, o bloco falha — hospede em algum lugar estável.
+      </p>
+    </>
+  );
+}
+
+function AlbumProps({
+  data,
+  onChange,
+}: {
+  data: Extract<FlowNodeData, { kind: "album" }>;
+  onChange: Update;
+}) {
+  const urls = data.urls;
+  const set = (next: string[]) => onChange({ ...data, urls: next });
+
+  return (
+    <>
+      <p className="text-[11px] text-neutral-500">
+        Várias imagens em uma só mensagem. Máx. {LIMITS.albumImages} imagens,{" "}
+        {LIMITS.imageMb} MB cada ({MEDIA_FORMATS.image}).
+      </p>
+
+      <div className="space-y-2">
+        {urls.map((u, i) => (
+          <div key={i} className="rounded-lg border p-2 dark:border-neutral-700">
+            <div className="mb-1 flex items-center gap-1">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-sky-600">
+                Imagem {i + 1}
+              </span>
+              <RowTools
+                canUp={i > 0}
+                canDown={i < urls.length - 1}
+                // The schema requires at least one image.
+                canRemove={urls.length > 1}
+                removeHint="É preciso ao menos uma imagem."
+                onUp={() => set(move(urls, i, i - 1))}
+                onDown={() => set(move(urls, i, i + 1))}
+                onRemove={() => set(urls.filter((_, n) => n !== i))}
+              />
+            </div>
+            <TextInput
+              value={u}
+              placeholder="https://…"
+              onChange={(v) => set(urls.map((x, n) => (n === i ? v : x)))}
+            />
+          </div>
+        ))}
+      </div>
+
+      <AddButton
+        label="Adicionar imagem"
+        onClick={() => set([...urls, ""])}
+        disabled={urls.length >= LIMITS.albumImages}
+        atLimit={`O Instagram aceita no máximo ${LIMITS.albumImages} anexos por mensagem.`}
+      />
+    </>
+  );
+}
+
 const OP_LABELS: Record<string, string> = {
   equals: "é igual a",
   contains: "contém",
@@ -1074,6 +1190,10 @@ function titleOf(data: FlowNodeData): string {
     quickreply: "Resposta rápida",
     carousel: "Carrossel",
     image: "Imagem",
+    video: "Vídeo",
+    audio: "Áudio",
+    file: "PDF",
+    album: "Álbum",
     condition: "Condição",
     delay: "Atraso inteligente",
     action: "Ações",

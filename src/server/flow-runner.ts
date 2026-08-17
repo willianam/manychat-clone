@@ -1,8 +1,9 @@
 import type { PrismaClient, FlowSession, Prisma } from "@prisma/client";
 import { FlowGraph, findEntryNode, type FlowNodeData } from "../lib/flow-schema";
-import { sendText, sendMessage } from "./instagram";
+import { sendText, sendMessage, sendSenderActionToContact } from "./instagram";
 import {
   buildMessage, buildQuickReply, buildCarousel, buildImage,
+  buildMedia, buildAlbum,
   previewOf, resumeAtFor, parsePostback,
 } from "./message-payload";
 
@@ -20,6 +21,12 @@ const asJson = (ctx: Ctx) => ctx as Prisma.InputJsonValue;
  */
 
 const MAX_STEPS = 50; // cycle guard — a graph loop would otherwise spin forever
+
+/** Node kinds that put a message on the wire, and so deserve a typing bubble. */
+const SENDS_MESSAGE: ReadonlySet<FlowNodeData["kind"]> = new Set([
+  "message", "question", "quickreply", "carousel",
+  "image", "video", "audio", "file", "album",
+]);
 
 export type StepResult = { status: "waiting" | "completed" | "delayed"; nodeId?: string };
 
@@ -132,7 +139,14 @@ async function advance(
   graph: FlowGraph,
 ): Promise<StepResult> {
   let current = session.currentNodeId;
-  const ctx: Ctx = { ...(session.context as Ctx) };
+  // Stored contact fields are readable by {{name}} alongside session answers,
+  // so a flow can greet by a name captured weeks ago in a different flow.
+  // Session context wins on conflict — see loadContactFields.
+  const ctx: Ctx = await loadContactFields(
+    db,
+    session.contactId,
+    { ...(session.context as Ctx) },
+  );
 
   for (let step = 0; step < MAX_STEPS; step++) {
     if (!current) break;
@@ -140,6 +154,20 @@ async function advance(
     if (!node) break;
 
     const d: FlowNodeData = node.data;
+
+    // Typing bubble before anything that actually sends.
+    //
+    // Done once here rather than at each send site so a new sending node kind
+    // cannot forget it. Silent nodes (condition, action, random, delay, end)
+    // are excluded: a typing indicator that precedes no message is a lie, and
+    // costs an API call on a webhook with a 15s budget.
+    //
+    // Instagram clears the indicator when the message lands, so there is no
+    // matching typing_off — sending one would race the message and can blank
+    // the bubble early.
+    if (SENDS_MESSAGE.has(d.kind)) {
+      await sendSenderActionToContact(db, session.contactId, "typing_on");
+    }
 
     if (d.kind === "end") {
       await db.flowSession.update({
@@ -204,6 +232,22 @@ async function advance(
 
     if (d.kind === "image") {
       await sendMessage(db, session.contactId, buildImage(d), { preview: previewOf(d) });
+      current = nextOf(graph, node.id);
+      await db.flowSession.update({ where: { id: session.id }, data: { currentNodeId: current } });
+      continue;
+    }
+
+    // Video, audio and PDF share one payload shape and one control flow:
+    // send, then walk on. None of them is a branch point.
+    if (d.kind === "video" || d.kind === "audio" || d.kind === "file") {
+      await sendMessage(db, session.contactId, buildMedia(d), { preview: previewOf(d) });
+      current = nextOf(graph, node.id);
+      await db.flowSession.update({ where: { id: session.id }, data: { currentNodeId: current } });
+      continue;
+    }
+
+    if (d.kind === "album") {
+      await sendMessage(db, session.contactId, buildAlbum(d), { preview: previewOf(d) });
       current = nextOf(graph, node.id);
       await db.flowSession.update({ where: { id: session.id }, data: { currentNodeId: current } });
       continue;
@@ -385,9 +429,54 @@ async function evaluate(
   }
 }
 
-/** Replaces {{key}} with context values; unknown keys become "". */
-function interpolate(text: string, ctx: Ctx): string {
-  return text.replace(/\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g, (_, k) =>
-    String(ctx[k] ?? ""),
+/**
+ * Replaces `{{key}}` with context values.
+ *
+ * Supports a default: `{{nome|amigo}}` renders "amigo" when `nome` is
+ * missing. Without a default a missing key still renders as "" — sending
+ * a literal "{{nome}}" to a real person is worse than sending nothing.
+ *
+ * "Missing" means undefined, null, or empty string. An empty stored field is
+ * missing for this purpose: a contact whose name we captured as "" should
+ * get "amigo", not a hole in the sentence.
+ *
+ * The default text runs to the closing braces, so it may contain spaces and
+ * punctuation ("{{nome|meu amigo}}"), but not `}}` or a further `|`.
+ *
+ * Lookup order is context first, then ContactField — the session's own
+ * answers are fresher than what was stored on the contact in an earlier run.
+ * ContactField values are merged into `ctx` by `loadContactFields` before
+ * the walk starts, which keeps this function pure and synchronous.
+ */
+export function interpolate(text: string, ctx: Ctx): string {
+  return text.replace(
+    /\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*(?:\|([^}|]*))?\}\}/g,
+    (_full, key: string, fallback: string | undefined) => {
+      const raw = ctx[key];
+      const value = raw === undefined || raw === null ? "" : String(raw);
+      if (value !== "") return value;
+      return fallback === undefined ? "" : fallback.trim();
+    },
   );
+}
+
+/**
+ * Merge a contact's stored fields into a session context.
+ *
+ * Session context wins on conflict: an answer given in this run is more
+ * current than the same key stored during a previous one.
+ */
+export async function loadContactFields(
+  db: PrismaClient,
+  contactId: string,
+  ctx: Ctx,
+): Promise<Ctx> {
+  const fields = await db.contactField.findMany({
+    where: { contactId },
+    select: { key: true, value: true },
+  });
+
+  const merged: Ctx = {};
+  for (const f of fields) merged[f.key] = f.value;
+  return { ...merged, ...ctx };
 }

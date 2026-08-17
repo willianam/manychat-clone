@@ -2,6 +2,7 @@ import { db } from "../../server/db";
 import { FlowGraph, validateGraph } from "../../lib/flow-schema";
 import { createFlow } from "./actions";
 import { FlowRow } from "./FlowRow";
+import { ImportFlowButton } from "./ImportFlowButton";
 
 export const dynamic = "force-dynamic";
 
@@ -43,6 +44,8 @@ export default async function FlowsPage() {
           </p>
         </div>
 
+        <div className="flex items-start gap-2">
+        <ImportFlowButton />
         <form action={createFlow} className="flex gap-2">
           <input
             name="name"
@@ -57,6 +60,7 @@ export default async function FlowsPage() {
             + Novo fluxo
           </button>
         </form>
+        </div>
       </div>
 
       {rows.length === 0 ? (

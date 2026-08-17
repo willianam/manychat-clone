@@ -118,6 +118,47 @@ export function buildImage(
   };
 }
 
+/**
+ * Video, audio and PDF.
+ *
+ * All three use the singular `attachment` key with the kind as `type` — the
+ * format is identical to an image, which is why one builder covers them:
+ *
+ *   {"attachment":{"type":"video","payload":{"url":"…"}}}
+ *
+ * `is_reusable` is kept for the same reason as images: re-sending the same
+ * asset then costs an attachment id rather than a fresh upload.
+ *
+ * Note the node kinds map 1:1 onto the API's type strings — `file` is the
+ * documented type for a PDF, so no translation table is needed.
+ */
+export function buildMedia(
+  d: Extract<FlowNodeData, { kind: "video" | "audio" | "file" }>,
+): Record<string, unknown> {
+  return {
+    attachment: { type: d.kind, payload: { url: d.url, is_reusable: true } },
+  };
+}
+
+/**
+ * Album — several images in one message.
+ *
+ * This is the one payload that uses the PLURAL `attachments` array instead of
+ * the singular `attachment` object. Sending an array under the singular key
+ * is accepted by JSON but rejected by the Graph API, so the distinction is
+ * load-bearing and covered by a test.
+ */
+export function buildAlbum(
+  d: Extract<FlowNodeData, { kind: "album" }>,
+): Record<string, unknown> {
+  return {
+    attachments: d.urls.slice(0, LIMITS.albumImages).map((url) => ({
+      type: "image",
+      payload: { url, is_reusable: true },
+    })),
+  };
+}
+
 /** One-line inbox summary for payloads that have no text of their own. */
 export function previewOf(d: FlowNodeData): string {
   switch (d.kind) {
@@ -129,6 +170,14 @@ export function previewOf(d: FlowNodeData): string {
       return `[carrossel: ${d.cards.map((c) => c.title).join(", ")}]`;
     case "image":
       return d.caption ?? "[imagem]";
+    case "video":
+      return "[vídeo]";
+    case "audio":
+      return "[áudio]";
+    case "file":
+      return d.filename ? `[pdf: ${d.filename}]` : "[pdf]";
+    case "album":
+      return `[álbum: ${d.urls.length} ${d.urls.length === 1 ? "imagem" : "imagens"}]`;
     default:
       return "";
   }

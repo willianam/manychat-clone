@@ -1,6 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import { sendText, SendBlocked } from "./instagram";
-import { canSend } from "../lib/messaging-window";
+import { canSend, WINDOW_MS } from "../lib/messaging-window";
 
 /**
  * Broadcast sender.
@@ -19,16 +19,24 @@ import { canSend } from "../lib/messaging-window";
 const SENDS_PER_SECOND = Number(process.env.BROADCAST_RATE ?? 5);
 const INTERVAL_MS = Math.ceil(1000 / SENDS_PER_SECOND);
 
-export async function enqueueBroadcast(db: PrismaClient, broadcastId: string): Promise<number> {
+/**
+ * Materialize the recipient rows for a broadcast.
+ *
+ * `window` narrows the audience the same way the compose-time preview does,
+ * so the count the owner approved is the count actually enqueued. It is a
+ * call-time argument rather than a stored column because the window is
+ * time-dependent: persisting "in window" and enqueueing an hour later would
+ * store a selection that is already wrong.
+ */
+export async function enqueueBroadcast(
+  db: PrismaClient,
+  broadcastId: string,
+  opts: { window?: "in" | "out" } = {},
+): Promise<number> {
   const b = await db.broadcast.findUniqueOrThrow({ where: { id: broadcastId } });
 
   const contacts = await db.contact.findMany({
-    where: {
-      subscribed: true,
-      ...(b.filterTagIds.length
-        ? { tags: { some: { tagId: { in: b.filterTagIds } } } }
-        : {}),
-    },
+    where: audienceWhere({ tagIds: b.filterTagIds, window: opts.window }),
     select: { id: true },
   });
 
@@ -44,6 +52,73 @@ export async function enqueueBroadcast(db: PrismaClient, broadcastId: string): P
 
   await db.broadcast.update({ where: { id: b.id }, data: { status: "QUEUED" } });
   return contacts.length;
+}
+
+/**
+ * Who would actually receive this broadcast if it went out right now.
+ *
+ * `runBroadcast` already skips contacts outside the 24h window, but it does
+ * so while sending — the owner discovers that 900 of 1000 recipients were
+ * unreachable only in the report, after the broadcast is spent. This answers
+ * the same question BEFORE, at compose time.
+ *
+ * `inWindow` is a snapshot: the window keeps closing as time passes, so a
+ * broadcast composed now and sent in an hour will reach fewer people. That
+ * is why the number is labelled "agora" in the UI.
+ */
+export type WindowPreview = {
+  total: number;
+  inWindow: number;
+  outOfWindow: number;
+  /** True when most of the audience cannot be reached — worth a loud warning. */
+  mostlyOutOfWindow: boolean;
+};
+
+export type AudienceFilter = {
+  tagIds?: string[];
+  /** Restrict to contacts inside / outside the window. Undefined = both. */
+  window?: "in" | "out";
+};
+
+/** Prisma `where` for an audience selection. Shared so the preview counts
+ *  exactly the rows the send will later walk. */
+export function audienceWhere(filter: AudienceFilter, now = new Date()) {
+  const cutoff = new Date(now.getTime() - WINDOW_MS);
+  return {
+    subscribed: true,
+    ...(filter.tagIds?.length ? { tags: { some: { tagId: { in: filter.tagIds } } } } : {}),
+    ...(filter.window === "in" ? { lastInboundAt: { gt: cutoff } } : {}),
+    // Outside the window includes contacts who never wrote at all (null).
+    ...(filter.window === "out"
+      ? { OR: [{ lastInboundAt: null }, { lastInboundAt: { lte: cutoff } }] }
+      : {}),
+  };
+}
+
+/** Count how much of a prospective audience is reachable right now. */
+export async function previewAudience(
+  db: PrismaClient,
+  filter: AudienceFilter = {},
+  now = new Date(),
+): Promise<WindowPreview> {
+  // Ignore any window restriction for the totals — the preview's job is to
+  // report the split, so it must look at the whole tag-selected audience.
+  const base = audienceWhere({ tagIds: filter.tagIds }, now);
+
+  const [total, inWindow] = await Promise.all([
+    db.contact.count({ where: base }),
+    db.contact.count({
+      where: audienceWhere({ tagIds: filter.tagIds, window: "in" }, now),
+    }),
+  ]);
+
+  const outOfWindow = total - inWindow;
+  return {
+    total,
+    inWindow,
+    outOfWindow,
+    mostlyOutOfWindow: total > 0 && inWindow * 2 < total,
+  };
 }
 
 export type BroadcastReport = { sent: number; skipped: number; failed: number };

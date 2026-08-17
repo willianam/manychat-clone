@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { db } from "../../server/db";
 import { FlowGraph, validateGraph } from "../../lib/flow-schema";
 import { reindexGraph, starterGraph } from "../../lib/flow-edit";
+import { parseFlowFile } from "../../lib/flow-io";
 
 /**
  * Flow CRUD.
@@ -45,6 +46,42 @@ export async function createFlow(formData: FormData) {
 
   revalidatePath("/flows");
   redirect(`/flows/${flow.id}`);
+}
+
+/**
+ * Import a flow from an exported JSON file.
+ *
+ * Ids are re-issued exactly as in `duplicateFlow`: the file may well have come
+ * from this same database, and two flows sharing node ids make metrics and
+ * debugging ambiguous. Like a duplicate, an import never arrives enabled —
+ * you turn it on once you have looked at it.
+ *
+ * Returns the failure as a value instead of throwing, so the client can show a
+ * specific message ("não é um JSON válido", "falta o nó de entrada") rather
+ * than a generic server-error screen.
+ */
+export async function importFlow(
+  text: string,
+  nameOverride?: string,
+): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  const parsed = parseFlowFile(text);
+  if (!parsed.ok) return { ok: false, error: parsed.error };
+
+  const name = cleanName(nameOverride ?? null, parsed.file.name);
+
+  let graph;
+  try {
+    graph = assertRunnable(reindexGraph(parsed.file.graph));
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+
+  const flow = await db.flow.create({
+    data: { name, enabled: false, graph: graph as never },
+  });
+
+  revalidatePath("/flows");
+  return { ok: true, id: flow.id };
 }
 
 export async function renameFlow(formData: FormData) {

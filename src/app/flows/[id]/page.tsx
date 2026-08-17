@@ -3,6 +3,7 @@ import { db } from "../../../server/db";
 import { flowStats } from "../../../server/flow-metrics";
 import { FlowGraph } from "../../../lib/flow-schema";
 import { EditorShell } from "./EditorShell";
+import { ExportFlowButton } from "./ExportFlowButton";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +38,16 @@ export default async function FlowPage({ params }: { params: Promise<{ id: strin
             Duplo clique edita o texto. Selecione um bloco para abrir as
             propriedades. Os números aparecem depois que o fluxo roda.
           </p>
+        </div>
+
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          <Link
+            href={`/flows/${flow.id}/preview`}
+            className="rounded-lg border px-3 py-1 text-xs font-medium transition hover:bg-neutral-50"
+          >
+            Ver como conversa
+          </Link>
+          <ExportFlowButton name={flow.name} graph={graph} />
         </div>
       </div>
       <EditorShell flowId={flow.id} initial={graph} stats={stats} />

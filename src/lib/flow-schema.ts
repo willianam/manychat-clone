@@ -11,6 +11,10 @@ import { z } from "zod";
  *   quickreply— send text with tappable options, store the tapped one
  *   carousel  — horizontally scrolling cards, each with its own buttons
  *   image     — send an image, continue
+ *   video     — send a video, continue
+ *   audio     — send an audio clip, continue
+ *   file      — send a PDF, continue
+ *   album     — send up to 10 images as one multi-attachment message
  *   condition — branch on a context value; edges carry "true" / "false"
  *   delay     — pause, optionally only resuming inside an allowed hour window
  *   action    — add/remove tags and set fields without sending anything
@@ -37,6 +41,26 @@ export const LIMITS = {
   carouselButtons: 3,
   /** Plain message text. Meta counts BYTES, not characters. */
   messageText: 1000,
+  /**
+   * Media ceilings, in megabytes, from the Instagram messaging docs:
+   * image (PNG/JPEG) 8 MB; audio, video and file (PDF) 25 MB each.
+   *
+   * We cannot measure a remote file from the editor, so these are shown as
+   * guidance next to the URL field rather than enforced — the only honest
+   * option short of downloading every URL the user pastes.
+   */
+  imageMb: 8,
+  mediaMb: 25,
+  /** Attachments in one multi-attachment (album) message. */
+  albumImages: 10,
+} as const;
+
+/** File extensions Instagram accepts per media kind, for editor hints. */
+export const MEDIA_FORMATS = {
+  image: "PNG, JPEG",
+  video: "MP4, OGG, AVI, MOV, WEBM",
+  audio: "AAC, M4A, WAV, MP4",
+  file: "PDF",
 } as const;
 
 /**
@@ -60,6 +84,10 @@ export const NodeKind = z.enum([
   "quickreply",
   "carousel",
   "image",
+  "video",
+  "audio",
+  "file",
+  "album",
   "condition",
   "delay",
   "action",
@@ -145,6 +173,45 @@ const ImageData = z.object({
   caption: z.string().max(LIMITS.messageText).optional(),
 });
 
+/**
+ * Video, audio and file share one shape: a public https URL.
+ *
+ * They are separate kinds rather than one `media` kind with a type field
+ * because the canvas, the properties panel and the palette all need to say
+ * what the block *is* — "Vídeo" and "PDF" are different decisions to a person
+ * building a flow, even though the wire format differs only by one string.
+ *
+ * A caption is deliberately absent: unlike an image node (whose caption is
+ * only an inbox preview here), Instagram sends the attachment alone, so a
+ * caption would silently never ship.
+ */
+const VideoData = z.object({
+  kind: z.literal("video"),
+  url: z.string().url(),
+});
+
+const AudioData = z.object({
+  kind: z.literal("audio"),
+  url: z.string().url(),
+});
+
+/** Documents. Instagram accepts PDF only, so the schema says so. */
+const FileData = z.object({
+  kind: z.literal("file"),
+  url: z.string().url(),
+  /** Shown on the canvas so the block is identifiable without opening it. */
+  filename: z.string().max(120).optional(),
+});
+
+/**
+ * Album: up to ten images delivered as one message, via the `attachments`
+ * array rather than the singular `attachment` key.
+ */
+const AlbumData = z.object({
+  kind: z.literal("album"),
+  urls: z.array(z.string().url()).min(1).max(LIMITS.albumImages),
+});
+
 export const ConditionOp = z.enum([
   "equals",
   "contains",
@@ -221,6 +288,10 @@ export const FlowNodeData = z.discriminatedUnion("kind", [
   QuickReplyData,
   CarouselData,
   ImageData,
+  VideoData,
+  AudioData,
+  FileData,
+  AlbumData,
   ConditionData,
   DelayData,
   ActionData,
