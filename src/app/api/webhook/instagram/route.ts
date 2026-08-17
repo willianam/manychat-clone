@@ -7,6 +7,8 @@ import { tickDelayedSessions, runBroadcast } from "../../../../server/broadcast-
 
 export const runtime = "nodejs"; // crypto + Prisma need Node, not Edge
 export const dynamic = "force-dynamic";
+/** Meta retries past ~20s; stay under it. */
+export const maxDuration = 15;
 
 /** Meta's subscription handshake. */
 export async function GET(req: NextRequest) {
@@ -26,12 +28,22 @@ export async function POST(req: NextRequest) {
     return new NextResponse("Invalid signature", { status: 401 });
   }
 
-  // Ack immediately. Meta retries anything slower than ~20s, which would
-  // duplicate work; the dedup table below is the second line of defense.
   const payload = JSON.parse(raw) as MetaWebhook;
-  processPayload(payload)
-    .then(() => drainDueWork())
-    .catch((err) => console.error("[webhook] processing failed:", err));
+
+  // Must finish BEFORE responding. A serverless function is frozen the
+  // moment its response is sent, so fire-and-forget work is simply dropped
+  // — the handler would 200 and silently do nothing.
+  //
+  // Meta retries anything slower than ~20s. That is the real budget here:
+  // processPayload sends at most a few messages, and the WebhookEvent table
+  // makes a retry idempotent if we ever do overrun.
+  try {
+    await processPayload(payload);
+    await drainDueWork();
+  } catch (err) {
+    // Still ack: a 500 makes Meta retry a delivery we may have half-applied.
+    console.error("[webhook] processing failed:", err);
+  }
 
   return NextResponse.json({ received: true });
 }
