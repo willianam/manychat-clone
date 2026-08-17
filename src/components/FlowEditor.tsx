@@ -8,7 +8,7 @@ import ReactFlow, {
 } from "reactflow";
 import "reactflow/dist/style.css";
 import { FlowGraph, validateGraph, type FlowIssue, type FlowNodeData } from "../lib/flow-schema";
-import { pruneOrphanEdges, uid, withInlineText } from "../lib/flow-edit";
+import { duplicateNode, pruneOrphanEdges, uid, withInlineText } from "../lib/flow-edit";
 import type { FlowStats } from "../server/flow-metrics";
 import { nodeTypes } from "./nodes";
 import { PropertiesPanel } from "./PropertiesPanel";
@@ -126,6 +126,24 @@ export function FlowEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingPrune]);
 
+  /**
+   * Copy the selected block. The copy lands offset below-right and becomes
+   * the selection, so the next edit applies to it rather than the original.
+   */
+  const duplicate = useCallback(
+    (nodeId: string) => {
+      const next = duplicateNode(
+        { nodes: nodes as FlowGraph["nodes"], edges: edges as FlowGraph["edges"] },
+        nodeId,
+      );
+      const added = next.nodes[next.nodes.length - 1];
+      setNodes(next.nodes as Node[]);
+      if (added) setSelectedId(added.id);
+      setSavedAt(null);
+    },
+    [nodes, edges, setNodes],
+  );
+
   const deleteNode = useCallback(
     (nodeId: string) => {
       setNodes((ns) => ns.filter((n) => n.id !== nodeId));
@@ -188,6 +206,19 @@ export function FlowEditor({
    */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "d") {
+        const el0 = document.activeElement;
+        const typing =
+          el0 instanceof HTMLInputElement ||
+          el0 instanceof HTMLTextAreaElement ||
+          (el0 instanceof HTMLElement && el0.isContentEditable);
+        if (!typing && selectedId) {
+          e.preventDefault();
+          duplicate(selectedId);
+        }
+        return;
+      }
+
       if (e.key !== "Delete" && e.key !== "Backspace") return;
 
       // Never eat a keystroke aimed at a text field.
@@ -219,7 +250,7 @@ export function FlowEditor({
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [nodes, edges, selectedId, deleteNode, setEdges]);
+  }, [nodes, edges, selectedId, deleteNode, duplicate, setEdges]);
 
   // Strips display-only wiring before validating.
   const clean = useMemo(
@@ -299,7 +330,7 @@ export function FlowEditor({
             {nodes.length} {nodes.length === 1 ? "passo" : "passos"}
           </span>
           <span className="hidden text-xs text-neutral-400 sm:inline">
-            Duplo clique edita o texto · Delete remove o selecionado
+            Duplo clique edita o texto · ⌘D duplica · Delete remove
           </span>
           <div className="ml-auto flex items-center gap-3">
             {saveError && (
@@ -367,6 +398,7 @@ export function FlowEditor({
         node={selected}
         onChange={(data) => selected && updateNodeData(selected.id, data)}
         onDelete={() => selected && deleteNode(selected.id)}
+        onDuplicate={() => selected && duplicate(selected.id)}
         onClose={() => setSelectedId(null)}
       />
     </div>

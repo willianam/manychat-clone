@@ -159,10 +159,18 @@ export function starterGraph(): FlowGraph {
  * original — ids are only unique within a graph, but keeping them identical
  * across two flows makes metrics and debugging ambiguous.
  */
-export function reindexGraph(graph: FlowGraph): FlowGraph {
-  const nodeMap = new Map<string, string>();
-  const handleMap = new Map<string, string>();
-
+/**
+ * Give every id inside a node's data a fresh value.
+ *
+ * Button and quick-reply ids double as edge handles, so a copy that kept
+ * them would make two nodes claim the same handle — and an edge drawn from
+ * either would be ambiguous. `handleMap` records old→new so callers that
+ * also copy edges can repoint them.
+ */
+function reindexData(
+  data: FlowNodeData,
+  handleMap: Map<string, string>,
+): FlowNodeData {
   const remapButtons = (buttons: FlowButton[] | undefined): FlowButton[] | undefined =>
     buttons?.map((b) => {
       const next = uid("b");
@@ -170,30 +178,58 @@ export function reindexGraph(graph: FlowGraph): FlowGraph {
       return { ...b, id: next };
     });
 
+  if (data.kind === "quickreply") {
+    return {
+      ...data,
+      options: data.options.map((o) => {
+        const next = uid("o");
+        handleMap.set(o.id, next);
+        return { ...o, id: next };
+      }),
+    };
+  }
+  if (data.kind === "message") {
+    return { ...data, buttons: remapButtons(data.buttons) };
+  }
+  if (data.kind === "carousel") {
+    return {
+      ...data,
+      cards: data.cards.map((c) => ({ ...c, id: uid("c"), buttons: remapButtons(c.buttons) })),
+    };
+  }
+  return data;
+}
+
+/**
+ * Copy one node, placed just below-right of the original.
+ *
+ * Deliberately copies the node ALONE, with no edges. A duplicate that
+ * inherited the original's outgoing edges would silently double every
+ * message downstream — the contact would get the whole rest of the flow
+ * twice. The copy is a starting point to wire by hand.
+ */
+export function duplicateNode(graph: FlowGraph, nodeId: string): FlowGraph {
+  const source = graph.nodes.find((n) => n.id === nodeId);
+  if (!source) return graph;
+
+  const copy = {
+    ...source,
+    id: uid(source.type),
+    position: { x: source.position.x + 40, y: source.position.y + 60 },
+    data: reindexData(source.data, new Map()),
+  };
+
+  return { ...graph, nodes: [...graph.nodes, copy] };
+}
+
+export function reindexGraph(graph: FlowGraph): FlowGraph {
+  const nodeMap = new Map<string, string>();
+  const handleMap = new Map<string, string>();
+
   const nodes = graph.nodes.map((n) => {
     const nextId = uid(n.type);
     nodeMap.set(n.id, nextId);
-
-    let data = n.data;
-    if (data.kind === "quickreply") {
-      data = {
-        ...data,
-        options: data.options.map((o) => {
-          const next = uid("o");
-          handleMap.set(o.id, next);
-          return { ...o, id: next };
-        }),
-      };
-    } else if (data.kind === "message") {
-      data = { ...data, buttons: remapButtons(data.buttons) };
-    } else if (data.kind === "carousel") {
-      data = {
-        ...data,
-        cards: data.cards.map((c) => ({ ...c, id: uid("c"), buttons: remapButtons(c.buttons) })),
-      };
-    }
-
-    return { ...n, id: nextId, data };
+    return { ...n, id: nextId, data: reindexData(n.data, handleMap) };
   });
 
   const edges = graph.edges.map((e) => ({

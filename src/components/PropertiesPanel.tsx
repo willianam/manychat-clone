@@ -29,11 +29,13 @@ export function PropertiesPanel({
   node,
   onChange,
   onDelete,
+  onDuplicate,
   onClose,
 }: {
   node: Node | null;
   onChange: Update;
   onDelete: () => void;
+  onDuplicate?: () => void;
   onClose: () => void;
 }) {
   if (!node) return null;
@@ -46,6 +48,14 @@ export function PropertiesPanel({
           <h2 className="truncate text-sm font-semibold">{titleOf(data)}</h2>
           <p className="truncate font-mono text-[10px] text-neutral-400">{node.id}</p>
         </div>
+        {onDuplicate && (
+          <button
+            onClick={onDuplicate}
+            className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+          >
+            Duplicar bloco
+          </button>
+        )}
         <button
           onClick={onClose}
           aria-label="Fechar painel"

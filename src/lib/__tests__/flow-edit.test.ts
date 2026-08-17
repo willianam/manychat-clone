@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  duplicateNode,
   inlineLimitOf,
   inlineTextOf,
   pruneOrphanEdges,
@@ -231,5 +232,79 @@ describe("reindexGraph", () => {
     expect(newButtonId).not.toBe("btn-1");
     // The edge was rewritten to follow the button's new id.
     expect(copy.edges[0]!.sourceHandle).toBe(newButtonId);
+  });
+});
+
+describe("duplicateNode", () => {
+  const graph = FlowGraph.parse({
+    nodes: [
+      {
+        id: "m1", type: "message", position: { x: 100, y: 200 },
+        data: {
+          kind: "message", text: "Escolha:",
+          buttons: [
+            { type: "postback", id: "b1", title: "Sim" },
+            { type: "url", id: "b2", title: "Site", url: "https://x.com" },
+          ],
+        },
+      },
+      { id: "e1", type: "end", position: { x: 0, y: 400 }, data: { kind: "end" } },
+    ],
+    edges: [{ id: "ed1", source: "m1", target: "e1", sourceHandle: "b1" }],
+  });
+
+  it("adiciona um nó com id novo", () => {
+    const out = duplicateNode(graph, "m1");
+    expect(out.nodes).toHaveLength(3);
+    const copy = out.nodes[2]!;
+    expect(copy.id).not.toBe("m1");
+    expect(copy.data).toMatchObject({ kind: "message", text: "Escolha:" });
+  });
+
+  it("re-emite os ids dos botões, senão dois nós disputariam o mesmo handle", () => {
+    const copy = duplicateNode(graph, "m1").nodes[2]!;
+    const btns = (copy.data as { buttons: Array<{ id: string; title: string }> }).buttons;
+    expect(btns.map((b) => b.id)).not.toContain("b1");
+    expect(btns.map((b) => b.id)).not.toContain("b2");
+    // O conteúdo é preservado; só a identidade muda.
+    expect(btns.map((b) => b.title)).toEqual(["Sim", "Site"]);
+  });
+
+  it("não copia aresta nenhuma — herdar saídas duplicaria o fluxo inteiro", () => {
+    const out = duplicateNode(graph, "m1");
+    expect(out.edges).toEqual(graph.edges);
+  });
+
+  it("desloca a cópia para ela não ficar escondida sob a original", () => {
+    const copy = duplicateNode(graph, "m1").nodes[2]!;
+    expect(copy.position).toEqual({ x: 140, y: 260 });
+  });
+
+  it("re-emite ids de card e de opção também", () => {
+    const g = FlowGraph.parse({
+      nodes: [
+        { id: "c1", type: "carousel", position: { x: 0, y: 0 },
+          data: { kind: "carousel", cards: [
+            { id: "card1", title: "A", buttons: [{ type: "postback", id: "cb1", title: "Ok" }] },
+          ] } },
+        { id: "q1", type: "quickreply", position: { x: 0, y: 1 },
+          data: { kind: "quickreply", text: "?", saveAs: "k",
+                  options: [{ id: "o1", title: "Um" }] } },
+      ],
+      edges: [],
+    });
+
+    const card = duplicateNode(g, "c1").nodes[2]!
+      .data as { cards: Array<{ id: string; buttons: Array<{ id: string }> }> };
+    expect(card.cards[0]!.id).not.toBe("card1");
+    expect(card.cards[0]!.buttons[0]!.id).not.toBe("cb1");
+
+    const qr = duplicateNode(g, "q1").nodes[2]!
+      .data as { options: Array<{ id: string }> };
+    expect(qr.options[0]!.id).not.toBe("o1");
+  });
+
+  it("devolve o grafo intacto quando o nó não existe", () => {
+    expect(duplicateNode(graph, "fantasma")).toEqual(graph);
   });
 });
