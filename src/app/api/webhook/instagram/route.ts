@@ -3,6 +3,7 @@ import { db } from "../../../../server/db";
 import { verifySignature, verifyChallenge } from "../../../../lib/verify-signature";
 import { handleInboundMessage, handleComment } from "../../../../server/trigger-dispatch";
 import { fetchProfile } from "../../../../server/instagram";
+import { tickDelayedSessions, runBroadcast } from "../../../../server/broadcast-worker";
 
 export const runtime = "nodejs"; // crypto + Prisma need Node, not Edge
 export const dynamic = "force-dynamic";
@@ -28,7 +29,9 @@ export async function POST(req: NextRequest) {
   // Ack immediately. Meta retries anything slower than ~20s, which would
   // duplicate work; the dedup table below is the second line of defense.
   const payload = JSON.parse(raw) as MetaWebhook;
-  processPayload(payload).catch((err) => console.error("[webhook] processing failed:", err));
+  processPayload(payload)
+    .then(() => drainDueWork())
+    .catch((err) => console.error("[webhook] processing failed:", err));
 
   return NextResponse.json({ received: true });
 }
@@ -77,6 +80,34 @@ async function processPayload(payload: MetaWebhook): Promise<void> {
         username: v.from?.username,
       });
     }
+  }
+}
+
+/**
+ * Piggyback the background work onto webhook traffic.
+ *
+ * Vercel's Hobby plan allows only ONE cron run per day, so the minute-by-
+ * minute worker isn't available. Every inbound webhook is therefore also a
+ * chance to resume sessions whose delay elapsed and to push a queued
+ * broadcast forward. In practice a bot that receives messages drains its
+ * own backlog; the daily cron is the floor for a completely idle account.
+ *
+ * Failures here must never affect the webhook response — it already
+ * returned 200 by the time this runs.
+ */
+async function drainDueWork(): Promise<void> {
+  try {
+    await tickDelayedSessions(db);
+
+    const queued = await db.broadcast.findFirst({
+      where: {
+        status: { in: ["QUEUED", "SENDING"] },
+        OR: [{ scheduledAt: null }, { scheduledAt: { lte: new Date() } }],
+      },
+    });
+    if (queued) await runBroadcast(db, queued.id);
+  } catch (err) {
+    console.error("[webhook] background drain failed:", err);
   }
 }
 

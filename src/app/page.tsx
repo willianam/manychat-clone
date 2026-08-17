@@ -17,7 +17,8 @@ export default async function Home() {
     <main className="mx-auto max-w-6xl px-6 py-8">
       <h1 className="text-2xl font-semibold">Painel</h1>
       <p className="mt-1 text-sm text-neutral-600">
-        Dados do seed local em SQLite. Nada aqui fala com a Meta.
+        Conectado ao Postgres de produção. O envio de mensagens depende das
+        credenciais da Meta.
       </p>
 
       <div className="mt-6 grid grid-cols-2 gap-4 md:grid-cols-4">

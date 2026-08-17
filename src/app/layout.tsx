@@ -18,8 +18,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Link href="/contacts" className="text-sm text-neutral-600 hover:text-neutral-900">
               Contatos
             </Link>
-            <span className="ml-auto rounded-full bg-amber-100 px-3 py-1 text-xs text-amber-800">
-              preview local · sem conexão com a Meta
+            <span className="ml-auto rounded-full bg-emerald-100 px-3 py-1 text-xs text-emerald-800">
+              produção
             </span>
           </nav>
         </header>
