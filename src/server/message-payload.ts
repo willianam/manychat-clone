@@ -1,5 +1,5 @@
 import type { FlowButton, FlowNodeData, LIMITS as L } from "../lib/flow-schema";
-import { LIMITS } from "../lib/flow-schema";
+import { LIMITS, byteLength } from "../lib/flow-schema";
 
 /**
  * Translates flow nodes into Instagram message payloads.
@@ -12,6 +12,22 @@ import { LIMITS } from "../lib/flow-schema";
  * to pick the next node — which is why the format is fixed here as
  * `<nodeId>:<handle>` and parsed by `parsePostback`.
  */
+
+/**
+ * Cut a string to fit a byte budget without splitting a character.
+ *
+ * A naive slice on code units can cut an emoji in half and produce invalid
+ * UTF-8, which the Graph API rejects outright.
+ */
+export function truncateBytes(s: string, maxBytes: number): string {
+  if (byteLength(s) <= maxBytes) return s;
+  let out = "";
+  for (const ch of s) {
+    if (byteLength(out + ch) > maxBytes) break;
+    out += ch;
+  }
+  return out;
+}
 
 export function postbackPayload(nodeId: string, handle: string): string {
   return `${nodeId}:${handle}`;
@@ -42,7 +58,7 @@ export function buildMessage(
       type: "template",
       payload: {
         template_type: "button",
-        text: d.text.slice(0, LIMITS.buttonTemplateText),
+        text: truncateBytes(d.text, LIMITS.buttonTemplateText),
         buttons: d.buttons.slice(0, LIMITS.buttons).map((b) => toApiButton(b, nodeId)),
       },
     },
@@ -61,7 +77,7 @@ export function buildQuickReply(
     text: d.text,
     quick_replies: d.options.slice(0, LIMITS.quickReplies).map((o) => ({
       content_type: "text",
-      title: o.title.slice(0, LIMITS.quickReplyTitle),
+      title: truncateBytes(o.title, LIMITS.quickReplyTitle),
       payload: postbackPayload(nodeId, o.id),
     })),
   };

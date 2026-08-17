@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import crypto from "node:crypto";
 import { canSend, windowRemainingMs } from "../messaging-window";
 import { verifySignature, verifyChallenge } from "../verify-signature";
-import { validateGraph, findEntryNode, FlowGraph } from "../flow-schema";
+import { validateGraph, findEntryNode, FlowGraph, byteLength } from "../flow-schema";
+import { truncateBytes } from "../../server/message-payload";
 
 const now = new Date("2026-08-17T12:00:00Z");
 const hoursAgo = (h: number) => new Date(now.getTime() - h * 3_600_000);
@@ -118,5 +119,45 @@ describe("flow graph", () => {
       edges: [],
     };
     expect(FlowGraph.safeParse(bad).success).toBe(false);
+  });
+});
+
+describe("limites em bytes (não caracteres)", () => {
+  const long = "á".repeat(600) + "👋".repeat(100) + "x".repeat(200);
+
+  it("mede o comprimento em bytes UTF-8", () => {
+    expect(byteLength("abc")).toBe(3);
+    expect(byteLength("á")).toBe(2);
+    expect(byteLength("👋")).toBe(4);
+  });
+
+  it("rejeita texto que cabe em chars mas estoura em bytes", () => {
+    // 900 caracteres, 1800 bytes — passava antes da correção.
+    expect(long.length).toBeLessThanOrEqual(1000);
+    expect(byteLength(long)).toBeGreaterThan(1000);
+
+    const bad = FlowGraph.safeParse({
+      nodes: [{ id: "a", type: "message", position: { x: 0, y: 0 },
+                data: { kind: "message", text: long } }],
+      edges: [],
+    });
+    expect(bad.success).toBe(false);
+  });
+
+  it("aceita texto dentro do limite de bytes", () => {
+    const ok = FlowGraph.safeParse({
+      nodes: [{ id: "a", type: "message", position: { x: 0, y: 0 },
+                data: { kind: "message", text: "Olá! 👋" } }],
+      edges: [],
+    });
+    expect(ok.success).toBe(true);
+  });
+
+  it("trunca sem partir um caractere no meio", () => {
+    // Cortar 10 bytes de emojis de 4 bytes tem que parar em 8, não em 10.
+    const out = truncateBytes("👋👋👋", 10);
+    expect(byteLength(out)).toBeLessThanOrEqual(10);
+    expect([...out].length).toBe(2);
+    expect(out).toBe("👋👋");
   });
 });

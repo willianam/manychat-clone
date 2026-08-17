@@ -35,9 +35,24 @@ export const LIMITS = {
   /** Cards in a generic-template carousel, and buttons per card. */
   carouselCards: 10,
   carouselButtons: 3,
-  /** Plain message text. */
+  /** Plain message text. Meta counts BYTES, not characters. */
   messageText: 1000,
 } as const;
+
+/**
+ * Meta's text limits are in UTF-8 bytes, not characters.
+ *
+ * This matters in Portuguese: "á" costs 2 bytes and an emoji costs 4, so a
+ * message that looks like 900 characters can be 1800 bytes and get rejected
+ * at send time — after the flow already committed to it.
+ */
+export const byteLength = (s: string): number =>
+  typeof TextEncoder !== "undefined"
+    ? new TextEncoder().encode(s).length
+    : Buffer.byteLength(s, "utf8");
+
+/** Zod refinement: caps a string by its UTF-8 byte length. */
+const withinBytes = (limit: number) => (v: string) => byteLength(v) <= limit;
 
 export const NodeKind = z.enum([
   "message",
@@ -77,14 +92,18 @@ export type FlowButton = z.infer<typeof FlowButton>;
 
 const MessageData = z.object({
   kind: z.literal("message"),
-  text: z.string().min(1).max(LIMITS.messageText),
+  text: z.string().min(1).refine(withinBytes(LIMITS.messageText), {
+    message: `O texto passa de ${LIMITS.messageText} bytes (acentos contam 2, emoji 4).`,
+  }),
   /** With buttons the text goes through a button template, capped at 640. */
   buttons: z.array(FlowButton).max(LIMITS.buttons).optional(),
 });
 
 const QuestionData = z.object({
   kind: z.literal("question"),
-  text: z.string().min(1).max(LIMITS.messageText),
+  text: z.string().min(1).refine(withinBytes(LIMITS.messageText), {
+    message: `O texto passa de ${LIMITS.messageText} bytes (acentos contam 2, emoji 4).`,
+  }),
   /** Context key the reply is written to. */
   saveAs: z.string().regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/),
 });
@@ -98,7 +117,9 @@ const QuickReplyOption = z.object({
 
 const QuickReplyData = z.object({
   kind: z.literal("quickreply"),
-  text: z.string().min(1).max(LIMITS.messageText),
+  text: z.string().min(1).refine(withinBytes(LIMITS.messageText), {
+    message: `O texto passa de ${LIMITS.messageText} bytes (acentos contam 2, emoji 4).`,
+  }),
   saveAs: z.string().regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/),
   options: z.array(QuickReplyOption).min(1).max(LIMITS.quickReplies),
 });
@@ -332,10 +353,11 @@ export function validateGraph(graph: FlowGraph): FlowIssue[] {
     }
 
     if (d.kind === "message" && d.buttons?.length) {
-      if (d.text.length > LIMITS.buttonTemplateText) {
+      const bytes = byteLength(d.text);
+      if (bytes > LIMITS.buttonTemplateText) {
         issues.push({
           level: "error",
-          message: `Com botões, o texto cabe ${LIMITS.buttonTemplateText} caracteres — este tem ${d.text.length}.`,
+          message: `Com botões, o texto cabe ${LIMITS.buttonTemplateText} bytes — este tem ${bytes} (acentos contam 2, emoji 4).`,
         });
       }
     }
