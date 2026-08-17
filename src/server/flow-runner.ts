@@ -183,9 +183,10 @@ async function advance(
         preview: withText.text,
       });
 
-      // Buttons make this a branch point: the conversation waits for a tap
-      // rather than walking on, exactly like a question waits for text.
-      if (d.buttons?.some((b) => b.type === "postback")) {
+      // Buttons make this a branch point — unless a "Próximo Passo" edge
+      // exists, which is the path for someone who never taps.
+      const hasNext = nextOf(graph, node.id) !== null;
+      if (d.buttons?.some((b) => b.type === "postback") && !hasNext) {
         await db.flowSession.update({
           where: { id: session.id },
           data: { status: "WAITING_INPUT", currentNodeId: node.id, context: asJson(ctx) },
@@ -392,10 +393,20 @@ function hashToUnit(s: string): number {
   return ((h >>> 0) % 100000) / 100000;
 }
 
+/**
+ * Follow an edge out of a node.
+ *
+ * With no handle this takes the default "next" port — the path for a contact
+ * who ignored the buttons. A node may legitimately have both: three buttons
+ * AND a next step, and which one runs depends on what the person did.
+ */
 function nextOf(graph: FlowGraph, from: string, handle?: string): string | null {
-  const edge = graph.edges.find(
-    (e) => e.source === from && (handle === undefined || e.sourceHandle === handle),
-  );
+  if (handle !== undefined) {
+    return graph.edges.find((e) => e.source === from && e.sourceHandle === handle)?.target ?? null;
+  }
+  const edge =
+    graph.edges.find((e) => e.source === from && e.sourceHandle === "next") ??
+    graph.edges.find((e) => e.source === from && !e.sourceHandle);
   return edge?.target ?? null;
 }
 

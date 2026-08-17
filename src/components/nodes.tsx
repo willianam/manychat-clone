@@ -42,7 +42,7 @@ type WithStats = FlowNodeData & {
 };
 
 const SHELL =
-  "rounded-xl border bg-white shadow-sm dark:bg-neutral-900 dark:border-neutral-700 text-sm";
+  "rounded-xl border bg-white shadow-sm text-sm";
 
 /** Colored header strip, the way each node announces its kind. */
 function Head({ tone, label, right }: { tone: string; label: string; right?: React.ReactNode }) {
@@ -60,8 +60,8 @@ function Head({ tone, label, right }: { tone: string; label: string; right?: Rea
 function Stats({ s }: { s?: NodeStats }) {
   if (!s || s.sent === 0) return null;
   return (
-    <div className="flex gap-3 border-b px-2.5 py-1.5 text-center dark:border-neutral-700">
-      <Metric value={String(s.sent)} label="Enviado" tone="text-neutral-700 dark:text-neutral-200" />
+    <div className="flex gap-3 border-b px-2.5 py-1.5 text-center">
+      <Metric value={String(s.sent)} label="Enviado" tone="text-neutral-700" />
       {s.deliveredPct !== null && (
         <Metric value={`${s.deliveredPct}%`} label="Entregue" tone="text-emerald-600" />
       )}
@@ -83,7 +83,7 @@ function Metric({ value, label, tone }: { value: string; label: string; tone: st
 
 /** The message bubble look, as it appears in the DM. */
 const BUBBLE =
-  "whitespace-pre-wrap rounded-lg bg-neutral-100 px-2.5 py-1.5 text-[12px] leading-snug text-neutral-800 dark:bg-neutral-800 dark:text-neutral-100";
+  "whitespace-pre-wrap rounded-lg bg-neutral-100 px-2.5 py-1.5 text-[12px] leading-snug text-neutral-800";
 
 /**
  * A bubble whose text edits in place. The editing textarea carries its own
@@ -171,7 +171,7 @@ function EditableText({
           // Delete/Backspace inside the textarea must not delete the node.
           e.stopPropagation();
         }}
-        className="nodrag nowheel w-full resize-none rounded-lg border border-indigo-400 bg-white px-2.5 py-1.5 text-[12px] leading-snug outline-none dark:bg-neutral-800 dark:text-neutral-100"
+        className="nodrag nowheel w-full resize-none rounded-lg border border-indigo-400 bg-white px-2.5 py-1.5 text-[12px] leading-snug outline-none"
       />
     );
   }
@@ -207,7 +207,7 @@ function PortButton({
 }) {
   return (
     <div className="relative mt-1">
-      <div className="flex items-center justify-center gap-1 rounded-full border border-neutral-200 py-1 text-[12px] font-semibold text-indigo-600 dark:border-neutral-700">
+      <div className="flex items-center justify-center gap-1 rounded-full border border-neutral-200 py-1 text-[12px] font-semibold text-indigo-600">
         <span>{title}</span>
         {external && <span className="text-[10px]">↗</span>}
         {ctr !== undefined && ctr > 0 && (
@@ -237,7 +237,7 @@ export function MessageNode({ data }: NodeProps<WithStats>) {
   return (
     <div className={`${SHELL} w-[248px]`}>
       <Handle type="target" position={T} />
-      <Head tone="bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300" label="Enviar mensagem" />
+      <Head tone="bg-emerald-50 text-emerald-800 border-b border-emerald-100" label="Enviar mensagem" />
       <Stats s={s} />
       <div className="p-2.5">
         <EditableBubble text={d.text} onCommit={data._onText} max={inlineLimitOf(d)} />
@@ -251,7 +251,29 @@ export function MessageNode({ data }: NodeProps<WithStats>) {
           />
         ))}
       </div>
-      {postbacks.length === 0 && <Handle type="source" position={B} />}
+      <NextStep />
+    </div>
+  );
+}
+
+/**
+ * The "Próximo Passo" port.
+ *
+ * Every sending node has one, including nodes that also carry buttons. On a
+ * node with buttons this is the path taken when the contact taps nothing —
+ * without it a button-bearing node is a dead end for everyone who ignores
+ * the buttons, which is most people.
+ */
+function NextStep() {
+  return (
+    <div className="relative flex items-center justify-end gap-1.5 border-t border-neutral-100 px-2.5 py-1.5">
+      <span className="text-[10px] text-neutral-400">Próximo Passo</span>
+      <Handle
+        type="source"
+        position={Position.Right}
+        id="next"
+        className="!relative !right-0 !top-0 !h-2.5 !w-2.5 !transform-none !border-2 !border-white !bg-neutral-300"
+      />
     </div>
   );
 }
@@ -261,15 +283,15 @@ export function QuestionNode({ data }: NodeProps<WithStats>) {
   return (
     <div className={`${SHELL} w-[248px]`}>
       <Handle type="target" position={T} />
-      <Head tone="bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300" label="Perguntar" />
+      <Head tone="bg-amber-50 text-amber-800 border-b border-amber-100" label="Perguntar" />
       <Stats s={data._stats} />
       <div className="p-2.5">
         <EditableBubble text={d.text} onCommit={data._onText} max={inlineLimitOf(d)} />
-        <div className="mt-1.5 rounded border border-dashed border-neutral-300 px-2 py-1 text-[11px] text-neutral-500 dark:border-neutral-600">
+        <div className="mt-1.5 rounded border border-dashed border-neutral-300 px-2 py-1 text-[11px] text-neutral-500">
           resposta livre → <span className="font-mono">{d.saveAs}</span>
         </div>
       </div>
-      <Handle type="source" position={B} />
+      <NextStep />
     </div>
   );
 }
@@ -280,14 +302,14 @@ export function QuickReplyNode({ data }: NodeProps<WithStats>) {
   return (
     <div className={`${SHELL} w-[248px]`}>
       <Handle type="target" position={T} />
-      <Head tone="bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300" label="Resposta rápida" />
+      <Head tone="bg-amber-50 text-amber-800 border-b border-amber-100" label="Resposta rápida" />
       <Stats s={s} />
       <div className="p-2.5">
         <EditableBubble text={d.text} onCommit={data._onText} max={inlineLimitOf(d)} />
         <div className="mt-1.5 space-y-1">
           {d.options.map((o) => (
             <div key={o.id} className="relative">
-              <div className="inline-flex items-center gap-1 rounded-full border border-indigo-300 px-2.5 py-0.5 text-[11px] font-semibold text-indigo-600 dark:border-indigo-700">
+              <div className="inline-flex items-center gap-1 rounded-full border border-indigo-300 px-2.5 py-0.5 text-[11px] font-semibold text-indigo-600">
                 {o.title}
                 {s?.byHandle[o.id] ? (
                   <span className="text-[9px] font-medium text-neutral-400">{s.byHandle[o.id]}</span>
@@ -306,6 +328,7 @@ export function QuickReplyNode({ data }: NodeProps<WithStats>) {
           salva em <span className="font-mono">{d.saveAs}</span>
         </div>
       </div>
+      <NextStep />
     </div>
   );
 }
@@ -324,12 +347,12 @@ export function CarouselNode({ data, id }: NodeProps<WithStats>) {
     <div className={`${SHELL} ${open ? "w-[420px]" : "w-[248px]"}`}>
       <Handle type="target" position={T} />
       <Head
-        tone="bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300"
+        tone="bg-violet-50 text-violet-800 border-b border-violet-100"
         label={`Carrossel · ${d.cards.length} ${d.cards.length === 1 ? "card" : "cards"}`}
         right={
           <button
             onClick={() => setOpen((v) => !v)}
-            className="ml-auto rounded px-1 text-[13px] leading-none hover:bg-violet-100 dark:hover:bg-violet-900"
+            className="ml-auto rounded px-1 text-[13px] leading-none hover:bg-violet-100"
             aria-label={open ? "Recolher" : "Expandir"}
           >
             {open ? "⤡" : "⤢"}
@@ -342,10 +365,10 @@ export function CarouselNode({ data, id }: NodeProps<WithStats>) {
           {(open ? d.cards : d.cards.slice(0, 3)).map((c) => (
             <div
               key={c.id}
-              className={`shrink-0 overflow-hidden rounded-lg border dark:border-neutral-700 ${open ? "w-[128px]" : "w-[64px]"}`}
+              className={`shrink-0 overflow-hidden rounded-lg border ${open ? "w-[128px]" : "w-[64px]"}`}
             >
               <div
-                className={`flex items-center justify-center bg-neutral-100 text-[9px] text-neutral-400 dark:bg-neutral-800 ${open ? "h-[72px]" : "h-[40px]"}`}
+                className={`flex items-center justify-center bg-neutral-100 text-[9px] text-neutral-400 ${open ? "h-[72px]" : "h-[40px]"}`}
                 style={
                   c.imageUrl
                     ? { backgroundImage: `url(${c.imageUrl})`, backgroundSize: "cover", backgroundPosition: "center" }
@@ -361,7 +384,7 @@ export function CarouselNode({ data, id }: NodeProps<WithStats>) {
                     <div className="truncate px-1.5 pb-1 text-[10px] text-neutral-500">{c.subtitle}</div>
                   )}
                   {(c.buttons ?? []).map((b) => (
-                    <div key={b.id} className="relative border-t dark:border-neutral-700">
+                    <div key={b.id} className="relative border-t">
                       <div className="py-1 text-center text-[10px] font-semibold text-indigo-600">
                         {b.title}
                       </div>
@@ -384,9 +407,7 @@ export function CarouselNode({ data, id }: NodeProps<WithStats>) {
           )}
         </div>
       </div>
-      {!d.cards.some((c) => c.buttons?.some((b) => b.type === "postback")) && (
-        <Handle type="source" position={B} />
-      )}
+      <NextStep />
     </div>
   );
 }
@@ -396,11 +417,11 @@ export function ImageNode({ data }: NodeProps<WithStats>) {
   return (
     <div className={`${SHELL} w-[248px]`}>
       <Handle type="target" position={T} />
-      <Head tone="bg-sky-50 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300" label="Imagem" />
+      <Head tone="bg-sky-50 text-sky-800 border-b border-sky-100" label="Imagem" />
       <Stats s={data._stats} />
       <div className="p-2.5">
         <div
-          className="flex h-[86px] items-center justify-center rounded-lg bg-neutral-100 text-[10px] text-neutral-400 dark:bg-neutral-800"
+          className="flex h-[86px] items-center justify-center rounded-lg bg-neutral-100 text-[10px] text-neutral-400"
           style={{ backgroundImage: `url(${d.url})`, backgroundSize: "cover", backgroundPosition: "center" }}
         />
         <div className="mt-1.5 text-[11px] text-neutral-600">
@@ -427,10 +448,10 @@ export function ImageNode({ data }: NodeProps<WithStats>) {
  */
 function MediaCard({ icon, url, label }: { icon: string; url: string; label: string }) {
   return (
-    <div className="flex items-center gap-2 rounded-lg bg-neutral-100 px-2.5 py-2 dark:bg-neutral-800">
+    <div className="flex items-center gap-2 rounded-lg bg-neutral-100 px-2.5 py-2">
       <span className="text-[18px] leading-none">{icon}</span>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[11px] font-medium text-neutral-700 dark:text-neutral-200">
+        <div className="truncate text-[11px] font-medium text-neutral-700">
           {label}
         </div>
         <div className="truncate text-[9px] text-neutral-400" title={url}>
@@ -446,7 +467,7 @@ export function VideoNode({ data }: NodeProps<WithStats>) {
   return (
     <div className={`${SHELL} w-[248px]`}>
       <Handle type="target" position={T} />
-      <Head tone="bg-fuchsia-50 text-fuchsia-700 dark:bg-fuchsia-950/50 dark:text-fuchsia-300" label="Vídeo" />
+      <Head tone="bg-fuchsia-50 text-fuchsia-700" label="Vídeo" />
       <Stats s={data._stats} />
       <div className="p-2.5">
         <MediaCard icon="▶" url={d.url} label="Vídeo" />
@@ -461,7 +482,7 @@ export function AudioNode({ data }: NodeProps<WithStats>) {
   return (
     <div className={`${SHELL} w-[248px]`}>
       <Handle type="target" position={T} />
-      <Head tone="bg-cyan-50 text-cyan-700 dark:bg-cyan-950/50 dark:text-cyan-300" label="Áudio" />
+      <Head tone="bg-cyan-50 text-cyan-700" label="Áudio" />
       <Stats s={data._stats} />
       <div className="p-2.5">
         <MediaCard icon="♪" url={d.url} label="Áudio" />
@@ -476,7 +497,7 @@ export function FileNode({ data }: NodeProps<WithStats>) {
   return (
     <div className={`${SHELL} w-[248px]`}>
       <Handle type="target" position={T} />
-      <Head tone="bg-stone-100 text-stone-700 dark:bg-stone-800 dark:text-stone-300" label="PDF" />
+      <Head tone="bg-stone-100 text-stone-700" label="PDF" />
       <Stats s={data._stats} />
       <div className="p-2.5">
         <MediaCard icon="▤" url={d.url} label={d.filename ?? "Documento PDF"} />
@@ -493,7 +514,7 @@ export function AlbumNode({ data }: NodeProps<WithStats>) {
     <div className={`${SHELL} w-[248px]`}>
       <Handle type="target" position={T} />
       <Head
-        tone="bg-sky-50 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300"
+        tone="bg-sky-50 text-sky-800 border-b border-sky-100"
         label={`Álbum · ${d.urls.length} ${d.urls.length === 1 ? "imagem" : "imagens"}`}
       />
       <Stats s={data._stats} />
@@ -501,12 +522,12 @@ export function AlbumNode({ data }: NodeProps<WithStats>) {
         {d.urls.slice(0, 6).map((u, i) => (
           <div
             key={`${u}-${i}`}
-            className="h-[46px] rounded bg-neutral-100 dark:bg-neutral-800"
+            className="h-[46px] rounded bg-neutral-100"
             style={{ backgroundImage: `url(${u})`, backgroundSize: "cover", backgroundPosition: "center" }}
           />
         ))}
         {d.urls.length > 6 && (
-          <div className="flex h-[46px] items-center justify-center rounded bg-neutral-100 text-[10px] text-neutral-500 dark:bg-neutral-800">
+          <div className="flex h-[46px] items-center justify-center rounded bg-neutral-100 text-[10px] text-neutral-500">
             +{d.urls.length - 6}
           </div>
         )}
@@ -531,9 +552,9 @@ export function ConditionNode({ data }: NodeProps<WithStats>) {
   return (
     <div className={`${SHELL} w-[224px]`}>
       <Handle type="target" position={T} />
-      <Head tone="bg-teal-50 text-teal-700 dark:bg-teal-950/50 dark:text-teal-300" label="Condição" />
+      <Head tone="bg-cyan-50 text-cyan-800 border-b border-cyan-100" label="Condição" />
       <div className="p-2.5">
-        <div className="rounded border px-2 py-1 font-mono text-[11px] dark:border-neutral-700">
+        <div className="rounded border px-2 py-1 font-mono text-[11px]">
           {d.key} {d.op} {d.value ?? ""}
         </div>
         <div className="mt-2 flex justify-between text-[11px] font-semibold">
@@ -552,8 +573,8 @@ export function DelayNode({ data }: NodeProps<WithStats>) {
   return (
     <div className={`${SHELL} w-[224px]`}>
       <Handle type="target" position={T} />
-      <Head tone="bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300" label="Atraso inteligente" />
-      <div className="p-2.5 text-[12px] text-neutral-700 dark:text-neutral-200">
+      <Head tone="bg-rose-50 text-rose-800 border-b border-rose-100" label="Atraso inteligente" />
+      <div className="p-2.5 text-[12px] text-neutral-700">
         Aguarde <b>{humanize(d.seconds)}</b>
         {d.window && (
           <> e continue entre <b>{pad(d.window.fromHour)}:00–{pad(d.window.toHour)}:00</b></>
@@ -569,8 +590,8 @@ export function ActionNode({ data }: NodeProps<WithStats>) {
   return (
     <div className={`${SHELL} w-[224px]`}>
       <Handle type="target" position={T} />
-      <Head tone="bg-yellow-50 text-yellow-700 dark:bg-yellow-950/50 dark:text-yellow-300" label="Ações" />
-      <div className="space-y-0.5 p-2.5 text-[11px] text-neutral-700 dark:text-neutral-200">
+      <Head tone="bg-yellow-50 text-yellow-800 border-b border-yellow-100" label="Ações" />
+      <div className="space-y-0.5 p-2.5 text-[11px] text-neutral-700">
         {d.ops.map((o, i) => (
           <div key={i}>
             {o.op === "addTag" && <>+ tag <b>{o.tagName}</b></>}
@@ -590,11 +611,11 @@ export function RandomNode({ data }: NodeProps<WithStats>) {
   return (
     <div className={`${SHELL} w-[224px]`}>
       <Handle type="target" position={T} />
-      <Head tone="bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300" label="Randomizador" />
+      <Head tone="bg-slate-100 text-slate-700 border-b border-slate-200" label="Randomizador" />
       <div className="p-2.5">
         {d.weights.map((w, i) => (
           <div key={i} className="relative mt-1 flex items-center gap-2">
-            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-neutral-100 dark:bg-neutral-800">
+            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-neutral-100">
               <div className="h-full bg-slate-400" style={{ width: `${w}%` }} />
             </div>
             <span className="w-8 text-right text-[11px] tabular-nums text-neutral-500">{w}%</span>
@@ -617,7 +638,7 @@ export function TagNode({ data }: NodeProps<WithStats>) {
   return (
     <div className={`${SHELL} w-[224px]`}>
       <Handle type="target" position={T} />
-      <Head tone="bg-yellow-50 text-yellow-700 dark:bg-yellow-950/50 dark:text-yellow-300" label="Tag" />
+      <Head tone="bg-yellow-50 text-yellow-800 border-b border-yellow-100" label="Tag" />
       <div className="flex items-center gap-1 p-2.5 text-[12px]">
         <span>{d.action === "add" ? "+" : "−"}</span>
         <EditableText

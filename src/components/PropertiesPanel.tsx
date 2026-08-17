@@ -40,8 +40,8 @@ export function PropertiesPanel({
   const data = node.data as FlowNodeData;
 
   return (
-    <aside className="flex w-80 shrink-0 flex-col overflow-y-auto border-l bg-white dark:border-neutral-700 dark:bg-neutral-900">
-      <div className="flex items-center gap-2 border-b px-4 py-3 dark:border-neutral-700">
+    <aside className="flex w-80 shrink-0 flex-col overflow-y-auto border-l bg-white">
+      <div className="flex items-center gap-2 border-b px-4 py-3">
         <div className="min-w-0">
           <h2 className="truncate text-sm font-semibold">{titleOf(data)}</h2>
           <p className="truncate font-mono text-[10px] text-neutral-400">{node.id}</p>
@@ -49,7 +49,7 @@ export function PropertiesPanel({
         <button
           onClick={onClose}
           aria-label="Fechar painel"
-          className="ml-auto rounded px-1.5 py-0.5 text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+          className="ml-auto rounded px-1.5 py-0.5 text-neutral-400 hover:bg-neutral-100"
         >
           ✕
         </button>
@@ -59,10 +59,10 @@ export function PropertiesPanel({
         <Body data={data} onChange={onChange} />
       </div>
 
-      <div className="border-t p-4 dark:border-neutral-700">
+      <div className="border-t p-4">
         <button
           onClick={onDelete}
-          className="w-full rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-600 transition hover:bg-rose-50 dark:border-rose-900 dark:hover:bg-rose-950/40"
+          className="w-full rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-600 transition hover:bg-rose-50"
         >
           Excluir este bloco
         </button>
@@ -134,7 +134,7 @@ function Field({
 }
 
 const INPUT =
-  "mt-1 w-full rounded-lg border px-2.5 py-1.5 text-[13px] outline-none focus:border-indigo-400 dark:border-neutral-700 dark:bg-neutral-800";
+  "mt-1 w-full rounded-lg border px-2.5 py-1.5 text-[13px] outline-none focus:border-indigo-400";
 
 function TextInput({
   value,
@@ -245,7 +245,7 @@ function AddButton({
       <button
         onClick={onClick}
         disabled={disabled}
-        className="w-full rounded-lg border border-dashed px-3 py-1.5 text-[12px] font-medium text-neutral-600 transition hover:border-indigo-300 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-40 dark:border-neutral-700 dark:text-neutral-300"
+        className="w-full rounded-lg border border-dashed px-3 py-1.5 text-[12px] font-medium text-neutral-600 transition hover:border-indigo-300 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-40"
       >
         + {label}
       </button>
@@ -275,7 +275,7 @@ function RowTools({
   removeHint?: string;
 }) {
   const btn =
-    "rounded px-1.5 py-0.5 text-[11px] text-neutral-400 transition hover:bg-neutral-100 disabled:opacity-25 dark:hover:bg-neutral-800";
+    "rounded px-1.5 py-0.5 text-[11px] text-neutral-400 transition hover:bg-neutral-100 disabled:opacity-25";
   return (
     <div className="ml-auto flex items-center">
       <button onClick={onUp} disabled={!canUp} className={btn} aria-label="Mover para cima">
@@ -328,7 +328,7 @@ function ButtonList({
       {buttons.map((b, i) => (
         <div
           key={b.id}
-          className="rounded-lg border p-2 dark:border-neutral-700"
+          className="rounded-lg border p-2"
         >
           <div className="mb-1.5 flex items-center gap-1">
             <span className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
@@ -495,7 +495,7 @@ function QuickReplyProps({
 
         <div className="space-y-2">
           {opts.map((o, i) => (
-            <div key={o.id} className="rounded-lg border p-2 dark:border-neutral-700">
+            <div key={o.id} className="rounded-lg border p-2">
               <div className="mb-1 flex items-center gap-1">
                 <span className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
                   Opção {i + 1}
@@ -565,7 +565,7 @@ function CarouselProps({
 
       <div className="space-y-3">
         {cards.map((c, i) => (
-          <div key={c.id} className="rounded-lg border p-2.5 dark:border-neutral-700">
+          <div key={c.id} className="rounded-lg border p-2.5">
             <div className="mb-2 flex items-center gap-1">
               <span className="text-[10px] font-semibold uppercase tracking-wide text-violet-600">
                 Card {i + 1}
@@ -715,7 +715,7 @@ function MediaProps({
         </Field>
       )}
 
-      <p className="rounded-lg bg-neutral-50 px-2.5 py-2 text-[11px] text-neutral-500 dark:bg-neutral-800">
+      <p className="rounded-lg bg-neutral-50 px-2.5 py-2 text-[11px] text-neutral-500">
         O Instagram baixa o arquivo do endereço no momento do envio. Se o link
         sair do ar, o bloco falha — hospede em algum lugar estável.
       </p>
@@ -742,7 +742,7 @@ function AlbumProps({
 
       <div className="space-y-2">
         {urls.map((u, i) => (
-          <div key={i} className="rounded-lg border p-2 dark:border-neutral-700">
+          <div key={i} className="rounded-lg border p-2">
             <div className="mb-1 flex items-center gap-1">
               <span className="text-[10px] font-semibold uppercase tracking-wide text-sky-600">
                 Imagem {i + 1}
@@ -829,7 +829,7 @@ function ConditionProps({
         </Field>
       )}
 
-      <p className="rounded-lg bg-neutral-50 px-2.5 py-2 text-[11px] text-neutral-500 dark:bg-neutral-800">
+      <p className="rounded-lg bg-neutral-50 px-2.5 py-2 text-[11px] text-neutral-500">
         As duas saídas — <b className="text-emerald-600">sim</b> e{" "}
         <b className="text-rose-600">não</b> — precisam estar ligadas para salvar.
       </p>
@@ -878,8 +878,8 @@ function DelayProps({
             onClick={() => onChange({ ...data, seconds: p.seconds })}
             className={`rounded-full border px-2.5 py-0.5 text-[11px] transition ${
               data.seconds === p.seconds
-                ? "border-rose-300 bg-rose-50 text-rose-700 dark:bg-rose-950/40"
-                : "text-neutral-500 hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
+                ? "border-rose-300 bg-rose-50 text-rose-700"
+                : "text-neutral-500 hover:bg-neutral-50"
             }`}
           >
             {p.label}
@@ -991,7 +991,7 @@ function ActionProps({
 
       <div className="space-y-2">
         {ops.map((o, i) => (
-          <div key={i} className="rounded-lg border p-2 dark:border-neutral-700">
+          <div key={i} className="rounded-lg border p-2">
             <div className="mb-1.5 flex items-center gap-1">
               <span className="text-[10px] font-semibold uppercase tracking-wide text-yellow-700">
                 Ação {i + 1}
@@ -1129,21 +1129,21 @@ function RandomProps({
       <div className="flex gap-2">
         <button
           onClick={() => onChange({ ...data, weights: balance(w.length) })}
-          className="flex-1 rounded-lg border px-2 py-1 text-[11px] dark:border-neutral-700"
+          className="flex-1 rounded-lg border px-2 py-1 text-[11px]"
         >
           Equilibrar
         </button>
         <button
           onClick={() => onChange({ ...data, weights: balance(w.length + 1) })}
           disabled={w.length >= 4}
-          className="flex-1 rounded-lg border px-2 py-1 text-[11px] disabled:opacity-40 dark:border-neutral-700"
+          className="flex-1 rounded-lg border px-2 py-1 text-[11px] disabled:opacity-40"
         >
           + Saída
         </button>
         <button
           onClick={() => onChange({ ...data, weights: balance(w.length - 1) })}
           disabled={w.length <= 2}
-          className="flex-1 rounded-lg border px-2 py-1 text-[11px] disabled:opacity-40 dark:border-neutral-700"
+          className="flex-1 rounded-lg border px-2 py-1 text-[11px] disabled:opacity-40"
         >
           − Saída
         </button>
@@ -1162,7 +1162,7 @@ function TagProps({
 }) {
   return (
     <>
-      <p className="rounded-lg bg-amber-50 px-2.5 py-2 text-[11px] text-amber-700 dark:bg-amber-950/30">
+      <p className="rounded-lg bg-amber-50 px-2.5 py-2 text-[11px] text-amber-700">
         Bloco antigo, mantido para os fluxos que já o usam. Em blocos novos,
         prefira <b>Ações</b>.
       </p>

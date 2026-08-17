@@ -317,6 +317,7 @@ export const FlowEdge = z.object({
    *   condition → "true" | "false"
    *   random    → "0" | "1" | …
    *   buttons / quick replies → the option's id
+   *   default path → "next" (taken when the contact taps nothing)
    *   everything else → absent
    */
   sourceHandle: z.string().nullish(),
@@ -446,7 +447,8 @@ export function validateGraph(graph: FlowGraph): FlowIssue[] {
       continue;
     }
 
-    // Everything else: a node with no way out silently ends the conversation.
+    // A node with no way out — by button or by default path — silently ends
+    // the conversation.
     if (d.kind !== "end" && out.length === 0) {
       issues.push({
         level: "warning",

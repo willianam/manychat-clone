@@ -267,8 +267,8 @@ export function FlowEditor({
     <div className="flex h-[calc(100vh-4rem)]">
       {/* side panel — how a step gets added */}
       {panel && (
-        <aside className="w-64 shrink-0 overflow-y-auto border-r bg-white dark:bg-neutral-900 dark:border-neutral-700">
-          <div className="border-b px-4 py-3 dark:border-neutral-700">
+        <aside className="w-64 shrink-0 overflow-y-auto border-r bg-white">
+          <div className="border-b px-4 py-3">
             <h2 className="text-sm font-semibold">Adicionar bloco</h2>
             <p className="mt-0.5 text-xs text-neutral-500">Clique para inserir no fluxo</p>
           </div>
@@ -277,7 +277,7 @@ export function FlowEditor({
               <button
                 key={b.kind}
                 onClick={() => addNode(b.kind)}
-                className="w-full rounded-lg border border-transparent px-3 py-2 text-left transition hover:border-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-800 dark:hover:border-neutral-700"
+                className="w-full rounded-lg border border-transparent px-3 py-2 text-left transition hover:border-neutral-200 hover:bg-neutral-50"
               >
                 <div className={`text-[13px] font-semibold ${b.tone}`}>{b.label}</div>
                 <div className="text-[11px] leading-tight text-neutral-500">{b.hint}</div>
@@ -288,10 +288,10 @@ export function FlowEditor({
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex items-center gap-2 border-b px-3 py-2 dark:border-neutral-700">
+        <div className="flex items-center gap-2 border-b px-3 py-2">
           <button
             onClick={() => setPanel((v) => !v)}
-            className="rounded border px-2 py-1 text-xs dark:border-neutral-700"
+            className="rounded border px-2 py-1 text-xs"
           >
             {panel ? "◀" : "▶"} Blocos
           </button>
@@ -326,9 +326,9 @@ export function FlowEditor({
         </div>
 
         {issues.length > 0 && (
-          <ul className="max-h-24 overflow-y-auto border-b bg-amber-50 px-4 py-1.5 text-[11px] dark:bg-amber-950/30 dark:border-neutral-700">
+          <ul className="max-h-24 overflow-y-auto border-b bg-amber-50 px-4 py-1.5 text-[11px]">
             {issues.map((i, n) => (
-              <li key={n} className={i.level === "error" ? "text-rose-700 dark:text-rose-400" : "text-amber-700 dark:text-amber-400"}>
+              <li key={n} className={i.level === "error" ? "text-rose-700" : "text-amber-700"}>
                 {i.level === "error" ? "✗" : "⚠"} {i.message}
               </li>
             ))}
