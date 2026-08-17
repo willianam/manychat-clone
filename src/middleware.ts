@@ -12,7 +12,11 @@ import { NextRequest, NextResponse } from "next/server";
  * itself, because Vercel Cron cannot send a cookie.
  */
 
-const PUBLIC_PREFIXES = ["/api/webhook", "/api/cron", "/login", "/_next", "/favicon"];
+// Meta fetches /privacidade unauthenticated while reviewing the app, so a
+// login wall there reads as a missing policy and blocks publishing.
+const PUBLIC_PREFIXES = [
+  "/api/webhook", "/api/cron", "/login", "/privacidade", "/_next", "/favicon",
+];
 const COOKIE = "mc_auth";
 
 export function middleware(req: NextRequest) {
