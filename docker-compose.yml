@@ -1,0 +1,61 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: manychat-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: manychat
+      POSTGRES_PASSWORD: manychat
+      POSTGRES_DB: manychat
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # The app's migrate step fails noisily if it starts before Postgres
+      # accepts connections, so gate it on a real readiness probe.
+      test: ["CMD-SHELL", "pg_isready -U manychat -d manychat"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: manychat-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://manychat:manychat@db:5432/manychat
+      IG_APP_SECRET: ${IG_APP_SECRET}
+      IG_VERIFY_TOKEN: ${IG_VERIFY_TOKEN}
+      IG_PAGE_ACCESS_TOKEN: ${IG_PAGE_ACCESS_TOKEN}
+      GRAPH_API_VERSION: ${GRAPH_API_VERSION:-v21.0}
+      BROADCAST_RATE: ${BROADCAST_RATE:-5}
+    ports:
+      - "3000:3000"
+    command: sh -c "npx prisma migrate deploy && npm run start"
+
+  # Resumes delay nodes and drains queued broadcasts. Separate from the web
+  # process so a long broadcast can't block webhook acks.
+  worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: manychat-worker
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://manychat:manychat@db:5432/manychat
+      IG_PAGE_ACCESS_TOKEN: ${IG_PAGE_ACCESS_TOKEN}
+      GRAPH_API_VERSION: ${GRAPH_API_VERSION:-v21.0}
+      BROADCAST_RATE: ${BROADCAST_RATE:-5}
+    command: npm run worker
+
+volumes:
+  pgdata:

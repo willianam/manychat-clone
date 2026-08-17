@@ -1,0 +1,325 @@
+openapi: 3.1.0
+info:
+  title: ManyChat Clone — Instagram DM Automation
+  version: 0.1.0
+  description: >
+    Personal Instagram DM automation. The webhook endpoints are called by
+    Meta; everything under /api/admin is the local cockpit and assumes the
+    app is bound to localhost (no auth layer — do not expose it publicly).
+
+servers:
+  - url: http://localhost:3000
+    description: Local Docker
+
+tags:
+  - name: webhook
+    description: Called by Meta. Signature-verified.
+  - name: contacts
+  - name: flows
+  - name: broadcasts
+
+paths:
+  /api/webhook/instagram:
+    get:
+      tags: [webhook]
+      summary: Subscription handshake
+      description: >
+        Meta calls this once when you save the callback URL. Echoes
+        hub.challenge when hub.verify_token matches IG_VERIFY_TOKEN.
+      parameters:
+        - { in: query, name: hub.mode, schema: { type: string }, example: subscribe }
+        - { in: query, name: hub.verify_token, schema: { type: string } }
+        - { in: query, name: hub.challenge, schema: { type: string } }
+      responses:
+        "200":
+          description: Challenge echoed
+          content:
+            text/plain:
+              schema: { type: string }
+        "403": { description: Token mismatch }
+    post:
+      tags: [webhook]
+      summary: Receive messages and comments
+      description: >
+        Verified with HMAC-SHA256 over the raw body. Returns 200 immediately
+        and processes asynchronously — Meta retries anything slower than
+        ~20s. Deliveries are deduped by message id / comment id.
+      parameters:
+        - in: header
+          name: x-hub-signature-256
+          required: true
+          schema: { type: string }
+          example: sha256=8f2a...
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MetaWebhookPayload" }
+      responses:
+        "200":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { received: { type: boolean } }
+        "401": { description: Invalid or missing signature }
+
+  /api/admin/contacts:
+    get:
+      tags: [contacts]
+      summary: List contacts
+      parameters:
+        - { in: query, name: tag, schema: { type: string } }
+        - { in: query, name: subscribed, schema: { type: boolean } }
+        - { in: query, name: take, schema: { type: integer, default: 50, maximum: 200 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Contact" }
+
+  /api/admin/contacts/{id}/tags:
+    post:
+      tags: [contacts]
+      summary: Add a tag
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tagName]
+              properties: { tagName: { type: string } }
+      responses:
+        "200": { description: Tag applied }
+        "404": { description: Contact not found }
+
+  /api/admin/flows:
+    get:
+      tags: [flows]
+      summary: List flows
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Flow" }
+    post:
+      tags: [flows]
+      summary: Create a flow
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, graph]
+              properties:
+                name: { type: string }
+                graph: { $ref: "#/components/schemas/FlowGraph" }
+      responses:
+        "201": { description: Created }
+        "422": { description: Graph failed structural validation }
+
+  /api/admin/flows/{id}:
+    put:
+      tags: [flows]
+      summary: Update a flow graph
+      description: >
+        Rejects a graph with structural errors (dangling edge, condition
+        missing a branch, no entry node) so a live conversation can't be
+        stranded mid-run.
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                enabled: { type: boolean }
+                graph: { $ref: "#/components/schemas/FlowGraph" }
+      responses:
+        "200": { description: Saved }
+        "422":
+          description: Validation failed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  issues:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        level: { type: string, enum: [error, warning] }
+                        message: { type: string }
+
+  /api/admin/broadcasts:
+    post:
+      tags: [broadcasts]
+      summary: Create and queue a broadcast
+      description: >
+        Queues immediately unless scheduledAt is set. The worker drains the
+        queue at BROADCAST_RATE messages per second and skips recipients
+        outside the 24h window rather than burning API calls on them.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, text]
+              properties:
+                name: { type: string }
+                text: { type: string, maxLength: 1000 }
+                filterTagIds:
+                  type: array
+                  items: { type: string }
+                scheduledAt: { type: string, format: date-time }
+      responses:
+        "201":
+          description: Queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  queued: { type: integer, description: Recipients enqueued }
+
+  /api/admin/broadcasts/{id}:
+    get:
+      tags: [broadcasts]
+      summary: Broadcast status and delivery report
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [DRAFT, QUEUED, SENDING, DONE, FAILED]
+                  sent: { type: integer }
+                  skipped:
+                    type: integer
+                    description: Outside the messaging window
+                  failed: { type: integer }
+
+components:
+  schemas:
+    Contact:
+      type: object
+      properties:
+        id: { type: string }
+        igScopedId: { type: string }
+        username: { type: string, nullable: true }
+        name: { type: string, nullable: true }
+        lastInboundAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Start of the 24h messaging window.
+        subscribed: { type: boolean }
+        tags:
+          type: array
+          items: { type: string }
+
+    Flow:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        enabled: { type: boolean }
+        graph: { $ref: "#/components/schemas/FlowGraph" }
+
+    FlowGraph:
+      type: object
+      required: [nodes, edges]
+      description: React Flow document, persisted verbatim.
+      properties:
+        nodes:
+          type: array
+          items:
+            type: object
+            required: [id, type, position, data]
+            properties:
+              id: { type: string }
+              type:
+                type: string
+                enum: [message, question, condition, delay, tag, end]
+              position:
+                type: object
+                properties: { x: { type: number }, y: { type: number } }
+              data:
+                type: object
+                description: Discriminated on `kind`; see lib/flow-schema.ts.
+        edges:
+          type: array
+          items:
+            type: object
+            required: [id, source, target]
+            properties:
+              id: { type: string }
+              source: { type: string }
+              target: { type: string }
+              sourceHandle:
+                type: string
+                nullable: true
+                description: '"true" / "false" on condition nodes.'
+
+    MetaWebhookPayload:
+      type: object
+      properties:
+        object: { type: string, example: instagram }
+        entry:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              messaging:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    sender:
+                      type: object
+                      properties: { id: { type: string, description: IGSID } }
+                    message:
+                      type: object
+                      properties:
+                        mid: { type: string }
+                        text: { type: string }
+                        is_echo: { type: boolean }
+              changes:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    field: { type: string, example: comments }
+                    value:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        text: { type: string }
+                        media:
+                          type: object
+                          properties: { id: { type: string } }
+                        from:
+                          type: object
+                          properties:
+                            id: { type: string }
+                            username: { type: string }

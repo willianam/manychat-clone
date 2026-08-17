@@ -1,0 +1,229 @@
+// ManyChat clone — Instagram DM automation
+// Postgres via Prisma. Conversation state is per-contact and durable.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  // Pooled connection for the app: serverless opens one per invocation.
+  url       = env("DATABASE_URL")
+  // Direct connection for Migrate — migrations can't run through a pooler.
+  directUrl = env("DIRECT_URL")
+}
+
+/// An Instagram user who has messaged us. `igScopedId` is the IGSID the
+/// Graph API sends on every webhook — stable per (user, app) pair.
+model Contact {
+  id         String  @id @default(cuid())
+  igScopedId String  @unique
+  username   String?
+  name       String?
+  profilePic String?
+
+  /// Last inbound message time. The Meta 24h messaging window is measured
+  /// from this instant — see lib/messaging-window.ts. Null means we have
+  /// never received a message and may only send via a valid tag.
+  lastInboundAt DateTime?
+
+  subscribed Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tags          ContactTag[]
+  messages      Message[]
+  flowSessions  FlowSession[]
+  broadcastJobs BroadcastRecipient[]
+  fields        ContactField[]
+
+  @@index([lastInboundAt])
+  @@index([subscribed])
+}
+
+/// Arbitrary key/value captured during flows (e.g. answers to questions).
+model ContactField {
+  id        String   @id @default(cuid())
+  contactId String
+  key       String
+  value     String
+  updatedAt DateTime @updatedAt
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([contactId, key])
+}
+
+model Tag {
+  id        String       @id @default(cuid())
+  name      String       @unique
+  color     String       @default("#6366f1")
+  createdAt DateTime     @default(now())
+  contacts  ContactTag[]
+}
+
+model ContactTag {
+  contactId String
+  tagId     String
+  addedAt   DateTime @default(now())
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tag     Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([contactId, tagId])
+  @@index([tagId])
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageStatus {
+  PENDING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+model Message {
+  id        String           @id @default(cuid())
+  contactId String
+  direction MessageDirection
+  text      String?
+  payload   Json?
+  status    MessageStatus    @default(PENDING)
+  error     String?
+
+  /// Meta's message id (mid). Unique so replayed webhooks are idempotent.
+  externalId String? @unique
+
+  createdAt DateTime @default(now())
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([contactId, createdAt])
+}
+
+/// A conversational flow. `graph` holds the React Flow document
+/// ({nodes, edges}) — see lib/flow-schema.ts for the validated shape.
+model Flow {
+  id        String   @id @default(cuid())
+  name      String
+  enabled   Boolean  @default(false)
+  graph     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  triggers Trigger[]
+  sessions FlowSession[]
+}
+
+enum TriggerKind {
+  KEYWORD
+  COMMENT
+  STORY_REPLY
+  DEFAULT
+}
+
+enum MatchMode {
+  EXACT
+  CONTAINS
+  REGEX
+}
+
+model Trigger {
+  id       String      @id @default(cuid())
+  flowId   String
+  kind     TriggerKind
+  /// For KEYWORD/COMMENT: the term to match. Ignored for DEFAULT.
+  pattern  String?
+  match    MatchMode   @default(CONTAINS)
+  /// Restricts a COMMENT trigger to one IG media id. Null = any post.
+  mediaId  String?
+  enabled  Boolean     @default(true)
+  /// Higher wins when several triggers match the same input.
+  priority Int         @default(0)
+
+  flow Flow @relation(fields: [flowId], references: [id], onDelete: Cascade)
+
+  @@index([kind, enabled])
+}
+
+enum SessionStatus {
+  ACTIVE
+  WAITING_INPUT
+  COMPLETED
+  ABANDONED
+}
+
+/// Durable per-contact execution state. Survives restarts: the runner
+/// resumes from `currentNodeId`.
+model FlowSession {
+  id            String        @id @default(cuid())
+  flowId        String
+  contactId     String
+  currentNodeId String?
+  status        SessionStatus @default(ACTIVE)
+  /// Variables accumulated during this run (user answers, computed values).
+  context       Json          @default("{}")
+  /// Set when a node is waiting on a delay; the worker picks it up after this.
+  resumeAt      DateTime?
+  startedAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  flow    Flow    @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([contactId, flowId, status])
+  @@index([status, resumeAt])
+}
+
+enum BroadcastStatus {
+  DRAFT
+  QUEUED
+  SENDING
+  DONE
+  FAILED
+}
+
+model Broadcast {
+  id           String          @id @default(cuid())
+  name         String
+  text         String
+  status       BroadcastStatus @default(DRAFT)
+  /// Tag ids the recipient must have. Empty = everyone subscribed.
+  filterTagIds String[]        @default([])
+  scheduledAt  DateTime?
+  createdAt    DateTime        @default(now())
+
+  recipients BroadcastRecipient[]
+}
+
+model BroadcastRecipient {
+  id          String        @id @default(cuid())
+  broadcastId String
+  contactId   String
+  status      MessageStatus @default(PENDING)
+  error       String?
+  sentAt      DateTime?
+
+  broadcast Broadcast @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
+  contact   Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([broadcastId, contactId])
+  @@index([status])
+}
+
+/// Dedup guard for Meta webhook replays. Meta retries aggressively; we
+/// record every delivery id and skip ones already seen.
+model WebhookEvent {
+  id         String   @id @default(cuid())
+  externalId String   @unique
+  kind       String
+  raw        Json
+  receivedAt DateTime @default(now())
+
+  @@index([receivedAt])
+}
