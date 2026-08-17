@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { db } from "../../../server/db";
 import { flowStats } from "../../../server/flow-metrics";
 import { FlowGraph } from "../../../lib/flow-schema";
@@ -15,11 +16,28 @@ export default async function FlowPage({ params }: { params: Promise<{ id: strin
 
   return (
     <main>
-      <div className="border-b bg-white px-6 py-3">
-        <h1 className="font-medium">{flow.name}</h1>
-        <p className="text-xs text-neutral-500">
-          Arraste os nós e ligue as saídas. Os números aparecem depois que o fluxo roda.
-        </p>
+      <div className="flex items-center gap-3 border-b bg-white px-6 py-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <Link href="/flows" className="text-xs text-neutral-500 hover:underline">
+              ← Fluxos
+            </Link>
+            <h1 className="truncate font-medium">{flow.name}</h1>
+            <span
+              className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                flow.enabled
+                  ? "bg-emerald-50 text-emerald-700"
+                  : "bg-neutral-100 text-neutral-500"
+              }`}
+            >
+              {flow.enabled ? "ativo" : "pausado"}
+            </span>
+          </div>
+          <p className="text-xs text-neutral-500">
+            Duplo clique edita o texto. Selecione um bloco para abrir as
+            propriedades. Os números aparecem depois que o fluxo roda.
+          </p>
+        </div>
       </div>
       <EditorShell flowId={flow.id} initial={graph} stats={stats} />
     </main>

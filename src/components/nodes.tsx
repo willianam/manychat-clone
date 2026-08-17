@@ -1,8 +1,9 @@
 "use client";
 
 import { Handle, Position, type NodeProps } from "reactflow";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FlowNodeData } from "../lib/flow-schema";
+import { inlineLimitOf } from "../lib/flow-edit";
 import type { NodeStats } from "../server/flow-metrics";
 
 /**
@@ -19,9 +20,26 @@ import type { NodeStats } from "../server/flow-metrics";
  *     in place means you spot where a flow leaks without opening a report.
  *
  * Stats arrive through node data as `_stats`, injected by the editor.
+ *
+ * Editing works in two places, split by what the edit can break:
+ *
+ *  - **Text, inline.** Double-click the bubble and type. This is the edit you
+ *    make constantly, and it cannot invalidate the graph — no id moves, no
+ *    output appears or disappears.
+ *
+ *  - **Structure, in the properties panel.** Adding a button or removing a
+ *    quick reply changes the node's outputs, which changes which edges are
+ *    still legal. That belongs somewhere with room to explain itself.
+ *
+ * The commit callback rides in node data as `_onText`, injected by the editor
+ * the same way `_stats` is.
  */
 
-type WithStats = FlowNodeData & { _stats?: NodeStats };
+type WithStats = FlowNodeData & {
+  _stats?: NodeStats;
+  /** Commit an inline text edit for this node. Absent = read-only canvas. */
+  _onText?: (text: string) => void;
+};
 
 const SHELL =
   "rounded-xl border bg-white shadow-sm dark:bg-neutral-900 dark:border-neutral-700 text-sm";
@@ -63,11 +81,114 @@ function Metric({ value, label, tone }: { value: string; label: string; tone: st
   );
 }
 
-/** A message bubble, drawn as it appears in the DM. */
-function Bubble({ children }: { children: React.ReactNode }) {
+/** The message bubble look, as it appears in the DM. */
+const BUBBLE =
+  "whitespace-pre-wrap rounded-lg bg-neutral-100 px-2.5 py-1.5 text-[12px] leading-snug text-neutral-800 dark:bg-neutral-800 dark:text-neutral-100";
+
+/**
+ * A bubble whose text edits in place. The editing textarea carries its own
+ * padding, so the bubble chrome applies only in display mode — otherwise the
+ * text jumps as you enter and leave edit mode.
+ */
+function EditableBubble({
+  text,
+  onCommit,
+  max,
+}: {
+  text: string;
+  onCommit?: (t: string) => void;
+  max: number;
+}) {
+  return <EditableText value={text} onCommit={onCommit} max={max} className={BUBBLE} />;
+}
+
+/**
+ * Text that becomes a textarea on double-click.
+ *
+ * Enter commits, Shift+Enter adds a newline, Esc restores the original, blur
+ * commits. `nodrag`/`nowheel` keep React Flow from stealing the pointer while
+ * you are selecting text inside the node.
+ */
+function EditableText({
+  value,
+  onCommit,
+  max,
+  placeholder,
+  className,
+}: {
+  value: string;
+  onCommit?: (text: string) => void;
+  max: number;
+  placeholder?: string;
+  className?: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  // Re-sync when the panel edits the same field we are mirroring.
+  useEffect(() => {
+    if (!editing) setDraft(value);
+  }, [value, editing]);
+
+  useEffect(() => {
+    if (!editing) return;
+    const el = ref.current;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+  }, [editing]);
+
+  const commit = () => {
+    setEditing(false);
+    const next = draft.trim();
+    // An empty message would fail schema validation; treat it as a cancel.
+    if (next === "" || next === value) {
+      setDraft(value);
+      return;
+    }
+    onCommit?.(next);
+  };
+
+  if (editing) {
+    return (
+      <textarea
+        ref={ref}
+        value={draft}
+        maxLength={max}
+        rows={Math.min(8, Math.max(2, draft.split("\n").length + 1))}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            commit();
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            setDraft(value);
+            setEditing(false);
+          }
+          // Delete/Backspace inside the textarea must not delete the node.
+          e.stopPropagation();
+        }}
+        className="nodrag nowheel w-full resize-none rounded-lg border border-indigo-400 bg-white px-2.5 py-1.5 text-[12px] leading-snug outline-none dark:bg-neutral-800 dark:text-neutral-100"
+      />
+    );
+  }
+
   return (
-    <div className="whitespace-pre-wrap rounded-lg bg-neutral-100 px-2.5 py-1.5 text-[12px] leading-snug text-neutral-800 dark:bg-neutral-800 dark:text-neutral-100">
-      {children}
+    <div
+      onDoubleClick={() => onCommit && setEditing(true)}
+      title={onCommit ? "Duplo clique para editar" : undefined}
+      className={`${className ?? ""} ${
+        onCommit ? "cursor-text hover:ring-1 hover:ring-indigo-300" : ""
+      }`}
+    >
+      {value === "" ? (
+        <span className="text-neutral-400">{placeholder ?? "…"}</span>
+      ) : (
+        value
+      )}
     </div>
   );
 }
@@ -119,7 +240,7 @@ export function MessageNode({ data }: NodeProps<WithStats>) {
       <Head tone="bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300" label="Enviar mensagem" />
       <Stats s={s} />
       <div className="p-2.5">
-        <Bubble>{d.text}</Bubble>
+        <EditableBubble text={d.text} onCommit={data._onText} max={inlineLimitOf(d)} />
         {(d.buttons ?? []).map((b) => (
           <PortButton
             key={b.id}
@@ -143,7 +264,7 @@ export function QuestionNode({ data }: NodeProps<WithStats>) {
       <Head tone="bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300" label="Perguntar" />
       <Stats s={data._stats} />
       <div className="p-2.5">
-        <Bubble>{d.text}</Bubble>
+        <EditableBubble text={d.text} onCommit={data._onText} max={inlineLimitOf(d)} />
         <div className="mt-1.5 rounded border border-dashed border-neutral-300 px-2 py-1 text-[11px] text-neutral-500 dark:border-neutral-600">
           resposta livre → <span className="font-mono">{d.saveAs}</span>
         </div>
@@ -162,7 +283,7 @@ export function QuickReplyNode({ data }: NodeProps<WithStats>) {
       <Head tone="bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300" label="Resposta rápida" />
       <Stats s={s} />
       <div className="p-2.5">
-        <Bubble>{d.text}</Bubble>
+        <EditableBubble text={d.text} onCommit={data._onText} max={inlineLimitOf(d)} />
         <div className="mt-1.5 space-y-1">
           {d.options.map((o) => (
             <div key={o.id} className="relative">
@@ -282,7 +403,14 @@ export function ImageNode({ data }: NodeProps<WithStats>) {
           className="flex h-[86px] items-center justify-center rounded-lg bg-neutral-100 text-[10px] text-neutral-400 dark:bg-neutral-800"
           style={{ backgroundImage: `url(${d.url})`, backgroundSize: "cover", backgroundPosition: "center" }}
         />
-        {d.caption && <div className="mt-1.5 text-[11px] text-neutral-600">{d.caption}</div>}
+        <div className="mt-1.5 text-[11px] text-neutral-600">
+          <EditableText
+            value={d.caption ?? ""}
+            onCommit={data._onText}
+            max={inlineLimitOf(d)}
+            placeholder="sem legenda"
+          />
+        </div>
       </div>
       <Handle type="source" position={B} />
     </div>
@@ -381,8 +509,14 @@ export function TagNode({ data }: NodeProps<WithStats>) {
     <div className={`${SHELL} w-[224px]`}>
       <Handle type="target" position={T} />
       <Head tone="bg-yellow-50 text-yellow-700 dark:bg-yellow-950/50 dark:text-yellow-300" label="Tag" />
-      <div className="p-2.5 text-[12px]">
-        {d.action === "add" ? "+" : "−"} <b>{d.tagName}</b>
+      <div className="flex items-center gap-1 p-2.5 text-[12px]">
+        <span>{d.action === "add" ? "+" : "−"}</span>
+        <EditableText
+          value={d.tagName}
+          onCommit={data._onText}
+          max={inlineLimitOf(d)}
+          className="flex-1 font-semibold"
+        />
       </div>
       <Handle type="source" position={B} />
     </div>

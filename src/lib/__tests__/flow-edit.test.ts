@@ -1,0 +1,235 @@
+import { describe, expect, it } from "vitest";
+import {
+  inlineLimitOf,
+  inlineTextOf,
+  pruneOrphanEdges,
+  reindexGraph,
+  removeNode,
+  retypeButton,
+  starterGraph,
+  withInlineText,
+} from "../flow-edit";
+import { FlowGraph, LIMITS, validateGraph } from "../flow-schema";
+
+/**
+ * These cover the two invariants the editor depends on: option/button ids are
+ * edge handles and must survive an edit, and an output that disappears must
+ * take its edges with it.
+ */
+
+const quickReplyGraph = (): FlowGraph => ({
+  nodes: [
+    {
+      id: "q1",
+      type: "quickreply",
+      position: { x: 0, y: 0 },
+      data: {
+        kind: "quickreply",
+        text: "Escolha:",
+        saveAs: "escolha",
+        options: [
+          { id: "opt-a", title: "A" },
+          { id: "opt-b", title: "B" },
+        ],
+      },
+    },
+    { id: "e1", type: "end", position: { x: 0, y: 200 }, data: { kind: "end" } },
+    { id: "e2", type: "end", position: { x: 200, y: 200 }, data: { kind: "end" } },
+  ],
+  edges: [
+    { id: "x1", source: "q1", target: "e1", sourceHandle: "opt-a" },
+    { id: "x2", source: "q1", target: "e2", sourceHandle: "opt-b" },
+  ],
+});
+
+describe("pruneOrphanEdges", () => {
+  it("keeps edges whose handle still exists", () => {
+    const g = quickReplyGraph();
+    expect(pruneOrphanEdges(g).edges).toHaveLength(2);
+  });
+
+  it("drops the edge of a removed quick-reply option", () => {
+    const g = quickReplyGraph();
+    const node = g.nodes[0]!;
+    if (node.data.kind !== "quickreply") throw new Error("fixture");
+
+    // Remove option B, as the properties panel would.
+    node.data = { ...node.data, options: node.data.options.filter((o) => o.id !== "opt-b") };
+
+    const pruned = pruneOrphanEdges(g);
+    expect(pruned.edges.map((e) => e.id)).toEqual(["x1"]);
+  });
+
+  it("drops edges pointing at a node that no longer exists", () => {
+    const g = quickReplyGraph();
+    g.nodes = g.nodes.filter((n) => n.id !== "e2");
+    expect(pruneOrphanEdges(g).edges.map((e) => e.id)).toEqual(["x1"]);
+  });
+
+  it("keeps handle-less edges from nodes with a single default output", () => {
+    const g: FlowGraph = {
+      nodes: [
+        {
+          id: "m1",
+          type: "message",
+          position: { x: 0, y: 0 },
+          data: { kind: "message", text: "oi" },
+        },
+        { id: "e1", type: "end", position: { x: 0, y: 100 }, data: { kind: "end" } },
+      ],
+      edges: [{ id: "x1", source: "m1", target: "e1" }],
+    };
+    expect(pruneOrphanEdges(g).edges).toHaveLength(1);
+  });
+
+  it("drops a button's edge when the button becomes a url button", () => {
+    const g: FlowGraph = {
+      nodes: [
+        {
+          id: "m1",
+          type: "message",
+          position: { x: 0, y: 0 },
+          data: {
+            kind: "message",
+            text: "oi",
+            buttons: [{ type: "postback", id: "b1", title: "Quero" }],
+          },
+        },
+        { id: "e1", type: "end", position: { x: 0, y: 100 }, data: { kind: "end" } },
+      ],
+      edges: [{ id: "x1", source: "m1", target: "e1", sourceHandle: "b1" }],
+    };
+
+    const node = g.nodes[0]!;
+    if (node.data.kind !== "message") throw new Error("fixture");
+    // A url button exposes no handle, so its edge can no longer route.
+    node.data = { ...node.data, buttons: [retypeButton(node.data.buttons![0]!, "url")] };
+
+    expect(pruneOrphanEdges(g).edges).toHaveLength(0);
+  });
+});
+
+describe("retypeButton", () => {
+  it("preserves the id across a type change, so the edge can survive", () => {
+    const b = { type: "postback", id: "b1", title: "Quero" } as const;
+    const url = retypeButton(b, "url");
+    expect(url.id).toBe("b1");
+    expect(url.title).toBe("Quero");
+
+    const back = retypeButton(url, "postback");
+    expect(back.id).toBe("b1");
+    expect(back.type).toBe("postback");
+  });
+
+  it("is a no-op when the type already matches", () => {
+    const b = { type: "postback", id: "b1", title: "Quero" } as const;
+    expect(retypeButton(b, "postback")).toBe(b);
+  });
+});
+
+describe("removeNode", () => {
+  it("removes the node and every edge touching it", () => {
+    const g = removeNode(quickReplyGraph(), "e1");
+    expect(g.nodes.map((n) => n.id)).toEqual(["q1", "e2"]);
+    expect(g.edges.map((e) => e.id)).toEqual(["x2"]);
+  });
+});
+
+describe("inline text", () => {
+  it("round-trips the primary text of each editable kind", () => {
+    const message = { kind: "message", text: "oi" } as const;
+    expect(inlineTextOf(message)).toBe("oi");
+    expect(withInlineText(message, "tchau")).toMatchObject({ text: "tchau" });
+
+    const tag = { kind: "tag", action: "add", tagName: "lead" } as const;
+    expect(inlineTextOf(tag)).toBe("lead");
+    expect(withInlineText(tag, "cliente")).toMatchObject({ tagName: "cliente" });
+  });
+
+  it("has no inline text for structural kinds", () => {
+    expect(inlineTextOf({ kind: "end" })).toBeNull();
+    expect(
+      inlineTextOf({ kind: "condition", key: "nome", op: "exists" }),
+    ).toBeNull();
+  });
+
+  it("caps a message with buttons at the button-template limit", () => {
+    expect(inlineLimitOf({ kind: "message", text: "oi" })).toBe(LIMITS.messageText);
+    expect(
+      inlineLimitOf({
+        kind: "message",
+        text: "oi",
+        buttons: [{ type: "postback", id: "b1", title: "x" }],
+      }),
+    ).toBe(LIMITS.buttonTemplateText);
+  });
+});
+
+describe("starterGraph", () => {
+  it("is valid, runnable and free of blocking issues", () => {
+    const g = starterGraph();
+    const parsed = FlowGraph.parse(g);
+    expect(validateGraph(parsed).filter((i) => i.level === "error")).toEqual([]);
+  });
+
+  it("has an entry node wired to an end", () => {
+    const g = starterGraph();
+    expect(g.nodes).toHaveLength(2);
+    expect(g.edges).toHaveLength(1);
+    expect(g.edges[0]!.source).toBe(g.nodes[0]!.id);
+    expect(g.edges[0]!.target).toBe(g.nodes[1]!.id);
+  });
+});
+
+describe("reindexGraph", () => {
+  it("re-keys every id while keeping the graph wired the same way", () => {
+    const g = quickReplyGraph();
+    const copy = reindexGraph(g);
+
+    // No id is shared with the original.
+    const before = new Set(g.nodes.map((n) => n.id));
+    for (const n of copy.nodes) expect(before.has(n.id)).toBe(false);
+
+    // The shape survives: same node count, same edge count, still valid.
+    expect(copy.nodes).toHaveLength(g.nodes.length);
+    expect(copy.edges).toHaveLength(g.edges.length);
+    expect(validateGraph(FlowGraph.parse(copy)).filter((i) => i.level === "error")).toEqual([]);
+
+    // Edges still leave from a handle the source node actually exposes.
+    expect(pruneOrphanEdges(copy).edges).toHaveLength(g.edges.length);
+  });
+
+  it("re-keys carousel cards and their buttons", () => {
+    const g: FlowGraph = {
+      nodes: [
+        {
+          id: "c1",
+          type: "carousel",
+          position: { x: 0, y: 0 },
+          data: {
+            kind: "carousel",
+            cards: [
+              {
+                id: "card-1",
+                title: "Card",
+                buttons: [{ type: "postback", id: "btn-1", title: "Quero" }],
+              },
+            ],
+          },
+        },
+        { id: "e1", type: "end", position: { x: 0, y: 100 }, data: { kind: "end" } },
+      ],
+      edges: [{ id: "x1", source: "c1", target: "e1", sourceHandle: "btn-1" }],
+    };
+
+    const copy = reindexGraph(g);
+    const card = copy.nodes[0]!;
+    if (card.data.kind !== "carousel") throw new Error("fixture");
+
+    expect(card.data.cards[0]!.id).not.toBe("card-1");
+    const newButtonId = card.data.cards[0]!.buttons![0]!.id;
+    expect(newButtonId).not.toBe("btn-1");
+    // The edge was rewritten to follow the button's new id.
+    expect(copy.edges[0]!.sourceHandle).toBe(newButtonId);
+  });
+});

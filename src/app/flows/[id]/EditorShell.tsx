@@ -17,7 +17,6 @@ export function EditorShell({
 }) {
   return (
     <FlowEditor
-      flowId={flowId}
       initial={initial}
       stats={stats}
       onSave={async (graph) => {

@@ -1,0 +1,1 @@
+{"ts":"2026-08-17T21:21:30.905Z","event":"gate_passed","trace_id":null,"project_id":null,"business_slug":null,"artifact":"app/src/lib/flow-edit.ts","rubrics":["correctness"],"score_avg":1,"failed_rubrics":[]}
