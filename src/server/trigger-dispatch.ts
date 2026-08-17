@@ -48,22 +48,21 @@ export async function handleComment(
   const trigger = await matchComment(db, args.text, args.mediaId);
   if (!trigger) return;
 
-  const contact = await db.contact.upsert({
-    where: { igScopedId: args.igScopedId },
-    create: { igScopedId: args.igScopedId, username: args.username },
-    update: { username: args.username },
-  });
-
   const flow = await db.flow.findUnique({ where: { id: trigger.flowId } });
   if (!flow?.enabled) return;
 
-  // Opening line doubles as the window opener.
-  await sendPrivateReply(args.commentId, openingLine(flow.name));
+  // Send first: the reply is what opens the messaging window, and its
+  // response carries the messaging-scoped id. The id on a comment webhook
+  // is not always the same scope, so prefer the one the API hands back.
+  const { recipientId } = await sendPrivateReply(args.commentId, openingLine(flow.name));
+  const igScopedId = recipientId || args.igScopedId;
+  if (!igScopedId) return;
 
   // A private reply counts as contact-initiated: the 24h clock starts now.
-  await db.contact.update({
-    where: { id: contact.id },
-    data: { lastInboundAt: new Date() },
+  const contact = await db.contact.upsert({
+    where: { igScopedId },
+    create: { igScopedId, username: args.username, lastInboundAt: new Date() },
+    update: { username: args.username, lastInboundAt: new Date() },
   });
 
   await startFlow(db, trigger.flowId, contact.id);

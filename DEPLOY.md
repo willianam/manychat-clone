@@ -56,8 +56,8 @@ gravar o vídeo que eles exigem.
    | `CRON_SECRET` | `openssl rand -hex 32` |
    | `IG_APP_SECRET` | preencha na Parte 4 |
    | `IG_VERIFY_TOKEN` | string que você inventa |
-   | `IG_PAGE_ACCESS_TOKEN` | preencha na Parte 4 |
-   | `GRAPH_API_VERSION` | `v21.0` |
+   | `IG_ACCESS_TOKEN` | preencha na Parte 4 |
+   | `GRAPH_API_VERSION` | `v26.0` |
    | `BROADCAST_RATE` | `5` |
 
    As três da Meta podem ficar vazias por ora — o painel sobe sem elas.
@@ -76,16 +76,14 @@ gravar o vídeo que eles exigem.
 Instagram → **Configurações → Tipo de conta → Mudar para profissional**.
 Criador ou Empresa, tanto faz.
 
-### 3.2 Vincular a uma Página do Facebook
-Instagram → **Configurações → Central de Contas** → vincule a uma Página.
-Se não tiver, crie em `facebook.com/pages/create`.
-
-**Sem esse vínculo a API de mensagens não existe para a conta.** É a causa
-mais comum de "o token não funciona".
+### 3.2 Página do Facebook — dispensada
+Este projeto usa a **API do Instagram com login do Instagram**
+(`graph.instagram.com`), que não exige Página do Facebook nem token de
+Página. A conta profissional do passo 3.1 é suficiente.
 
 ### 3.3 Criar o app
 `developers.facebook.com/apps` → **Criar app** → tipo **Empresa**.
-Em **Adicionar produtos**: adicione **Instagram** e **Webhooks**.
+Adicione o caso de uso **"Gerenciar mensagens e conteúdo no Instagram"**.
 
 ---
 
@@ -95,19 +93,19 @@ Em **Adicionar produtos**: adicione **Instagram** e **Webhooks**.
 |---|---|
 | `IG_APP_SECRET` | Configurações → Básico → Chave secreta do app |
 | `IG_VERIFY_TOKEN` | Você inventa. Só precisa bater com a Parte 5 |
-| `IG_PAGE_ACCESS_TOKEN` | Graph API Explorer → selecione app e Página → Gerar token |
+| `IG_ACCESS_TOKEN` | Painel do app → API do Instagram → Gerar tokens de acesso |
 
-O token do Explorer dura ~1h. Troque por um de longa duração (~60 dias):
+O token gerado no painel é de curta duração (~1h). Troque por um de longa
+duração (~60 dias):
 
 ```bash
-curl -G "https://graph.facebook.com/v21.0/oauth/access_token" \
-  -d "grant_type=fb_exchange_token" \
-  -d "client_id=SEU_APP_ID" \
+curl -G "https://graph.instagram.com/access_token" \
+  -d "grant_type=ig_exchange_token" \
   -d "client_secret=SEU_APP_SECRET" \
-  -d "fb_exchange_token=TOKEN_CURTO"
+  -d "access_token=TOKEN_CURTO"
 ```
 
-Coloque os três valores na Vercel (**Settings → Environment Variables**) e
+Coloque os valores na Vercel (**Settings → Environment Variables**) e
 **redeploy** — variáveis novas só valem no build seguinte.
 
 > **Anote a data.** O token de longa duração expira em ~60 dias e as
@@ -141,11 +139,9 @@ usar você mesmo.
 
 Para atender qualquer pessoa, solicite:
 
-- `instagram_basic`
-- `instagram_manage_messages`
-- `instagram_manage_comments` (necessária para comment-to-DM)
-- `pages_manage_metadata`
-- `pages_show_list`
+- `instagram_business_basic`
+- `instagram_business_manage_messages`
+- `instagram_business_manage_comments` (necessária para comment-to-DM)
 
 A Meta exige um **vídeo de tela** mostrando o ciclo completo: alguém
 comenta no post → recebe a DM → responde → o fluxo continua. Grave com o
@@ -162,8 +158,8 @@ problema no código.
 - [ ] Neon criado, `migrate deploy` rodado
 - [ ] Deploy na Vercel com todas as env vars
 - [ ] Painel abre e pede senha
-- [ ] Conta IG profissional vinculada a uma Página
-- [ ] App criado com Instagram + Webhooks
+- [ ] Conta IG profissional adicionada como Testador do Instagram
+- [ ] Caso de uso do Instagram configurado
 - [ ] Token de longa duração gerado (data anotada)
 - [ ] Webhook verificado e campos assinados
 - [ ] "oi" no DM dispara o fluxo

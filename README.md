@@ -50,11 +50,11 @@ dias e é o caminho crítico do projeto.
 No app do Instagram: **Configurações → Tipo de conta → Mudar para conta
 profissional**. Escolha Criador ou Empresa — qualquer um serve.
 
-### 2. Vincular a uma Página do Facebook
+### 2. Página do Facebook — não é necessária
 
-Ainda no Instagram: **Configurações → Central de Contas** e vincule a uma
-Página do Facebook. Se não tiver, crie uma em `facebook.com/pages/create`.
-Sem esse vínculo a API de mensagens simplesmente não existe para a conta.
+Este projeto usa a **API do Instagram com login do Instagram**
+(`graph.instagram.com`), que dispensa Página do Facebook. Basta a conta
+profissional do passo 1.
 
 ### 3. Criar o app
 
@@ -69,17 +69,16 @@ Preencha o `.env` com:
 |---|---|
 | `IG_APP_SECRET` | Configurações → Básico → Chave secreta do app |
 | `IG_VERIFY_TOKEN` | Você inventa. Qualquer string. Só precisa bater com o passo 5 |
-| `IG_PAGE_ACCESS_TOKEN` | Graph API Explorer → selecione o app e a Página → Gerar token |
+| `IG_ACCESS_TOKEN` | Painel do app → API do Instagram → **Gerar tokens de acesso** |
 
 O token do Explorer é de curta duração (cerca de 1h). Troque por um de
 longa duração:
 
 ```bash
-curl -G "https://graph.facebook.com/v21.0/oauth/access_token" \
-  -d "grant_type=fb_exchange_token" \
-  -d "client_id=SEU_APP_ID" \
+curl -G "https://graph.instagram.com/access_token" \
+  -d "grant_type=ig_exchange_token" \
   -d "client_secret=SEU_APP_SECRET" \
-  -d "fb_exchange_token=TOKEN_CURTO"
+  -d "access_token=TOKEN_CURTO"
 ```
 
 ### 5. Configurar o webhook
@@ -128,8 +127,9 @@ contatos antes de enviar e os reporta como "skipped", em vez de gastar
 milhares de chamadas para colecionar milhares de erros iguais.
 
 **Private reply único**. Cada comentário permite exatamente uma resposta
-privada. É ela que abre a janela de 24h — por isso o comment-to-DM manda o
-private reply antes de o fluxo tentar qualquer envio.
+privada, até 7 dias após o comentário. É ela que abre a janela de 24h — por
+isso o comment-to-DM a envia antes de o fluxo tentar qualquer coisa. Nesta
+API ela é um `POST /me/messages` com `recipient: {comment_id}`.
 
 **Assinatura do webhook** (`src/lib/verify-signature.ts`). Todo POST vem
 assinado com HMAC-SHA256 sobre o corpo **cru**. Se um framework fizer parse
