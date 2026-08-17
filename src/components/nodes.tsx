@@ -422,7 +422,7 @@ export function ImageNode({ data }: NodeProps<WithStats>) {
       <div className="p-2.5">
         <div
           className="flex h-[86px] items-center justify-center rounded-lg bg-neutral-100 text-[10px] text-neutral-400"
-          style={{ backgroundImage: `url(${d.url})`, backgroundSize: "cover", backgroundPosition: "center" }}
+          style={{ backgroundImage: `url(${d.url ?? "arquivo enviado"})`, backgroundSize: "cover", backgroundPosition: "center" }}
         />
         <div className="mt-1.5 text-[11px] text-neutral-600">
           <EditableText
@@ -470,7 +470,7 @@ export function VideoNode({ data }: NodeProps<WithStats>) {
       <Head tone="bg-fuchsia-50 text-fuchsia-700" label="Vídeo" />
       <Stats s={data._stats} />
       <div className="p-2.5">
-        <MediaCard icon="▶" url={d.url} label="Vídeo" />
+        <MediaCard icon="▶" url={d.url ?? ""} label="Vídeo" />
       </div>
       <Handle type="source" position={B} />
     </div>
@@ -485,7 +485,7 @@ export function AudioNode({ data }: NodeProps<WithStats>) {
       <Head tone="bg-cyan-50 text-cyan-700" label="Áudio" />
       <Stats s={data._stats} />
       <div className="p-2.5">
-        <MediaCard icon="♪" url={d.url} label="Áudio" />
+        <MediaCard icon="♪" url={d.url ?? ""} label="Áudio" />
       </div>
       <Handle type="source" position={B} />
     </div>
@@ -500,7 +500,7 @@ export function FileNode({ data }: NodeProps<WithStats>) {
       <Head tone="bg-stone-100 text-stone-700" label="PDF" />
       <Stats s={data._stats} />
       <div className="p-2.5">
-        <MediaCard icon="▤" url={d.url} label={d.filename ?? "Documento PDF"} />
+        <MediaCard icon="▤" url={d.url ?? ""} label={d.filename ?? "Documento PDF"} />
       </div>
       <Handle type="source" position={B} />
     </div>

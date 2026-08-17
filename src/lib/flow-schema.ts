@@ -167,10 +167,29 @@ const CarouselData = z.object({
   expanded: z.boolean().optional(),
 });
 
+/**
+ * Media source: a public URL, or an id from uploading the file to Meta.
+ *
+ * The upload path exists because hosting a file somewhere just to send it
+ * is friction with no upside — and an uploaded id is reusable, so sending
+ * the same audio to a thousand contacts costs one upload.
+ */
+const MediaSource = z
+  .object({
+    url: z.string().url().optional(),
+    attachmentId: z.string().min(1).optional(),
+  })
+  .refine((v) => Boolean(v.url) || Boolean(v.attachmentId), {
+    message: "Envie um arquivo ou informe uma URL.",
+  });
+
 const ImageData = z.object({
   kind: z.literal("image"),
-  url: z.string().url(),
+  url: z.string().url().optional(),
+  attachmentId: z.string().min(1).optional(),
   caption: z.string().max(LIMITS.messageText).optional(),
+}).refine((v) => Boolean(v.url) || Boolean(v.attachmentId), {
+  message: "Envie um arquivo ou informe uma URL.",
 });
 
 /**
@@ -187,20 +206,29 @@ const ImageData = z.object({
  */
 const VideoData = z.object({
   kind: z.literal("video"),
-  url: z.string().url(),
+  url: z.string().url().optional(),
+  attachmentId: z.string().min(1).optional(),
+}).refine((v) => Boolean(v.url) || Boolean(v.attachmentId), {
+  message: "Envie um arquivo ou informe uma URL.",
 });
 
 const AudioData = z.object({
   kind: z.literal("audio"),
-  url: z.string().url(),
+  url: z.string().url().optional(),
+  attachmentId: z.string().min(1).optional(),
+}).refine((v) => Boolean(v.url) || Boolean(v.attachmentId), {
+  message: "Envie um arquivo ou informe uma URL.",
 });
 
 /** Documents. Instagram accepts PDF only, so the schema says so. */
 const FileData = z.object({
   kind: z.literal("file"),
-  url: z.string().url(),
+  url: z.string().url().optional(),
+  attachmentId: z.string().min(1).optional(),
   /** Shown on the canvas so the block is identifiable without opening it. */
   filename: z.string().max(120).optional(),
+}).refine((v) => Boolean(v.url) || Boolean(v.attachmentId), {
+  message: "Envie um arquivo ou informe uma URL.",
 });
 
 /**
@@ -282,7 +310,9 @@ const TagData = z.object({
 
 const EndData = z.object({ kind: z.literal("end") });
 
-export const FlowNodeData = z.discriminatedUnion("kind", [
+// A refined member can't live in a discriminatedUnion, and media nodes
+// need a refinement (url OR attachmentId), so this is a plain union.
+export const FlowNodeData = z.union([
   MessageData,
   QuestionData,
   QuickReplyData,

@@ -246,6 +246,44 @@ export async function fetchProfile(
   }
 }
 
+/**
+ * Upload a file to Meta and get a reusable attachment id.
+ *
+ * This is what removes the "host it somewhere first" step: the file goes
+ * straight to Meta, and the returned id can be sent to any number of
+ * contacts without re-uploading. Verified against v26.0 —
+ * POST /me/message_attachments, multipart, `filedata` + a `message` field
+ * describing the attachment.
+ *
+ * Limits are Meta's: 8 MB for images, 25 MB for audio, video and files.
+ */
+export async function uploadAttachment(
+  file: Blob,
+  type: "image" | "audio" | "video" | "file",
+): Promise<string> {
+  const form = new FormData();
+  form.append(
+    "message",
+    JSON.stringify({ attachment: { type, payload: { is_reusable: true } } }),
+  );
+  form.append("filedata", file);
+
+  const res = await fetch(`${BASE}/${SELF}/message_attachments`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${requireEnv("IG_ACCESS_TOKEN")}` },
+    body: form,
+  });
+
+  const body = (await res.json()) as {
+    attachment_id?: string;
+    error?: { message: string };
+  };
+  if (!res.ok || !body.attachment_id) {
+    throw new Error(body.error?.message ?? `Falha no upload (HTTP ${res.status})`);
+  }
+  return body.attachment_id;
+}
+
 function requireEnv(key: string): string {
   const v = process.env[key];
   if (!v) throw new Error(`Missing required env var ${key}`);

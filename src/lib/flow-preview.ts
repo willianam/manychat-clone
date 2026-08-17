@@ -150,7 +150,7 @@ export function previewFrom(
         kind: "media",
         nodeId: id,
         media: d.kind,
-        urls: [d.url],
+        urls: d.url ? [d.url] : [],
         label:
           d.kind === "image"
             ? d.caption ?? "Imagem"

@@ -113,9 +113,7 @@ export function buildCarousel(
 export function buildImage(
   d: Extract<FlowNodeData, { kind: "image" }>,
 ): Record<string, unknown> {
-  return {
-    attachment: { type: "image", payload: { url: d.url, is_reusable: true } },
-  };
+  return { attachment: { type: "image", payload: mediaPayload(d) } };
 }
 
 /**
@@ -135,9 +133,19 @@ export function buildImage(
 export function buildMedia(
   d: Extract<FlowNodeData, { kind: "video" | "audio" | "file" }>,
 ): Record<string, unknown> {
-  return {
-    attachment: { type: d.kind, payload: { url: d.url, is_reusable: true } },
-  };
+  return { attachment: { type: d.kind, payload: mediaPayload(d) } };
+}
+
+/**
+ * An uploaded file is referenced by id; a hosted one by URL.
+ *
+ * `is_reusable` only applies to the URL form — an attachment_id is already
+ * the result of a reusable upload, and sending the flag alongside it is
+ * rejected.
+ */
+function mediaPayload(d: { url?: string; attachmentId?: string }): Record<string, unknown> {
+  if (d.attachmentId) return { attachment_id: d.attachmentId };
+  return { url: d.url, is_reusable: true };
 }
 
 /**

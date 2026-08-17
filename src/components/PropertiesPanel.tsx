@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { Node } from "reactflow";
 import {
   ConditionOp,
@@ -661,9 +662,9 @@ function ImageProps({
     <>
       <Field label="URL da imagem" hint="Precisa ser um endereço público (https).">
         <TextInput
-          value={data.url}
+          value={data.url ?? ""}
           placeholder="https://…"
-          onChange={(url) => onChange({ ...data, url })}
+          onChange={(url) => onChange({ ...data, url: url || undefined })}
         />
       </Field>
       <Field label="Legenda">
@@ -692,6 +693,88 @@ const MEDIA_COPY = {
   file: { label: "URL do PDF", title: "PDF", mb: LIMITS.mediaMb, formats: MEDIA_FORMATS.file },
 } as const;
 
+/**
+ * Upload a file to Meta and keep only the returned attachment id.
+ *
+ * The id is what ships in the message, so a flow using an upload has no
+ * external dependency at send time — unlike a URL, which fails the moment
+ * the host goes down or the link rotates.
+ */
+function UploadField({
+  kind,
+  attachmentId,
+  onUploaded,
+  onClear,
+}: {
+  kind: "image" | "audio" | "video" | "file";
+  attachmentId?: string;
+  onUploaded: (id: string) => void;
+  onClear: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (attachmentId) {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-2">
+        <span className="flex-1 text-[11px] text-emerald-800">
+          Arquivo enviado ao Instagram
+          <span className="ml-1 font-mono text-[10px] text-emerald-600">
+            #{attachmentId.slice(-6)}
+          </span>
+        </span>
+        <button
+          type="button"
+          onClick={onClear}
+          className="text-[11px] font-medium text-emerald-700 underline"
+        >
+          Trocar
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <label
+        className={`flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-neutral-300 px-3 py-3 text-[12px] font-medium ${
+          busy ? "text-neutral-400" : "text-indigo-600 hover:bg-indigo-50"
+        }`}
+      >
+        {busy ? "Enviando…" : "Escolher arquivo do computador"}
+        <input
+          type="file"
+          className="hidden"
+          disabled={busy}
+          onChange={async (e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            setBusy(true);
+            setError(null);
+            try {
+              const body = new FormData();
+              body.append("file", file);
+              body.append("type", kind);
+              const res = await fetch("/api/upload", { method: "POST", body });
+              const json = (await res.json()) as { attachmentId?: string; error?: string };
+              if (!res.ok || !json.attachmentId) {
+                throw new Error(json.error ?? "Falha no upload.");
+              }
+              onUploaded(json.attachmentId);
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Falha no upload.");
+            } finally {
+              setBusy(false);
+              e.target.value = "";
+            }
+          }}
+        />
+      </label>
+      {error && <p className="mt-1 text-[11px] text-rose-600">{error}</p>}
+    </div>
+  );
+}
+
 function MediaProps({
   data,
   onChange,
@@ -703,16 +786,24 @@ function MediaProps({
 
   return (
     <>
-      <Field
-        label={copy.label}
-        hint={`Endereço público (https). Formatos: ${copy.formats}. Máx. ${copy.mb} MB.`}
-      >
-        <TextInput
-          value={data.url}
-          placeholder="https://…"
-          onChange={(url) => onChange({ ...data, url })}
+      <Field label="Arquivo" hint={`Formatos: ${copy.formats}. Máx. ${copy.mb} MB.`}>
+        <UploadField
+          kind={data.kind}
+          attachmentId={data.attachmentId}
+          onUploaded={(id) => onChange({ ...data, attachmentId: id, url: undefined })}
+          onClear={() => onChange({ ...data, attachmentId: undefined })}
         />
       </Field>
+
+      {!data.attachmentId && (
+        <Field label={`Ou ${copy.label.toLowerCase()}`} hint="Endereço público (https).">
+          <TextInput
+            value={data.url ?? ""}
+            placeholder="https://…"
+            onChange={(url) => onChange({ ...data, url: url || undefined })}
+          />
+        </Field>
+      )}
 
       {data.kind === "file" && (
         <Field label="Nome do arquivo" hint="Só para identificar o bloco no canvas.">
@@ -726,8 +817,9 @@ function MediaProps({
       )}
 
       <p className="rounded-lg bg-neutral-50 px-2.5 py-2 text-[11px] text-neutral-500">
-        O Instagram baixa o arquivo do endereço no momento do envio. Se o link
-        sair do ar, o bloco falha — hospede em algum lugar estável.
+        {data.attachmentId
+          ? "O arquivo já está no Instagram e pode ser enviado quantas vezes quiser, sem depender de nenhum site."
+          : "Com URL, o Instagram baixa o arquivo no momento do envio — se o link sair do ar, o bloco falha."}
       </p>
     </>
   );
