@@ -41,6 +41,18 @@ type WithStats = FlowNodeData & {
   _onText?: (text: string) => void;
 };
 
+/**
+ * Handle styling.
+ *
+ * The visible dot stays small so the canvas reads clean, but the hit area is
+ * deliberately much larger — React Flow uses the element's box for hit
+ * testing, so padding the element makes the target forgiving without making
+ * the dot look clumsy. Paired with connectionRadius={40} on the canvas, a
+ * connection lands when you get close rather than when you land on 6px.
+ */
+const HANDLE =
+  "!h-3 !w-3 !border-2 !border-white !shadow-sm hover:!scale-125 !transition-transform";
+
 const SHELL =
   "rounded-xl border bg-white shadow-sm text-sm";
 
@@ -219,7 +231,7 @@ function PortButton({
           type="source"
           position={Position.Right}
           id={id}
-          className="!right-[-11px] !h-2 !w-2 !border-2 !border-white !bg-indigo-500 dark:!border-neutral-900"
+          className={`${HANDLE} !right-[-14px] !bg-indigo-500`}
         />
       )}
     </div>
@@ -236,7 +248,7 @@ export function MessageNode({ data }: NodeProps<WithStats>) {
 
   return (
     <div className={`${SHELL} w-[248px]`}>
-      <Handle type="target" position={T} />
+      <Handle type="target" position={T} className={`${HANDLE} !top-[-8px] !bg-neutral-400`} />
       <Head tone="bg-emerald-50 text-emerald-800 border-b border-emerald-100" label="Enviar mensagem" />
       <Stats s={s} />
       <div className="p-2.5">
@@ -272,7 +284,7 @@ function NextStep() {
         type="source"
         position={Position.Right}
         id="next"
-        className="!relative !right-0 !top-0 !h-2.5 !w-2.5 !transform-none !border-2 !border-white !bg-neutral-300"
+        className={`${HANDLE} !relative !right-0 !top-0 !transform-none !bg-neutral-400`}
       />
     </div>
   );
@@ -282,7 +294,7 @@ export function QuestionNode({ data }: NodeProps<WithStats>) {
   const d = data as Extract<FlowNodeData, { kind: "question" }> & { _stats?: NodeStats };
   return (
     <div className={`${SHELL} w-[248px]`}>
-      <Handle type="target" position={T} />
+      <Handle type="target" position={T} className={`${HANDLE} !top-[-8px] !bg-neutral-400`} />
       <Head tone="bg-amber-50 text-amber-800 border-b border-amber-100" label="Perguntar" />
       <Stats s={data._stats} />
       <div className="p-2.5">
@@ -301,7 +313,7 @@ export function QuickReplyNode({ data }: NodeProps<WithStats>) {
   const s = data._stats;
   return (
     <div className={`${SHELL} w-[248px]`}>
-      <Handle type="target" position={T} />
+      <Handle type="target" position={T} className={`${HANDLE} !top-[-8px] !bg-neutral-400`} />
       <Head tone="bg-amber-50 text-amber-800 border-b border-amber-100" label="Resposta rápida" />
       <Stats s={s} />
       <div className="p-2.5">
@@ -319,7 +331,7 @@ export function QuickReplyNode({ data }: NodeProps<WithStats>) {
                 type="source"
                 position={Position.Right}
                 id={o.id}
-                className="!right-[-11px] !h-2 !w-2 !border-2 !border-white !bg-amber-500 dark:!border-neutral-900"
+                className={`${HANDLE} !right-[-14px] !bg-amber-500`}
               />
             </div>
           ))}
@@ -345,7 +357,7 @@ export function CarouselNode({ data, id }: NodeProps<WithStats>) {
 
   return (
     <div className={`${SHELL} ${open ? "w-[420px]" : "w-[248px]"}`}>
-      <Handle type="target" position={T} />
+      <Handle type="target" position={T} className={`${HANDLE} !top-[-8px] !bg-neutral-400`} />
       <Head
         tone="bg-violet-50 text-violet-800 border-b border-violet-100"
         label={`Carrossel · ${d.cards.length} ${d.cards.length === 1 ? "card" : "cards"}`}
@@ -393,7 +405,7 @@ export function CarouselNode({ data, id }: NodeProps<WithStats>) {
                           type="source"
                           position={Position.Right}
                           id={b.id}
-                          className="!right-[-11px] !h-2 !w-2 !border-2 !border-white !bg-violet-500 dark:!border-neutral-900"
+                          className={`${HANDLE} !right-[-14px] !bg-violet-500`}
                         />
                       )}
                     </div>
@@ -416,7 +428,7 @@ export function ImageNode({ data }: NodeProps<WithStats>) {
   const d = data as Extract<FlowNodeData, { kind: "image" }> & { _stats?: NodeStats };
   return (
     <div className={`${SHELL} w-[248px]`}>
-      <Handle type="target" position={T} />
+      <Handle type="target" position={T} className={`${HANDLE} !top-[-8px] !bg-neutral-400`} />
       <Head tone="bg-sky-50 text-sky-800 border-b border-sky-100" label="Imagem" />
       <Stats s={data._stats} />
       <div className="p-2.5">
@@ -433,7 +445,7 @@ export function ImageNode({ data }: NodeProps<WithStats>) {
           />
         </div>
       </div>
-      <Handle type="source" position={B} />
+      <Handle type="source" position={B} className={`${HANDLE} !bottom-[-8px] !bg-neutral-400`} />
     </div>
   );
 }
@@ -466,13 +478,13 @@ export function VideoNode({ data }: NodeProps<WithStats>) {
   const d = data as Extract<FlowNodeData, { kind: "video" }>;
   return (
     <div className={`${SHELL} w-[248px]`}>
-      <Handle type="target" position={T} />
+      <Handle type="target" position={T} className={`${HANDLE} !top-[-8px] !bg-neutral-400`} />
       <Head tone="bg-fuchsia-50 text-fuchsia-700" label="Vídeo" />
       <Stats s={data._stats} />
       <div className="p-2.5">
         <MediaCard icon="▶" url={d.url ?? ""} label="Vídeo" />
       </div>
-      <Handle type="source" position={B} />
+      <Handle type="source" position={B} className={`${HANDLE} !bottom-[-8px] !bg-neutral-400`} />
     </div>
   );
 }
@@ -481,13 +493,13 @@ export function AudioNode({ data }: NodeProps<WithStats>) {
   const d = data as Extract<FlowNodeData, { kind: "audio" }>;
   return (
     <div className={`${SHELL} w-[248px]`}>
-      <Handle type="target" position={T} />
+      <Handle type="target" position={T} className={`${HANDLE} !top-[-8px] !bg-neutral-400`} />
       <Head tone="bg-cyan-50 text-cyan-700" label="Áudio" />
       <Stats s={data._stats} />
       <div className="p-2.5">
         <MediaCard icon="♪" url={d.url ?? ""} label="Áudio" />
       </div>
-      <Handle type="source" position={B} />
+      <Handle type="source" position={B} className={`${HANDLE} !bottom-[-8px] !bg-neutral-400`} />
     </div>
   );
 }
@@ -496,13 +508,13 @@ export function FileNode({ data }: NodeProps<WithStats>) {
   const d = data as Extract<FlowNodeData, { kind: "file" }>;
   return (
     <div className={`${SHELL} w-[248px]`}>
-      <Handle type="target" position={T} />
+      <Handle type="target" position={T} className={`${HANDLE} !top-[-8px] !bg-neutral-400`} />
       <Head tone="bg-stone-100 text-stone-700" label="PDF" />
       <Stats s={data._stats} />
       <div className="p-2.5">
         <MediaCard icon="▤" url={d.url ?? ""} label={d.filename ?? "Documento PDF"} />
       </div>
-      <Handle type="source" position={B} />
+      <Handle type="source" position={B} className={`${HANDLE} !bottom-[-8px] !bg-neutral-400`} />
     </div>
   );
 }
@@ -512,7 +524,7 @@ export function AlbumNode({ data }: NodeProps<WithStats>) {
   const d = data as Extract<FlowNodeData, { kind: "album" }>;
   return (
     <div className={`${SHELL} w-[248px]`}>
-      <Handle type="target" position={T} />
+      <Handle type="target" position={T} className={`${HANDLE} !top-[-8px] !bg-neutral-400`} />
       <Head
         tone="bg-sky-50 text-sky-800 border-b border-sky-100"
         label={`Álbum · ${d.urls.length} ${d.urls.length === 1 ? "imagem" : "imagens"}`}
@@ -532,7 +544,7 @@ export function AlbumNode({ data }: NodeProps<WithStats>) {
           </div>
         )}
       </div>
-      <Handle type="source" position={B} />
+      <Handle type="source" position={B} className={`${HANDLE} !bottom-[-8px] !bg-neutral-400`} />
     </div>
   );
 }
@@ -551,7 +563,7 @@ export function ConditionNode({ data }: NodeProps<WithStats>) {
   const d = data as Extract<FlowNodeData, { kind: "condition" }>;
   return (
     <div className={`${SHELL} w-[224px]`}>
-      <Handle type="target" position={T} />
+      <Handle type="target" position={T} className={`${HANDLE} !top-[-8px] !bg-neutral-400`} />
       <Head tone="bg-cyan-50 text-cyan-800 border-b border-cyan-100" label="Condição" />
       <div className="p-2.5">
         <div className="rounded border px-2 py-1 font-mono text-[11px]">
@@ -562,8 +574,8 @@ export function ConditionNode({ data }: NodeProps<WithStats>) {
           <span className="text-rose-600">não</span>
         </div>
       </div>
-      <Handle type="source" position={B} id="true" style={{ left: "25%" }} className="!bg-emerald-500" />
-      <Handle type="source" position={B} id="false" style={{ left: "75%" }} className="!bg-rose-500" />
+      <Handle type="source" position={B} id="true" style={{ left: "25%" }} className={`${HANDLE} !bottom-[-8px] !bg-emerald-500`} />
+      <Handle type="source" position={B} id="false" style={{ left: "75%" }} className={`${HANDLE} !bottom-[-8px] !bg-rose-500`} />
     </div>
   );
 }
@@ -572,7 +584,7 @@ export function DelayNode({ data }: NodeProps<WithStats>) {
   const d = data as Extract<FlowNodeData, { kind: "delay" }>;
   return (
     <div className={`${SHELL} w-[224px]`}>
-      <Handle type="target" position={T} />
+      <Handle type="target" position={T} className={`${HANDLE} !top-[-8px] !bg-neutral-400`} />
       <Head tone="bg-rose-50 text-rose-800 border-b border-rose-100" label="Atraso inteligente" />
       <div className="p-2.5 text-[12px] text-neutral-700">
         Aguarde <b>{humanize(d.seconds)}</b>
@@ -580,7 +592,7 @@ export function DelayNode({ data }: NodeProps<WithStats>) {
           <> e continue entre <b>{pad(d.window.fromHour)}:00–{pad(d.window.toHour)}:00</b></>
         )}
       </div>
-      <Handle type="source" position={B} />
+      <Handle type="source" position={B} className={`${HANDLE} !bottom-[-8px] !bg-neutral-400`} />
     </div>
   );
 }
@@ -589,7 +601,7 @@ export function ActionNode({ data }: NodeProps<WithStats>) {
   const d = data as Extract<FlowNodeData, { kind: "action" }>;
   return (
     <div className={`${SHELL} w-[224px]`}>
-      <Handle type="target" position={T} />
+      <Handle type="target" position={T} className={`${HANDLE} !top-[-8px] !bg-neutral-400`} />
       <Head tone="bg-yellow-50 text-yellow-800 border-b border-yellow-100" label="Ações" />
       <div className="space-y-0.5 p-2.5 text-[11px] text-neutral-700">
         {d.ops.map((o, i) => (
@@ -601,7 +613,7 @@ export function ActionNode({ data }: NodeProps<WithStats>) {
           </div>
         ))}
       </div>
-      <Handle type="source" position={B} />
+      <Handle type="source" position={B} className={`${HANDLE} !bottom-[-8px] !bg-neutral-400`} />
     </div>
   );
 }
@@ -610,7 +622,7 @@ export function RandomNode({ data }: NodeProps<WithStats>) {
   const d = data as Extract<FlowNodeData, { kind: "random" }>;
   return (
     <div className={`${SHELL} w-[224px]`}>
-      <Handle type="target" position={T} />
+      <Handle type="target" position={T} className={`${HANDLE} !top-[-8px] !bg-neutral-400`} />
       <Head tone="bg-slate-100 text-slate-700 border-b border-slate-200" label="Randomizador" />
       <div className="p-2.5">
         {d.weights.map((w, i) => (
@@ -623,7 +635,7 @@ export function RandomNode({ data }: NodeProps<WithStats>) {
               type="source"
               position={Position.Right}
               id={String(i)}
-              className="!right-[-11px] !h-2 !w-2 !border-2 !border-white !bg-slate-400 dark:!border-neutral-900"
+              className={`${HANDLE} !right-[-14px] !bg-slate-400`}
             />
           </div>
         ))}
@@ -637,7 +649,7 @@ export function TagNode({ data }: NodeProps<WithStats>) {
   const d = data as Extract<FlowNodeData, { kind: "tag" }>;
   return (
     <div className={`${SHELL} w-[224px]`}>
-      <Handle type="target" position={T} />
+      <Handle type="target" position={T} className={`${HANDLE} !top-[-8px] !bg-neutral-400`} />
       <Head tone="bg-yellow-50 text-yellow-800 border-b border-yellow-100" label="Tag" />
       <div className="flex items-center gap-1 p-2.5 text-[12px]">
         <span>{d.action === "add" ? "+" : "−"}</span>
@@ -648,7 +660,7 @@ export function TagNode({ data }: NodeProps<WithStats>) {
           className="flex-1 font-semibold"
         />
       </div>
-      <Handle type="source" position={B} />
+      <Handle type="source" position={B} className={`${HANDLE} !bottom-[-8px] !bg-neutral-400`} />
     </div>
   );
 }
@@ -656,7 +668,7 @@ export function TagNode({ data }: NodeProps<WithStats>) {
 export function EndNode() {
   return (
     <div className={`${SHELL} w-[140px]`}>
-      <Handle type="target" position={T} />
+      <Handle type="target" position={T} className={`${HANDLE} !top-[-8px] !bg-neutral-400`} />
       <div className="px-2.5 py-2 text-center text-[12px] font-semibold text-neutral-500">Fim</div>
     </div>
   );

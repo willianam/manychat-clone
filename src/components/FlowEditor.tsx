@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import ReactFlow, {
   Background, Controls, MiniMap, addEdge,
   useNodesState, useEdgesState,
+  ConnectionLineType, MarkerType,
   type Connection, type Edge, type Node,
 } from "reactflow";
 import "reactflow/dist/style.css";
