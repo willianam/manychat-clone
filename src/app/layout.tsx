@@ -15,6 +15,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Link href="/flows" className="text-sm text-neutral-600 hover:text-neutral-900">
               Fluxos
             </Link>
+            <Link href="/gatilhos" className="text-sm text-neutral-600 hover:text-neutral-900">
+              Gatilhos
+            </Link>
             <Link href="/contacts" className="text-sm text-neutral-600 hover:text-neutral-900">
               Contatos
             </Link>

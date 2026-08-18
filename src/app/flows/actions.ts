@@ -6,6 +6,7 @@ import { db } from "../../server/db";
 import { FlowGraph, validateGraph } from "../../lib/flow-schema";
 import { reindexGraph, starterGraph } from "../../lib/flow-edit";
 import { parseFlowFile } from "../../lib/flow-io";
+import { findConflict, normalizeDraft } from "../../lib/trigger-rules";
 
 /**
  * Flow CRUD.
@@ -32,21 +33,11 @@ function cleanName(raw: FormDataEntryValue | null, fallback: string): string {
 }
 
 /**
- * Create a flow. It is born with a greeting wired to an end node, so it is
- * valid and runnable from the first second — a flow you have to repair before
- * you can save it is worse than no flow.
+ * Creating a flow now goes through `createFlowWithObjective` (below), which
+ * asks what should START the flow and writes the Trigger in the same
+ * transaction. The old name-only `createFlow` was removed rather than kept
+ * around: it was the path that produced flows nothing could ever fire.
  */
-export async function createFlow(formData: FormData) {
-  const name = cleanName(formData.get("name"), "Fluxo sem nome");
-  const graph = assertRunnable(starterGraph());
-
-  const flow = await db.flow.create({
-    data: { name, enabled: false, graph: graph as never },
-  });
-
-  revalidatePath("/flows");
-  redirect(`/flows/${flow.id}`);
-}
 
 /**
  * Import a flow from an exported JSON file.
@@ -154,4 +145,111 @@ export async function setFlowEnabled(formData: FormData) {
 
   revalidatePath("/flows");
   revalidatePath(`/flows/${id}`);
+}
+
+
+/**
+ * Create a flow starting from an OBJECTIVE, the way ManyChat opens.
+ *
+ * The first question a real automation answers is "what makes this run", not
+ * "what is it called" — a flow with no trigger is inert no matter how good
+ * the messages are. So the objective picker creates the Trigger in the same
+ * step as the Flow, and the two are written in one transaction: a flow that
+ * exists without the trigger the owner asked for is exactly the half-built
+ * state this feature is meant to remove.
+ *
+ * "do zero" is a real objective, not an escape hatch — sometimes you are
+ * building a branch that a menu or a ref link will call into. It creates the
+ * flow with no trigger and says so on the canvas via the "Quando…" card.
+ */
+export type Objective = "comment" | "story_reply" | "keyword" | "blank";
+
+const OBJECTIVE_KIND: Record<Exclude<Objective, "blank">, string> = {
+  comment: "COMMENT",
+  story_reply: "STORY_REPLY",
+  keyword: "KEYWORD",
+};
+
+/** Default name when the owner did not type one, so the list stays readable. */
+const OBJECTIVE_NAME: Record<Objective, string> = {
+  comment: "Comentário → direct",
+  story_reply: "Resposta ao story",
+  keyword: "Palavra-chave",
+  blank: "Fluxo sem nome",
+};
+
+export async function createFlowWithObjective(input: {
+  objective: Objective;
+  name?: string;
+  pattern?: string;
+  mediaId?: string | null;
+}): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  const objective = input.objective;
+  if (!(objective in OBJECTIVE_NAME)) {
+    return { ok: false, error: "Objetivo inválido." };
+  }
+
+  const name = cleanName(input.name ?? null, OBJECTIVE_NAME[objective]);
+  const graph = assertRunnable(starterGraph());
+
+  if (objective === "blank") {
+    const flow = await db.flow.create({
+      data: { name, enabled: false, graph: graph as never },
+    });
+    revalidatePath("/flows");
+    return { ok: true, id: flow.id };
+  }
+
+  // Validate the trigger BEFORE creating anything. Discovering the keyword is
+  // taken only after the flow exists would leave an orphan the owner has to
+  // clean up by hand.
+  const normalized = normalizeDraft({
+    kind: OBJECTIVE_KIND[objective],
+    pattern: input.pattern,
+    match: "CONTAINS",
+    mediaId: input.mediaId,
+  });
+  if (!normalized.ok) return normalized;
+  const draft = normalized.draft;
+
+  const existing = await db.trigger.findMany({
+    where: { kind: draft.kind },
+    include: { flow: { select: { name: true } } },
+  });
+  const clash = findConflict(draft, existing);
+  if (clash) {
+    const where = clash.flow?.name ? ` no fluxo "${clash.flow.name}"` : "";
+    return {
+      ok: false,
+      error: clash.pattern
+        ? `Já existe um gatilho com "${clash.pattern}"${where}.`
+        : `Já existe um gatilho desse tipo${where}.`,
+    };
+  }
+
+  // One transaction: the flow and the thing that starts it arrive together.
+  const flow = await db.$transaction(async (tx) => {
+    const created = await tx.flow.create({
+      data: { name, enabled: false, graph: graph as never },
+    });
+    await tx.trigger.create({
+      data: {
+        flowId: created.id,
+        kind: draft.kind,
+        pattern: draft.pattern,
+        match: draft.match,
+        mediaId: draft.mediaId,
+        // A post-specific comment trigger should beat the catch-all even if
+        // the catch-all was created later; priority makes that explicit
+        // rather than relying on the dispatcher's mediaId ordering alone.
+        priority: draft.mediaId ? 10 : 0,
+        enabled: true,
+      },
+    });
+    return created;
+  });
+
+  revalidatePath("/flows");
+  revalidatePath("/gatilhos");
+  return { ok: true, id: flow.id };
 }

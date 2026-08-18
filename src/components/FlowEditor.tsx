@@ -13,6 +13,8 @@ import { duplicateNode, pruneOrphanEdges, uid, withInlineText } from "../lib/flo
 import type { FlowStats } from "../server/flow-metrics";
 import { nodeTypes } from "./nodes";
 import { PropertiesPanel } from "./PropertiesPanel";
+import { TriggerNode, TRIGGER_NODE_ID, type TriggerNodeData } from "./TriggerNode";
+import type { TriggerView } from "../app/gatilhos/actions";
 
 /**
  * Flow editor.
@@ -79,13 +81,32 @@ const DEFAULTS: Record<string, () => object> = {
   end: () => ({ kind: "end" }),
 };
 
+/**
+ * The canvas node table, with the synthetic "Quando…" card added.
+ *
+ * Built once at module scope: React Flow warns (and remounts every node) when
+ * `nodeTypes` is a new object on each render.
+ */
+const canvasNodeTypes = { ...nodeTypes, __trigger__: TriggerNode };
+
 export function FlowEditor({
   initial,
   stats,
+  triggers,
+  onAddTrigger,
+  onEditTrigger,
   onSave,
 }: {
   initial: FlowGraph;
   stats?: FlowStats;
+  /**
+   * Triggers of this flow, for the "Quando…" card. These are rows of the
+   * `Trigger` table, NOT graph nodes — see TriggerNode.tsx. Undefined means
+   * the caller does not want the card at all (the preview, for instance).
+   */
+  triggers?: TriggerView[];
+  onAddTrigger?: () => void;
+  onEditTrigger?: (trigger: TriggerView) => void;
   onSave: (graph: FlowGraph) => Promise<void>;
 }) {
   const [nodes, setNodes, onNodesChange] = useNodesState(initial.nodes as Node[]);
@@ -160,19 +181,51 @@ export function FlowEditor({
    * can draw its own numbers and commit its own text. Both are stripped
    * before validation — they are display wiring, not flow data.
    */
-  const rendered = useMemo(
-    () =>
-      nodes.map((n) => ({
-        ...n,
-        data: {
-          ...n.data,
-          _stats: stats?.[n.id],
-          _onText: (text: string) =>
-            updateNodeData(n.id, withInlineText(n.data as FlowNodeData, text)),
-        },
-      })) as Node[],
-    [nodes, stats, updateNodeData],
-  );
+  const rendered = useMemo(() => {
+    const real = nodes.map((n) => ({
+      ...n,
+      data: {
+        ...n.data,
+        _stats: stats?.[n.id],
+        _onText: (text: string) =>
+          updateNodeData(n.id, withInlineText(n.data as FlowNodeData, text)),
+      },
+    })) as Node[];
+
+    if (!triggers) return real;
+
+    /**
+     * Inject the "Quando…" card.
+     *
+     * It is added HERE, to the rendered list, and never to `nodes` state —
+     * which is what `clean` (and therefore validation and saving) reads. That
+     * is the whole reason a trigger can be drawn on the canvas without ever
+     * becoming part of the saved graph.
+     *
+     * It sits above the flow's entry node so it reads as the first step. It
+     * is not an edge target and nothing connects to it, so `validateGraph`'s
+     * entry-node count sees exactly the same graph it did before.
+     */
+    const entry = real.find((n) => !edges.some((e) => e.target === n.id)) ?? real[0];
+    const anchor = entry?.position ?? { x: 240, y: 80 };
+
+    const card: Node<TriggerNodeData> = {
+      id: TRIGGER_NODE_ID,
+      type: "__trigger__",
+      position: { x: anchor.x, y: anchor.y - 210 },
+      data: {
+        triggers,
+        onAdd: () => onAddTrigger?.(),
+        onEdit: (t) => onEditTrigger?.(t),
+      },
+      deletable: false,
+      draggable: false,
+      connectable: false,
+      selectable: false,
+    };
+
+    return [card as Node, ...real];
+  }, [nodes, edges, stats, updateNodeData, triggers, onAddTrigger, onEditTrigger]);
 
   const onConnect = useCallback(
     (c: Connection) => {
@@ -371,17 +424,25 @@ export function FlowEditor({
           <ReactFlow
             nodes={rendered}
             edges={edges}
-            onNodesChange={onNodesChange}
+            // Changes to the synthetic card (position, selection) are dropped
+            // before they can reach graph state.
+            onNodesChange={(changes) =>
+              onNodesChange(
+                changes.filter((c) => !("id" in c) || c.id !== TRIGGER_NODE_ID),
+              )
+            }
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
-            onNodeClick={(_, n) => setSelectedId(n.id)}
+            // The synthetic trigger card is not a graph node: selecting it
+            // would open a properties panel for something that cannot be edited.
+            onNodeClick={(_, n) => setSelectedId(n.id === TRIGGER_NODE_ID ? null : n.id)}
             onPaneClick={() => setSelectedId(null)}
             onEdgesDelete={() => setSavedAt(null)}
             onNodesDelete={(deleted) => {
               setSelectedId((id) => (deleted.some((n) => n.id === id) ? null : id));
               setSavedAt(null);
             }}
-            nodeTypes={nodeTypes}
+            nodeTypes={canvasNodeTypes}
             // We own Delete/Backspace so it can respect focused text fields.
             deleteKeyCode={null}
             fitView

@@ -69,17 +69,17 @@ describe("sendPrivateReply", () => {
 });
 
 describe("fetchProfile", () => {
-  it("reads profile_picture_url, not profile_pic", async () => {
+  it("reads profile_pic — asking for profile_picture_url fails the whole call", async () => {
     const spy = mockFetch({
       name: "Ana",
       username: "ana.demo",
-      profile_picture_url: "https://cdn/x.jpg",
+      profile_pic: "https://cdn/x.jpg",
     });
     const { fetchProfile } = await import("../instagram");
 
     const p = await fetchProfile("IGSID-1");
 
-    expect(spy.mock.calls[0][0]).toContain("fields=name,username,profile_picture_url");
+    expect(spy.mock.calls[0][0]).toContain("fields=name,username,profile_pic");
     expect(p).toEqual({
       name: "Ana",
       username: "ana.demo",

@@ -1,7 +1,7 @@
 import { db } from "../../server/db";
 import { FlowGraph, validateGraph } from "../../lib/flow-schema";
-import { createFlow } from "./actions";
 import { FlowRow } from "./FlowRow";
+import { NewFlowButton } from "./NewFlowButton";
 import { ImportFlowButton } from "./ImportFlowButton";
 
 export const dynamic = "force-dynamic";
@@ -45,21 +45,8 @@ export default async function FlowsPage() {
         </div>
 
         <div className="flex items-start gap-2">
-        <ImportFlowButton />
-        <form action={createFlow} className="flex gap-2">
-          <input
-            name="name"
-            placeholder="Nome do novo fluxo"
-            maxLength={120}
-            className="w-52 rounded-lg border px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
-          />
-          <button
-            type="submit"
-            className="whitespace-nowrap rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white transition hover:bg-indigo-700"
-          >
-            + Novo fluxo
-          </button>
-        </form>
+          <ImportFlowButton />
+          <NewFlowButton />
         </div>
       </div>
 
@@ -67,8 +54,8 @@ export default async function FlowsPage() {
         <div className="mt-8 rounded-xl border border-dashed p-10 text-center">
           <p className="font-medium">Nenhum fluxo ainda.</p>
           <p className="mt-1 text-sm text-neutral-500">
-            Crie o primeiro acima. Ele já nasce com uma mensagem de boas-vindas
-            ligada a um fim, pronto para editar.
+            Crie o primeiro acima escolhendo o que deve iniciá-lo — comentário,
+            resposta a story ou palavra-chave. O gatilho nasce junto com o fluxo.
           </p>
         </div>
       ) : (

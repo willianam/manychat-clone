@@ -223,24 +223,27 @@ export async function sendPrivateReply(
 /**
  * Public profile fields for a contact. Best-effort: failure is not fatal.
  *
- * This API exposes `name` and `username`; the avatar comes back as
- * `profile_picture_url` rather than `profile_pic`.
+ * The avatar field on THIS node is `profile_pic`. `profile_picture_url` is
+ * the name it carries on /me, and asking for it here fails the whole call —
+ * Graph rejects the request rather than omitting the unknown field, so name
+ * and username came back empty too. Every contact created before this fix
+ * has no name for that reason.
  */
 export async function fetchProfile(
   igScopedId: string,
 ): Promise<{ name?: string; username?: string; profilePic?: string }> {
   try {
     const res = await fetch(
-      `${BASE}/${igScopedId}?fields=name,username,profile_picture_url`,
+      `${BASE}/${igScopedId}?fields=name,username,profile_pic`,
       { headers: { Authorization: `Bearer ${requireEnv("IG_ACCESS_TOKEN")}` } },
     );
     if (!res.ok) return {};
     const b = (await res.json()) as {
       name?: string;
       username?: string;
-      profile_picture_url?: string;
+      profile_pic?: string;
     };
-    return { name: b.name, username: b.username, profilePic: b.profile_picture_url };
+    return { name: b.name, username: b.username, profilePic: b.profile_pic };
   } catch {
     return {};
   }

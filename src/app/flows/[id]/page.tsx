@@ -2,6 +2,7 @@ import Link from "next/link";
 import { db } from "../../../server/db";
 import { flowStats } from "../../../server/flow-metrics";
 import { FlowGraph } from "../../../lib/flow-schema";
+import { triggersOfFlow } from "../../gatilhos/actions";
 import { EditorShell } from "./EditorShell";
 import { ExportFlowButton } from "./ExportFlowButton";
 
@@ -14,6 +15,9 @@ export default async function FlowPage({ params }: { params: Promise<{ id: strin
 
   const graph = FlowGraph.parse(flow.graph);
   const stats = await flowStats(db, flow.id);
+  // Triggers are table rows, not graph nodes — the editor draws them as the
+  // synthetic "Quando…" card at the top of the canvas.
+  const triggers = await triggersOfFlow(flow.id);
 
   return (
     <main>
@@ -50,7 +54,7 @@ export default async function FlowPage({ params }: { params: Promise<{ id: strin
           <ExportFlowButton name={flow.name} graph={graph} />
         </div>
       </div>
-      <EditorShell flowId={flow.id} initial={graph} stats={stats} />
+      <EditorShell flowId={flow.id} initial={graph} stats={stats} triggers={triggers} />
     </main>
   );
 }
