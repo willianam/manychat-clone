@@ -241,3 +241,17 @@ export function reindexGraph(graph: FlowGraph): FlowGraph {
 
   return { nodes, edges };
 }
+
+/**
+ * Where a block added by click lands: right below the selected node, or
+ * below the last node when nothing is selected. Deterministic on purpose —
+ * a random offset made "add, add, add" scatter blocks across the canvas.
+ */
+export function insertPosition(
+  nodes: Array<{ id: string; position: { x: number; y: number } }>,
+  selectedId: string | null,
+): { x: number; y: number } {
+  const anchor = nodes.find((n) => n.id === selectedId) ?? nodes[nodes.length - 1];
+  if (!anchor) return { x: 240, y: 80 };
+  return { x: anchor.position.x, y: anchor.position.y + 180 };
+}

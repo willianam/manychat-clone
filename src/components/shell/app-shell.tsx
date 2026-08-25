@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { GuardedLink } from "@/components/ui/guarded-link";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { SidebarNav } from "./sidebar-nav";
 import { isBareRoute, titleFor } from "./nav";
@@ -57,7 +57,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
 function Brand() {
   return (
-    <Link
+    <GuardedLink
       href="/"
       className="flex h-14 items-center gap-2 border-b px-4 font-semibold focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
     >
@@ -65,7 +65,7 @@ function Brand() {
         <MessageCircle className="h-4 w-4" aria-hidden />
       </span>
       ManyChat Clone
-    </Link>
+    </GuardedLink>
   );
 }
 

@@ -4,8 +4,12 @@ import { useState } from "react";
 import type { Node } from "reactflow";
 import {
   ConditionOp,
+  InputType,
   LIMITS,
   MEDIA_FORMATS,
+  armLabel,
+  rulesOf,
+  type ConditionRule,
   type FlowButton,
   type FlowNodeData,
 } from "../lib/flow-schema";
@@ -39,14 +43,22 @@ import { cn } from "@/lib/ui/cn";
 
 type Update = (data: FlowNodeData) => void;
 
+/** What a "Ir para" can point at: the other steps of this flow, and the flows. */
+export type GotoTargets = {
+  nodes: Array<{ id: string; label: string }>;
+  flows: Array<{ id: string; name: string }>;
+};
+
 export function PropertiesPanel({
   node,
+  targets,
   onChange,
   onDelete,
   onDuplicate,
   onClose,
 }: {
   node: Node | null;
+  targets?: GotoTargets;
   onChange: Update;
   onDelete: () => void;
   onDuplicate?: () => void;
@@ -73,7 +85,7 @@ export function PropertiesPanel({
       </div>
 
       <div className="flex-1 space-y-4 p-4">
-        <Body data={data} onChange={onChange} />
+        <Body data={data} onChange={onChange} targets={targets} self={node.id} />
       </div>
 
       <div className="border-t p-4">
@@ -94,7 +106,17 @@ export function PropertiesPanel({
   );
 }
 
-function Body({ data, onChange }: { data: FlowNodeData; onChange: Update }) {
+function Body({
+  data,
+  onChange,
+  targets,
+  self,
+}: {
+  data: FlowNodeData;
+  onChange: Update;
+  targets?: GotoTargets;
+  self: string;
+}) {
   switch (data.kind) {
     case "message":
       return <MessageProps data={data} onChange={onChange} />;
@@ -123,25 +145,15 @@ function Body({ data, onChange }: { data: FlowNodeData; onChange: Update }) {
     case "tag":
       return <TagProps data={data} onChange={onChange} />;
     case "goto":
-      return (
-        <p className="text-xs text-neutral-500">
-          Salta para {"flowId" in data.target ? "outro fluxo" : "outro passo deste fluxo"}. A edição
-          chega com o painel completo.
-        </p>
-      );
+      return <GotoProps data={data} onChange={onChange} targets={targets} self={self} />;
     case "goal":
       return (
         <Field label="Nome da meta" hint="Aparece no funil quando o contato passa por aqui.">
-          <TextInput value={data.name} onChange={(name) => onChange({ ...data, name })} />
+          <TextInput value={data.name} max={80} onChange={(name) => onChange({ ...data, name })} />
         </Field>
       );
     case "request":
-      return (
-        <p className="text-xs text-neutral-500">
-          {data.method} {data.url}. A edição de cabeçalhos, corpo e mapeamento chega com o painel
-          completo.
-        </p>
-      );
+      return <RequestProps data={data} onChange={onChange} />;
     case "end":
       return (
         <p className="text-xs text-neutral-500">
@@ -480,6 +492,15 @@ function MessageProps({
   );
 }
 
+const INPUT_TYPE_LABELS: Record<InputType, string> = {
+  text: "Texto livre",
+  number: "Número",
+  email: "E-mail",
+  phone: "Telefone",
+  date: "Data",
+  option: "Uma das opções",
+};
+
 function QuestionProps({
   data,
   onChange,
@@ -487,6 +508,9 @@ function QuestionProps({
   data: Extract<FlowNodeData, { kind: "question" }>;
   onChange: Update;
 }) {
+  const inputType = data.inputType ?? "text";
+  const options = data.options ?? [];
+
   return (
     <>
       <Field label="Pergunta">
@@ -502,6 +526,117 @@ function QuestionProps({
           value={data.saveAs}
           placeholder="nome"
           onChange={(saveAs) => onChange({ ...data, saveAs })}
+        />
+      </Field>
+
+      <Field label="Tipo de resposta" hint="Respostas fora do formato são recusadas.">
+        <Select
+          value={inputType}
+          onChange={(v) =>
+            onChange({
+              ...data,
+              inputType: v === "text" ? undefined : v,
+              options: v === "option" ? (options.length ? options : ["Sim", "Não"]) : undefined,
+            })
+          }
+          options={InputType.options.map((o) => ({ value: o, label: INPUT_TYPE_LABELS[o] }))}
+        />
+      </Field>
+
+      {inputType === "option" && (
+        <div>
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+            Opções aceitas ({options.length}/{LIMITS.quickReplies})
+          </span>
+          <p className="mb-2 mt-0.5 text-[10px] text-neutral-400">
+            Aparecem como respostas rápidas; o contato também pode digitar uma delas.
+          </p>
+          <div className="space-y-2">
+            {options.map((o, i) => (
+              <div key={i} className="flex items-center gap-1">
+                <TextInput
+                  value={o}
+                  max={LIMITS.quickReplyTitle}
+                  placeholder={`Opção ${i + 1}`}
+                  onChange={(v) =>
+                    onChange({ ...data, options: options.map((x, n) => (n === i ? v : x)) })
+                  }
+                />
+                <RowTools
+                  canUp={i > 0}
+                  canDown={i < options.length - 1}
+                  canRemove={options.length > 1}
+                  removeHint="É preciso ao menos uma opção."
+                  onUp={() => onChange({ ...data, options: move(options, i, i - 1) })}
+                  onDown={() => onChange({ ...data, options: move(options, i, i + 1) })}
+                  onRemove={() => onChange({ ...data, options: options.filter((_, n) => n !== i) })}
+                />
+              </div>
+            ))}
+          </div>
+          <div className="mt-2">
+            <AddButton
+              label="Adicionar opção"
+              onClick={() => onChange({ ...data, options: [...options, ""] })}
+              disabled={options.length >= LIMITS.quickReplies}
+              atLimit={`O Instagram aceita no máximo ${LIMITS.quickReplies} respostas rápidas.`}
+            />
+          </div>
+        </div>
+      )}
+
+      <Field
+        label="Mensagem se inválida"
+        hint="Enviada no lugar da pergunta quando a resposta não serve."
+      >
+        <TextArea
+          value={data.validationMessage ?? ""}
+          max={LIMITS.messageText}
+          rows={2}
+          onChange={(v) => onChange({ ...data, validationMessage: v === "" ? undefined : v })}
+        />
+      </Field>
+
+      <Field label="Tentativas" hint="Respostas inválidas toleradas antes de desistir (1 a 10).">
+        <Input
+          type="number"
+          min={1}
+          max={10}
+          value={data.maxAttempts ?? 3}
+          onChange={(e) => {
+            const n = Math.round(Number(e.target.value));
+            if (!Number.isFinite(n)) return;
+            onChange({ ...data, maxAttempts: Math.min(10, Math.max(1, n)) });
+          }}
+          className={INPUT}
+        />
+      </Field>
+
+      <label className="flex items-center gap-2 text-[12px]">
+        <Checkbox
+          checked={!!data.allowSkip}
+          onCheckedChange={(checked) =>
+            onChange({ ...data, allowSkip: checked === true ? true : undefined })
+          }
+        />
+        Permitir pular (adiciona a opção &quot;Pular&quot;)
+      </label>
+
+      <Field
+        label="Quando esgotar as tentativas"
+        hint={
+          data.onInvalid === "branch"
+            ? 'Ligue a saída "inválida" do bloco: é por ela que a conversa sai na primeira falha.'
+            : 'Insiste até o limite e então segue pelo caminho normal (ou pela saída "inválida", se ligada).'
+        }
+      >
+        <Select
+          value={data.onInvalid ?? "retry"}
+          onChange={(v) => onChange({ ...data, onInvalid: v === "retry" ? undefined : v })}
+          options={[
+            { value: "retry", label: "Repetir a pergunta" },
+            { value: "branch", label: "Desviar na primeira falha" },
+          ]}
         />
       </Field>
     </>
@@ -952,6 +1087,16 @@ const OP_LABELS: Record<string, string> = {
   subscribed: "está inscrito",
 };
 
+/** `exists`, `hasTag`… are unary — a value box would just be noise. */
+const UNARY: string[] = ["exists", "hasTag", "notHasTag", "isEmpty", "subscribed"];
+
+/**
+ * Condition: one rule, or several joined by AND/OR.
+ *
+ * The first rule is always mirrored into `key`/`op`/`value` so a graph
+ * saved here still reads in anything that only knows the single-rule shape;
+ * with one rule `rules`/`combinator` are dropped altogether.
+ */
 function ConditionProps({
   data,
   onChange,
@@ -959,46 +1104,104 @@ function ConditionProps({
   data: Extract<FlowNodeData, { kind: "condition" }>;
   onChange: Update;
 }) {
-  // `exists` and `hasTag` are unary — a value box would just be noise.
-  const UNARY = ["exists", "hasTag", "notHasTag", "isEmpty", "subscribed"];
-  const needsValue = !UNARY.includes(data.op);
+  const rules = rulesOf(data);
+  const combinator = data.combinator ?? "and";
+
+  const commit = (next: ConditionRule[], comb = combinator) => {
+    const first = next[0] ?? { key: "", op: "exists" as const };
+    onChange({
+      ...data,
+      key: first.key,
+      op: first.op,
+      value: first.value,
+      rules: next.length > 1 ? next : undefined,
+      combinator: next.length > 1 ? comb : undefined,
+    });
+  };
+  const patch = (i: number, r: ConditionRule) => commit(rules.map((x, n) => (n === i ? r : x)));
 
   return (
     <>
-      <Field
-        label={data.op === "hasTag" || data.op === "notHasTag" ? "Nome da tag" : "Campo"}
-        hint={
-          data.op === "hasTag" || data.op === "notHasTag"
-            ? "A tag procurada no contato."
-            : "Chave salva no contexto."
-        }
-      >
-        <TextInput mono value={data.key} onChange={(key) => onChange({ ...data, key })} />
-      </Field>
-
-      <Field label="Comparação">
-        <Select
-          value={data.op}
-          onChange={(op) =>
-            onChange({
-              ...data,
-              op,
-              // Drop a stale value when switching to a unary operator.
-              value: UNARY.includes(op) ? undefined : data.value,
-            })
-          }
-          options={ConditionOp.options.map((o) => ({ value: o, label: OP_LABELS[o] ?? o }))}
-        />
-      </Field>
-
-      {needsValue && (
-        <Field label="Valor">
-          <TextInput
-            value={data.value ?? ""}
-            onChange={(v) => onChange({ ...data, value: v === "" ? undefined : v })}
+      {rules.length > 1 && (
+        <Field label="Combinar regras">
+          <Select
+            value={combinator}
+            onChange={(c) => commit(rules, c)}
+            options={[
+              { value: "and", label: "Todas precisam valer (E)" },
+              { value: "or", label: "Basta uma valer (OU)" },
+            ]}
           />
         </Field>
       )}
+
+      <div className="space-y-2">
+        {rules.map((r, i) => {
+          const tag = r.op === "hasTag" || r.op === "notHasTag";
+          const needsValue = !UNARY.includes(r.op);
+          return (
+            <div key={i} className="rounded-lg border p-2">
+              <div className="mb-1 flex items-center gap-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-teal-700">
+                  Regra {i + 1}
+                </span>
+                <RowTools
+                  canUp={i > 0}
+                  canDown={i < rules.length - 1}
+                  canRemove={rules.length > 1}
+                  removeHint="É preciso ao menos uma regra."
+                  onUp={() => commit(move(rules, i, i - 1))}
+                  onDown={() => commit(move(rules, i, i + 1))}
+                  onRemove={() => commit(rules.filter((_, n) => n !== i))}
+                />
+              </div>
+              {r.op !== "subscribed" && (
+                <TextInput
+                  mono
+                  value={r.key}
+                  placeholder={tag ? "nome da tag" : "campo"}
+                  onChange={(key) => patch(i, { ...r, key })}
+                />
+              )}
+              <div className="mt-1.5">
+                <Select
+                  value={r.op}
+                  onChange={(op) =>
+                    patch(i, {
+                      ...r,
+                      op,
+                      // Drop a stale value when switching to a unary operator.
+                      value: UNARY.includes(op) ? undefined : r.value,
+                      // `subscribed` ignores the key; keep it valid for the schema.
+                      key: op === "subscribed" && !r.key ? "subscribed" : r.key,
+                    })
+                  }
+                  options={ConditionOp.options.map((o) => ({
+                    value: o,
+                    label: OP_LABELS[o] ?? o,
+                  }))}
+                />
+              </div>
+              {needsValue && (
+                <div className="mt-1.5">
+                  <TextInput
+                    value={r.value ?? ""}
+                    placeholder="valor"
+                    onChange={(v) => patch(i, { ...r, value: v === "" ? undefined : v })}
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <AddButton
+        label="Adicionar regra"
+        onClick={() => commit([...rules, { key: "", op: "exists" }])}
+        disabled={rules.length >= 10}
+        atLimit="Máximo de 10 regras por condição."
+      />
 
       <p className="rounded-lg bg-neutral-50 px-2.5 py-2 text-[11px] text-neutral-500">
         As duas saídas — <b className="text-emerald-600">sim</b> e{" "}
@@ -1016,6 +1219,54 @@ const DELAY_PRESETS = [
   { label: "1 dia", seconds: 86400 },
 ];
 
+const DELAY_MAX = 60 * 60 * 24 * 30;
+
+function SecondsInput({
+  value,
+  onChange,
+  presets = true,
+}: {
+  value: number;
+  onChange: (seconds: number) => void;
+  presets?: boolean;
+}) {
+  return (
+    <>
+      <Input
+        type="number"
+        min={1}
+        max={DELAY_MAX}
+        value={value}
+        onChange={(e) => {
+          const n = Math.round(Number(e.target.value));
+          if (!Number.isFinite(n)) return;
+          onChange(Math.min(DELAY_MAX, Math.max(1, n)));
+        }}
+        className={INPUT}
+      />
+      {presets && (
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {DELAY_PRESETS.map((p) => (
+            <button
+              key={p.seconds}
+              type="button"
+              aria-pressed={value === p.seconds}
+              onClick={() => onChange(p.seconds)}
+              className={`rounded-full border px-2.5 py-0.5 text-[11px] transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+                value === p.seconds
+                  ? "border-rose-300 bg-rose-50 text-rose-700"
+                  : "text-neutral-500 hover:bg-neutral-50"
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
 function DelayProps({
   data,
   onChange,
@@ -1023,86 +1274,149 @@ function DelayProps({
   data: Extract<FlowNodeData, { kind: "delay" }>;
   onChange: Update;
 }) {
-  const MAX = 60 * 60 * 24 * 30;
+  const mode = data.mode ?? "fixed";
 
   return (
     <>
-      <Field label="Esperar (segundos)" hint={`Entre 1 segundo e 30 dias (${MAX}s).`}>
-        <Input
-          type="number"
-          min={1}
-          max={MAX}
-          value={data.seconds}
-          onChange={(e) => {
-            const n = Math.round(Number(e.target.value));
-            if (!Number.isFinite(n)) return;
-            onChange({ ...data, seconds: Math.min(MAX, Math.max(1, n)) });
+      <Field label="Esperar">
+        <Select
+          value={mode}
+          onChange={(m) => {
+            if (m === "fixed") {
+              onChange({
+                kind: "delay",
+                seconds: data.seconds ?? 3600,
+                window: data.window,
+              });
+            } else if (m === "untilReply") {
+              onChange({ kind: "delay", mode: "untilReply" });
+            } else {
+              onChange({
+                kind: "delay",
+                mode: "untilDate",
+                untilDate: data.untilDate ?? defaultUntilDate(),
+                window: data.window,
+              });
+            }
           }}
-          className={INPUT}
+          options={[
+            { value: "fixed", label: "Um tempo fixo" },
+            { value: "untilReply", label: "Até o contato responder" },
+            { value: "untilDate", label: "Até uma data e hora" },
+          ]}
         />
       </Field>
 
-      <div className="flex flex-wrap gap-1">
-        {DELAY_PRESETS.map((p) => (
-          <button
-            key={p.seconds}
-            type="button"
-            aria-pressed={data.seconds === p.seconds}
-            onClick={() => onChange({ ...data, seconds: p.seconds })}
-            className={`rounded-full border px-2.5 py-0.5 text-[11px] transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
-              data.seconds === p.seconds
-                ? "border-rose-300 bg-rose-50 text-rose-700"
-                : "text-neutral-500 hover:bg-neutral-50"
-            }`}
-          >
-            {p.label}
-          </button>
-        ))}
-      </div>
-
-      <label className="flex items-center gap-2 text-[12px]">
-        <Checkbox
-          checked={!!data.window}
-          onCheckedChange={(checked) =>
-            onChange({
-              ...data,
-              window: checked === true ? { fromHour: 8, toHour: 22 } : undefined,
-            })
-          }
-        />
-        Só continuar dentro de um horário
-      </label>
-
-      {data.window && (
-        <div className="flex items-end gap-2">
-          <div className="flex-1">
-            <Field label="Das">
-              <HourSelect
-                value={data.window.fromHour}
-                onChange={(fromHour) =>
-                  onChange({ ...data, window: { ...data.window!, fromHour } })
-                }
-              />
-            </Field>
-          </div>
-          <div className="flex-1">
-            <Field label="Até">
-              <HourSelect
-                value={data.window.toHour}
-                onChange={(toHour) => onChange({ ...data, window: { ...data.window!, toHour } })}
-              />
-            </Field>
-          </div>
-        </div>
+      {mode === "fixed" && (
+        <>
+          <Field label="Segundos" hint={`Entre 1 segundo e 30 dias (${DELAY_MAX}s).`}>
+            <SecondsInput
+              value={data.seconds ?? 0}
+              onChange={(seconds) => onChange({ ...data, seconds })}
+            />
+          </Field>
+          <label className="flex items-center gap-2 text-[12px]">
+            <Checkbox
+              checked={!!data.cancelOnReply}
+              onCheckedChange={(checked) =>
+                onChange({ ...data, cancelOnReply: checked === true ? true : undefined })
+              }
+            />
+            Se o contato responder antes, seguir pela saída &quot;respondeu&quot;
+          </label>
+        </>
       )}
 
-      {data.window && (
-        <p className="text-[10px] text-neutral-400">
-          Se o tempo terminar fora da janela, a conversa continua na próxima abertura.
-        </p>
+      {mode === "untilReply" && (
+        <>
+          <label className="flex items-center gap-2 text-[12px]">
+            <Checkbox
+              checked={data.timeoutSeconds !== undefined}
+              onCheckedChange={(checked) =>
+                onChange({ ...data, timeoutSeconds: checked === true ? 86400 : undefined })
+              }
+            />
+            Desistir depois de um tempo (saída &quot;tempo esgotado&quot;)
+          </label>
+          {data.timeoutSeconds !== undefined && (
+            <Field label="Limite (segundos)">
+              <SecondsInput
+                value={data.timeoutSeconds}
+                onChange={(timeoutSeconds) => onChange({ ...data, timeoutSeconds })}
+              />
+            </Field>
+          )}
+        </>
+      )}
+
+      {mode === "untilDate" && (
+        <Field label="Continuar em" hint="No fuso da conta. Uma data já passada continua na hora.">
+          <Input
+            type="datetime-local"
+            value={data.untilDate ?? ""}
+            onChange={(e) => onChange({ ...data, untilDate: e.target.value.slice(0, 16) })}
+            className={INPUT}
+          />
+        </Field>
+      )}
+
+      {mode !== "untilReply" && (
+        <>
+          <label className="flex items-center gap-2 text-[12px]">
+            <Checkbox
+              checked={!!data.window}
+              onCheckedChange={(checked) =>
+                onChange({
+                  ...data,
+                  window: checked === true ? { fromHour: 8, toHour: 22 } : undefined,
+                })
+              }
+            />
+            Só continuar dentro de um horário
+          </label>
+
+          {data.window && (
+            <div className="flex items-end gap-2">
+              <div className="flex-1">
+                <Field label="Das">
+                  <HourSelect
+                    value={data.window.fromHour}
+                    onChange={(fromHour) =>
+                      onChange({ ...data, window: { ...data.window!, fromHour } })
+                    }
+                  />
+                </Field>
+              </div>
+              <div className="flex-1">
+                <Field label="Até">
+                  <HourSelect
+                    value={data.window.toHour}
+                    onChange={(toHour) =>
+                      onChange({ ...data, window: { ...data.window!, toHour } })
+                    }
+                  />
+                </Field>
+              </div>
+            </div>
+          )}
+
+          {data.window && (
+            <p className="text-[10px] text-neutral-400">
+              Se o tempo terminar fora da janela, a conversa continua na próxima abertura.
+            </p>
+          )}
+        </>
       )}
     </>
   );
+}
+
+/** Tomorrow at 09:00, local time, in the "YYYY-MM-DDTHH:mm" shape the schema wants. */
+function defaultUntilDate(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T09:00`;
 }
 
 function HourSelect({ value, onChange }: { value: number; onChange: (h: number) => void }) {
@@ -1286,7 +1600,18 @@ function RandomProps({
 
       {w.map((v, i) => (
         <div key={i} className="flex items-center gap-2">
-          <span className="w-16 text-[11px] text-neutral-500">Saída {i + 1}</span>
+          <Input
+            value={data.labels?.[i] ?? ""}
+            maxLength={40}
+            placeholder={armLabel({}, i)}
+            aria-label={`Nome da saída ${i + 1}`}
+            onChange={(e) => {
+              const labels = w.map((_, k) => data.labels?.[k] ?? "");
+              labels[i] = e.target.value;
+              onChange({ ...data, labels: labels.some(Boolean) ? labels : undefined });
+            }}
+            className={`${INPUT} w-28`}
+          />
           <Input
             type="number"
             min={1}
@@ -1303,6 +1628,7 @@ function RandomProps({
             }}
             className={`${INPUT} flex-1`}
           />
+          <span className="text-[11px] text-neutral-400">%</span>
         </div>
       ))}
 
@@ -1370,6 +1696,253 @@ function TagProps({
       <Field label="Tag">
         <TextInput value={data.tagName} onChange={(tagName) => onChange({ ...data, tagName })} />
       </Field>
+    </>
+  );
+}
+
+function GotoProps({
+  data,
+  onChange,
+  targets,
+  self,
+}: {
+  data: Extract<FlowNodeData, { kind: "goto" }>;
+  onChange: Update;
+  targets?: GotoTargets;
+  self: string;
+}) {
+  const toFlow = "flowId" in data.target;
+  const nodes = (targets?.nodes ?? []).filter((n) => n.id !== self);
+  const flows = targets?.flows ?? [];
+
+  return (
+    <>
+      <Field label="Ir para">
+        <Select
+          value={toFlow ? "flow" : "node"}
+          onChange={(v) =>
+            onChange({
+              ...data,
+              target:
+                v === "flow" ? { flowId: flows[0]?.id ?? "" } : { nodeId: nodes[0]?.id ?? "" },
+            })
+          }
+          options={[
+            { value: "node", label: "Um passo deste fluxo" },
+            { value: "flow", label: "Outro fluxo" },
+          ]}
+        />
+      </Field>
+
+      {!toFlow && (
+        <Field label="Passo" hint="A conversa continua a partir dele, sem voltar.">
+          {nodes.length ? (
+            <Select
+              value={"nodeId" in data.target && data.target.nodeId ? data.target.nodeId : "__none"}
+              onChange={(nodeId) => onChange({ ...data, target: { nodeId } })}
+              options={[
+                ...("nodeId" in data.target && !data.target.nodeId
+                  ? [{ value: "__none", label: "Escolha um passo" }]
+                  : []),
+                ...nodes.map((n) => ({ value: n.id, label: n.label })),
+              ]}
+            />
+          ) : (
+            <p className="mt-1 text-[11px] text-neutral-500">Não há outros passos neste fluxo.</p>
+          )}
+        </Field>
+      )}
+
+      {toFlow && (
+        <Field label="Fluxo" hint="Encerra esta conversa e começa o outro fluxo do início.">
+          {flows.length ? (
+            <Select
+              value={"flowId" in data.target && data.target.flowId ? data.target.flowId : "__none"}
+              onChange={(flowId) => onChange({ ...data, target: { flowId } })}
+              options={[
+                ...("flowId" in data.target && !data.target.flowId
+                  ? [{ value: "__none", label: "Escolha um fluxo" }]
+                  : []),
+                ...flows.map((f) => ({ value: f.id, label: f.name })),
+              ]}
+            />
+          ) : (
+            <p className="mt-1 text-[11px] text-neutral-500">Nenhum outro fluxo disponível.</p>
+          )}
+        </Field>
+      )}
+
+      <p className="rounded-lg bg-neutral-50 px-2.5 py-2 text-[11px] text-neutral-500">
+        Este bloco não tem saída própria: o caminho continua no destino.
+      </p>
+    </>
+  );
+}
+
+function RequestProps({
+  data,
+  onChange,
+}: {
+  data: Extract<FlowNodeData, { kind: "request" }>;
+  onChange: Update;
+}) {
+  const headers = data.headers ?? [];
+  const mapping = data.mapping ?? [];
+  const setHeaders = (next: typeof headers) =>
+    onChange({ ...data, headers: next.length ? next : undefined });
+  const setMapping = (next: typeof mapping) =>
+    onChange({ ...data, mapping: next.length ? next : undefined });
+
+  return (
+    <>
+      <Field label="Método">
+        <Select
+          value={data.method}
+          onChange={(method) => onChange({ ...data, method })}
+          options={[
+            { value: "GET", label: "GET" },
+            { value: "POST", label: "POST" },
+          ]}
+        />
+      </Field>
+
+      <Field
+        label="URL"
+        hint="Aceita {{campo}} do contato e {{secret.NOME}} (env FLOW_SECRET_NOME)."
+      >
+        <TextInput
+          mono
+          value={data.url}
+          max={2000}
+          placeholder="https://api.exemplo.com/…"
+          onChange={(url) => onChange({ ...data, url })}
+        />
+      </Field>
+
+      <div>
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+          Cabeçalhos ({headers.length}/20)
+        </span>
+        <div className="mt-1.5 space-y-2">
+          {headers.map((h, i) => (
+            <div key={i} className="rounded-lg border p-2">
+              <div className="mb-1 flex items-center gap-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
+                  Cabeçalho {i + 1}
+                </span>
+                <RowTools
+                  canUp={i > 0}
+                  canDown={i < headers.length - 1}
+                  canRemove
+                  onUp={() => setHeaders(move(headers, i, i - 1))}
+                  onDown={() => setHeaders(move(headers, i, i + 1))}
+                  onRemove={() => setHeaders(headers.filter((_, n) => n !== i))}
+                />
+              </div>
+              <TextInput
+                mono
+                value={h.name}
+                max={100}
+                placeholder="Authorization"
+                onChange={(name) =>
+                  setHeaders(headers.map((x, n) => (n === i ? { ...x, name } : x)))
+                }
+              />
+              <div className="mt-1.5">
+                <TextInput
+                  mono
+                  value={h.value}
+                  max={2000}
+                  placeholder="Bearer {{secret.API}}"
+                  onChange={(value) =>
+                    setHeaders(headers.map((x, n) => (n === i ? { ...x, value } : x)))
+                  }
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-2">
+          <AddButton
+            label="Adicionar cabeçalho"
+            onClick={() => setHeaders([...headers, { name: "", value: "" }])}
+            disabled={headers.length >= 20}
+            atLimit="Máximo de 20 cabeçalhos."
+          />
+        </div>
+      </div>
+
+      {data.method === "POST" && (
+        <Field label="Corpo (JSON)" hint="Enviado como application/json; {{campo}} é substituído.">
+          <UiTextarea
+            value={data.body ?? ""}
+            rows={5}
+            maxLength={10_000}
+            onChange={(e) => onChange({ ...data, body: e.target.value || undefined })}
+            className="mt-1 min-h-0 resize-y font-mono text-[12px] leading-snug"
+          />
+        </Field>
+      )}
+
+      <div>
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+          Gravar da resposta ({mapping.length}/20)
+        </span>
+        <p className="mb-1.5 mt-0.5 text-[10px] text-neutral-400">
+          Caminho no JSON (ex.: data.items[0].price) → campo do contato.
+        </p>
+        <div className="space-y-2">
+          {mapping.map((m, i) => (
+            <div key={i} className="rounded-lg border p-2">
+              <div className="mb-1 flex items-center gap-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
+                  Campo {i + 1}
+                </span>
+                <RowTools
+                  canUp={i > 0}
+                  canDown={i < mapping.length - 1}
+                  canRemove
+                  onUp={() => setMapping(move(mapping, i, i - 1))}
+                  onDown={() => setMapping(move(mapping, i, i + 1))}
+                  onRemove={() => setMapping(mapping.filter((_, n) => n !== i))}
+                />
+              </div>
+              <TextInput
+                mono
+                value={m.path}
+                max={200}
+                placeholder="data.preco"
+                onChange={(path) =>
+                  setMapping(mapping.map((x, n) => (n === i ? { ...x, path } : x)))
+                }
+              />
+              <div className="mt-1.5">
+                <TextInput
+                  mono
+                  value={m.field}
+                  placeholder="nome_do_campo"
+                  onChange={(field) =>
+                    setMapping(mapping.map((x, n) => (n === i ? { ...x, field } : x)))
+                  }
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-2">
+          <AddButton
+            label="Adicionar campo"
+            onClick={() => setMapping([...mapping, { path: "", field: "" }])}
+            disabled={mapping.length >= 20}
+            atLimit="Máximo de 20 campos."
+          />
+        </div>
+      </div>
+
+      <p className="rounded-lg bg-neutral-50 px-2.5 py-2 text-[11px] text-neutral-500">
+        Sai por <b className="text-emerald-600">sucesso</b> em respostas 2xx e por{" "}
+        <b className="text-rose-600">erro</b> no resto, inclusive tempo esgotado.
+      </p>
     </>
   );
 }

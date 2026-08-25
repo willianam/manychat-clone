@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { NAV, isActive } from "./nav";
+import { GuardedLink } from "@/components/ui/guarded-link";
 import { cn } from "@/lib/ui/cn";
 
 /** The nav list, shared by the desktop sidebar and the mobile sheet. */
@@ -14,7 +14,7 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
       {NAV.map(({ href, label, icon: Icon }) => {
         const active = isActive(href, pathname);
         return (
-          <Link
+          <GuardedLink
             key={href}
             href={href}
             onClick={onNavigate}
@@ -28,7 +28,7 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
           >
             <Icon className="h-4 w-4 shrink-0" aria-hidden />
             {label}
-          </Link>
+          </GuardedLink>
         );
       })}
     </nav>

@@ -30,7 +30,8 @@ export default async function FlowPreviewPage({ params }: { params: Promise<{ id
     </Button>
   );
 
-  const parsed = FlowGraph.safeParse(flow.graph);
+  // Preview what is being edited, draft included.
+  const parsed = FlowGraph.safeParse(flow.draftGraph ?? flow.graph);
   if (!parsed.success) {
     return (
       <main className="mx-auto w-full max-w-3xl px-6 py-8">
