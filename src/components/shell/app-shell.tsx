@@ -7,7 +7,9 @@ import { Menu, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { SidebarNav } from "./sidebar-nav";
+import { ConnectionStatus } from "./connection-status";
 import { isBareRoute, titleFor } from "./nav";
+import type { ConnectionStatus as Connection } from "../../server/connection-status";
 
 /**
  * App chrome: fixed sidebar on desktop, a sheet on mobile, and a header with
@@ -16,7 +18,14 @@ import { isBareRoute, titleFor } from "./nav";
  * Login and the privacy policy render bare — one has no session to show a
  * sidebar for, the other is read by Meta's reviewers, not by the owner.
  */
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({
+  children,
+  connection,
+}: {
+  children: React.ReactNode;
+  /** Computed by the layout on the server; see server/connection-status.ts. */
+  connection: Connection;
+}) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
@@ -46,7 +55,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
           <h2 className="truncate text-sm font-semibold">{titleFor(pathname)}</h2>
 
-          <ConnectionStatus />
+          <ConnectionStatus status={connection} />
         </header>
 
         <div className="flex min-w-0 flex-1 flex-col">{children}</div>
@@ -66,21 +75,5 @@ function Brand() {
       </span>
       ManyChat Clone
     </Link>
-  );
-}
-
-/**
- * Slot for the Instagram connection state. The backend does not expose it
- * yet (another front is building it), so this is a static placeholder.
- */
-function ConnectionStatus() {
-  return (
-    <span
-      className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700"
-      title="Estado da conexão com o Instagram (placeholder)"
-    >
-      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden />
-      conectado
-    </span>
   );
 }
