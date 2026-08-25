@@ -10,6 +10,7 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/ui/cn";
 import { ConversationList } from "./ConversationList";
 import { ContactPanel } from "./ContactPanel";
+import { LivePoll } from "./LivePoll";
 import { Thread } from "./Thread";
 import { inboxHref } from "./href";
 
@@ -43,6 +44,8 @@ export function InboxScreen({
 
   return (
     <div className="flex h-[calc(100vh-3.5rem)] min-h-0 w-full">
+      <LivePoll />
+
       <aside
         className={cn(
           "w-full shrink-0 flex-col border-r bg-card md:flex md:w-80 lg:w-[340px]",
