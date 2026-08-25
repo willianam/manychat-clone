@@ -1,5 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
-import { sendText, SendBlocked } from "./instagram";
+import { sendMessage, SendBlocked } from "./instagram";
+import { parseBroadcastBody, type BroadcastBody } from "../lib/broadcast-content";
+import { broadcastPayload } from "./broadcast-payload";
 import { canSend, WINDOW_MS } from "../lib/messaging-window";
 import {
   parseSegmentRules,
@@ -185,6 +187,7 @@ export async function runBroadcast(
   });
 
   const report: BroadcastReport = { sent: 0, skipped: 0, failed: 0 };
+  const body = parseBroadcastBody(b);
 
   for (const r of pending) {
     const decision = canSend(r.contact.lastInboundAt);
@@ -198,7 +201,7 @@ export async function runBroadcast(
     }
 
     try {
-      await sendText(db, r.contactId, b.text);
+      await deliver(db, b.id, body, r.contactId);
       await db.broadcastRecipient.update({
         where: { id: r.id },
         data: { status: "SENT", sentAt: new Date() },
@@ -223,6 +226,33 @@ export async function runBroadcast(
   });
 
   return report;
+}
+
+/**
+ * One recipient's delivery, by body kind.
+ *
+ * "Send a flow" starts the flow for the contact; `startFlow` returning null
+ * means the flow is disabled or the contact opted out, which is a failure
+ * worth a reason in the report rather than a silent skip.
+ */
+async function deliver(
+  db: PrismaClient,
+  broadcastId: string,
+  body: BroadcastBody,
+  contactId: string,
+): Promise<void> {
+  if (body.kind === "flow") {
+    const { startFlow } = await import("./flow-runner");
+    const result = await startFlow(db, body.flowId, contactId);
+    if (!result) throw new Error("Fluxo desativado ou contato descadastrado.");
+    return;
+  }
+  if (body.kind === "content") {
+    const { payload, preview } = broadcastPayload(broadcastId, body.content);
+    await sendMessage(db, contactId, payload, { preview });
+    return;
+  }
+  await sendMessage(db, contactId, { text: body.text }, { preview: body.text });
 }
 
 /**

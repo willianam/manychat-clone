@@ -8,13 +8,18 @@ export const dynamic = "force-dynamic";
 
 export default async function BroadcastsPage() {
   const timeZone = accountTimeZone();
-  const [tags, segments, broadcasts] = await Promise.all([
+  const [tags, segments, flows, broadcasts] = await Promise.all([
     db.tag.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, color: true } }),
     db.segment.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    db.flow.findMany({
+      where: { enabled: true },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
     db.broadcast.findMany({
       orderBy: { createdAt: "desc" },
       take: 20,
-      include: { _count: { select: { recipients: true } }, segment: true },
+      include: { _count: { select: { recipients: true } }, segment: true, flow: true },
     }),
   ]);
 
@@ -51,12 +56,31 @@ export default async function BroadcastsPage() {
           <label className="block text-xs text-neutral-500">Mensagem</label>
           <textarea
             name="text"
-            required
             rows={4}
             maxLength={1000}
             className="mt-1 w-full rounded border px-2 py-1.5 text-sm"
           />
         </div>
+
+        {flows.length > 0 && (
+          <div>
+            <label className="block text-xs text-neutral-500">
+              Ou enviar um fluxo (ignora a mensagem acima)
+            </label>
+            <select
+              name="flowId"
+              defaultValue=""
+              className="mt-1 rounded border px-2 py-1.5 text-sm"
+            >
+              <option value="">nenhum</option>
+              {flows.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <AudiencePicker tags={tags} />
 
@@ -124,7 +148,9 @@ export default async function BroadcastsPage() {
                   </span>
                 )}
               </div>
-              <p className="mt-2 whitespace-pre-wrap text-sm text-neutral-700">{b.text}</p>
+              <p className="mt-2 whitespace-pre-wrap text-sm text-neutral-700">
+                {b.flow ? `[fluxo: ${b.flow.name}]` : b.content ? "[bloco]" : b.text}
+              </p>
 
               {p && (
                 <div

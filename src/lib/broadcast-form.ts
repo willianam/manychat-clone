@@ -1,4 +1,5 @@
 import { accountTimeZone, parseLocalDateTime } from "./timezone";
+import { BroadcastContent } from "./broadcast-content";
 
 /**
  * What the broadcast form posts, validated. Kept apart from the server
@@ -7,7 +8,12 @@ import { accountTimeZone, parseLocalDateTime } from "./timezone";
 
 export type BroadcastDraft = {
   name: string;
-  text: string;
+  /** Null when the body is a content block or a flow. */
+  text: string | null;
+  /** A sending node (lib/broadcast-content.ts), posted as JSON in `content`. */
+  content: BroadcastContent | null;
+  /** "Send a flow" instead of a message. */
+  flowId: string | null;
   filterTagIds: string[];
   /** A saved segment; replaces `filterTagIds` when set. */
   segmentId: string | null;
@@ -26,8 +32,20 @@ export function parseBroadcastForm(
     String(formData.get("name") ?? "")
       .trim()
       .slice(0, 120) || "Disparo sem nome";
-  const text = String(formData.get("text") ?? "").trim();
-  if (!text) throw new Error("A mensagem não pode ficar vazia.");
+  const flowId = String(formData.get("flowId") ?? "").trim() || null;
+  const rawContent = String(formData.get("content") ?? "").trim();
+  let content: BroadcastContent | null = null;
+  if (rawContent) {
+    let json: unknown;
+    try {
+      json = JSON.parse(rawContent);
+    } catch {
+      throw new Error("O bloco do disparo não é um JSON válido.");
+    }
+    content = BroadcastContent.parse(json);
+  }
+  const text = String(formData.get("text") ?? "").trim() || null;
+  if (!text && !content && !flowId) throw new Error("A mensagem não pode ficar vazia.");
 
   const filterTagIds = formData.getAll("tagIds").map(String).filter(Boolean);
   const segmentId = String(formData.get("segmentId") ?? "").trim() || null;
@@ -43,5 +61,5 @@ export function parseBroadcastForm(
     }
   }
 
-  return { name, text, filterTagIds, segmentId, scheduledAt };
+  return { name, text, content, flowId, filterTagIds, segmentId, scheduledAt };
 }

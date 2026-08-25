@@ -194,9 +194,10 @@ model Flow {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  triggers Trigger[]
-  sessions FlowSession[]
-  refLinks RefLink[]
+  triggers   Trigger[]
+  sessions   FlowSession[]
+  refLinks   RefLink[]
+  broadcasts Broadcast[]
 }
 
 /// A trackable ig.me entry point: ig.me/m/<username>?ref=<code>.
@@ -335,8 +336,21 @@ enum BroadcastStatus {
 model Broadcast {
   id           String          @id @default(cuid())
   name         String
-  text         String
+  /// Plain-text body. Null when `content` or `flowId` carries the message.
+  text         String?
+  /// One sending node in the flow-schema shape (message with buttons, image,
+  /// quickreply, carousel, video, audio, file, album) — see
+  /// lib/broadcast-content.ts. Wins over `text` when present.
+  content      Json?
+  /// "Send a flow": every recipient is started into this flow instead of
+  /// receiving one message. Wins over `content` and `text`.
+  flowId       String?
+  /// Message tag to send under (HUMAN_AGENT etc.); null = standard message.
+  tag          String?
   status       BroadcastStatus @default(DRAFT)
+  /// Set when a drainer claims the QUEUED row (status SENDING). A claim
+  /// older than BROADCAST_LOCK_MS is considered dead and may be re-taken.
+  lockedAt     DateTime?
   /// Tag ids the recipient must have. Empty = everyone subscribed.
   /// Ignored when `segmentId` is set — a segment replaces the tag filter.
   filterTagIds String[]        @default([])
@@ -345,6 +359,7 @@ model Broadcast {
   createdAt    DateTime        @default(now())
 
   segment    Segment?             @relation(fields: [segmentId], references: [id], onDelete: SetNull)
+  flow       Flow?                @relation(fields: [flowId], references: [id], onDelete: SetNull)
   recipients BroadcastRecipient[]
 }
 
