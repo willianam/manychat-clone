@@ -1,10 +1,13 @@
 import type { PrismaClient, FlowSession, Prisma } from "@prisma/client";
 import { FlowGraph, findEntryNode, type FlowNodeData } from "../lib/flow-schema";
 import { coerceFieldValue, compareValues } from "../lib/field-values";
-import { sendText, sendMessage, sendSenderActionToContact } from "./instagram";
+import { validateInput, defaultValidationMessage } from "../lib/input-validation";
+import { sendMessage, sendSenderActionToContact } from "./instagram";
 import {
   buildMessage,
+  buildQuestion,
   buildQuickReply,
+  SKIP_HANDLE,
   buildCarousel,
   buildImage,
   buildMedia,
@@ -49,6 +52,10 @@ const SENDS_MESSAGE: ReadonlySet<FlowNodeData["kind"]> = new Set([
  * can collide with it.
  */
 const SEEN_KEY = "_markSeenSent";
+
+/** Reserved: invalid-answer counts per question node, `{ [nodeId]: n }`. */
+const ATTEMPTS_KEY = "_attempts";
+const DEFAULT_MAX_ATTEMPTS = 3;
 
 export type StepResult = { status: "waiting" | "completed" | "delayed"; nodeId?: string };
 
@@ -99,19 +106,66 @@ export async function resumeWithInput(
 
   const node = graph.nodes.find((n) => n.id === session.currentNodeId);
   if (node?.data.kind === "question") {
-    const ctx: Ctx = { ...(session.context as Ctx), [node.data.saveAs]: input };
-    await db.contactField.upsert({
-      where: { contactId_key: { contactId: session.contactId, key: node.data.saveAs } },
-      create: { contactId: session.contactId, key: node.data.saveAs, value: input },
-      update: { value: input },
-    });
-    session = await db.flowSession.update({
-      where: { id: session.id },
-      data: { context: asJson(ctx), status: "ACTIVE", currentNodeId: nextOf(graph, node.id) },
-    });
+    const q = node.data;
+    const ctx: Ctx = { ...(session.context as Ctx) };
+    const checked = validateInput(q.inputType, input, q.options);
+
+    if (!checked.ok) {
+      const attempts = (ctx[ATTEMPTS_KEY] as Record<string, number> | undefined) ?? {};
+      const n = (attempts[node.id] ?? 0) + 1;
+      ctx[ATTEMPTS_KEY] = { ...attempts, [node.id]: n };
+      const exhausted = n >= (q.maxAttempts ?? DEFAULT_MAX_ATTEMPTS);
+
+      if (q.onInvalid === "branch" || exhausted) {
+        // Leave by the "invalid" handle; an unwired one falls back to the
+        // default path, so a flow never strands a person over a typo.
+        const next = nextOf(graph, node.id, "invalid") ?? nextOf(graph, node.id);
+        session = await db.flowSession.update({
+          where: { id: session.id },
+          data: { context: asJson(ctx), status: "ACTIVE", currentNodeId: next },
+        });
+        return advance(db, session, graph, { inbound: true });
+      }
+
+      // Re-ask: the validation message stands in for the question text.
+      await sendSenderActionToContact(db, session.contactId, "mark_seen");
+      const text = interpolate(q.validationMessage || defaultValidationMessage(q.inputType), ctx);
+      await sendMessage(db, session.contactId, buildQuestion(node.id, { ...q, text }), {
+        preview: text,
+      });
+      await db.flowSession.update({
+        where: { id: session.id },
+        data: { context: asJson(ctx), status: "WAITING_INPUT", currentNodeId: node.id },
+      });
+      return { status: "waiting", nodeId: node.id };
+    }
+
+    session = await storeAnswer(db, session, graph, node.id, q.saveAs, checked.value, ctx);
   }
 
   return advance(db, session, graph, { inbound: true });
+}
+
+/** Write a validated answer to the session and the contact, and step past the question. */
+async function storeAnswer(
+  db: PrismaClient,
+  session: FlowSession,
+  graph: FlowGraph,
+  nodeId: string,
+  saveAs: string,
+  value: string,
+  ctx: Ctx,
+): Promise<FlowSession> {
+  ctx[saveAs] = value;
+  await db.contactField.upsert({
+    where: { contactId_key: { contactId: session.contactId, key: saveAs } },
+    create: { contactId: session.contactId, key: saveAs, value },
+    update: { value },
+  });
+  return db.flowSession.update({
+    where: { id: session.id },
+    data: { context: asJson(ctx), status: "ACTIVE", currentNodeId: nextOf(graph, nodeId) },
+  });
 }
 
 /**
@@ -136,6 +190,22 @@ export async function resumeWithPostback(
   if (!node) return null;
 
   const ctx: Ctx = { ...(session.context as Ctx) };
+
+  // A question's chips: "Pular" stores nothing and walks on; an option chip
+  // is the answer, validated like a typed one.
+  if (node.data.kind === "question") {
+    if (parsed.handle === SKIP_HANDLE && node.data.allowSkip) {
+      const updated = await db.flowSession.update({
+        where: { id: session.id },
+        data: { status: "ACTIVE", context: asJson(ctx), currentNodeId: nextOf(graph, node.id) },
+      });
+      return advance(db, updated, graph, { inbound: true });
+    }
+    if (parsed.handle.startsWith("opt:")) {
+      return resumeWithInput(db, session, parsed.handle.slice(4));
+    }
+    return null;
+  }
 
   // A quick reply doubles as a question: record what was chosen.
   if (node.data.kind === "quickreply") {
@@ -345,7 +415,10 @@ async function advance(
     }
 
     if (d.kind === "question") {
-      await sendText(db, session.contactId, interpolate(d.text, ctx));
+      const withText = { ...d, text: interpolate(d.text, ctx) };
+      await sendMessage(db, session.contactId, buildQuestion(node.id, withText), {
+        preview: withText.text,
+      });
       await db.flowSession.update({
         where: { id: session.id },
         data: { status: "WAITING_INPUT", currentNodeId: node.id, context: asJson(ctx) },

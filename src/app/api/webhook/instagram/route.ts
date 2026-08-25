@@ -114,6 +114,11 @@ async function processPayload(payload: MetaWebhook): Promise<void> {
       // the keyword path too would start a second, competing flow.
       if (refHandled) continue;
 
+      // A quick-reply tap arrives as a message that also carries the chip's
+      // text. The postback loop below owns it; feeding the text through the
+      // free-text path would answer a waiting question with "Pular".
+      if (event.message.quick_reply?.payload) continue;
+
       if (event.message.text) {
         await handleInboundMessage(db, contact.id, event.message.text);
       }

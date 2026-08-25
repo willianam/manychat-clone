@@ -130,6 +130,22 @@ const MessageData = z.object({
   buttons: z.array(FlowButton).max(LIMITS.buttons).optional(),
 });
 
+/** What a question accepts. `option` means "one of `options`", by title or value. */
+export const InputType = z.enum(["text", "number", "email", "phone", "date", "option"]);
+export type InputType = z.infer<typeof InputType>;
+
+/**
+ * Question. Every validation field is optional so a question saved before
+ * they existed still parses as the free-text question it was.
+ *
+ *   inputType          what the reply must look like; `text` accepts anything
+ *   validationMessage  sent instead of the question when the reply fails
+ *   maxAttempts        invalid replies tolerated before giving up (default 3)
+ *   allowSkip          adds a "Pular" quick reply; skipping stores nothing
+ *   onInvalid          `retry` re-asks until maxAttempts, then leaves by the
+ *                      `invalid` handle (or the default path when unwired);
+ *                      `branch` leaves by `invalid` on the first failure
+ */
 const QuestionData = z.object({
   kind: z.literal("question"),
   text: z
@@ -140,6 +156,18 @@ const QuestionData = z.object({
     }),
   /** Context key the reply is written to. */
   saveAs: z.string().regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/),
+  inputType: InputType.optional(),
+  /** Accepted answers when inputType is `option`. */
+  options: z.array(z.string().min(1)).max(LIMITS.quickReplies).optional(),
+  validationMessage: z
+    .string()
+    .refine(withinBytes(LIMITS.messageText), {
+      message: `O texto passa de ${LIMITS.messageText} bytes (acentos contam 2, emoji 4).`,
+    })
+    .optional(),
+  maxAttempts: z.number().int().min(1).max(10).optional(),
+  allowSkip: z.boolean().optional(),
+  onInvalid: z.enum(["retry", "branch"]).optional(),
 });
 
 const QuickReplyOption = z.object({
@@ -413,6 +441,13 @@ export function outputsOf(
           .filter((b) => b.type === "postback")
           .map((b) => ({ handle: b.id, label: `${c.title}: ${b.title}` })),
       );
+    case "question":
+      return d.onInvalid === "branch"
+        ? [
+            { handle: "next", label: "resposta" },
+            { handle: "invalid", label: "inválida" },
+          ]
+        : [{ handle: "", label: "" }];
     case "end":
       return [];
     default:
@@ -492,6 +527,21 @@ export function validateGraph(graph: FlowGraph): FlowIssue[] {
         issues.push({
           level: "error",
           message: `Com botões, o texto cabe ${LIMITS.buttonTemplateText} bytes — este tem ${bytes} (acentos contam 2, emoji 4).`,
+        });
+      }
+    }
+
+    if (d.kind === "question") {
+      if (d.inputType === "option" && !d.options?.length) {
+        issues.push({
+          level: "error",
+          message: `A pergunta "${n.id}" pede uma opção mas não lista nenhuma.`,
+        });
+      }
+      if (d.onInvalid === "branch" && !out.some((e) => e.sourceHandle === "invalid")) {
+        issues.push({
+          level: "error",
+          message: `A pergunta "${n.id}" desvia respostas inválidas, mas a saída "inválida" não está ligada.`,
         });
       }
     }

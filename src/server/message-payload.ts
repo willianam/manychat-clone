@@ -84,6 +84,35 @@ export function buildQuickReply(
   };
 }
 
+/** The quick-reply handle a "Pular" tap on a question carries. */
+export const SKIP_HANDLE = "skip";
+
+/**
+ * A question: plain text, plus a "Pular" quick reply when the author allows
+ * skipping and one chip per accepted answer when the input type is `option`.
+ * Instagram caps quick replies at 13, so the skip chip takes the last slot.
+ */
+export function buildQuestion(
+  nodeId: string,
+  d: Extract<FlowNodeData, { kind: "question" }>,
+): Record<string, unknown> {
+  const chips: Array<{ title: string; payload: string }> = [];
+  if (d.inputType === "option") {
+    for (const o of d.options ?? [])
+      chips.push({ title: o, payload: postbackPayload(nodeId, `opt:${o}`) });
+  }
+  if (d.allowSkip) chips.push({ title: "Pular", payload: postbackPayload(nodeId, SKIP_HANDLE) });
+  if (!chips.length) return { text: d.text };
+  return {
+    text: d.text,
+    quick_replies: chips.slice(0, LIMITS.quickReplies).map((c) => ({
+      content_type: "text",
+      title: truncateBytes(c.title, LIMITS.quickReplyTitle),
+      payload: c.payload,
+    })),
+  };
+}
+
 /** Horizontally scrolling cards. */
 export function buildCarousel(
   nodeId: string,
