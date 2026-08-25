@@ -1,5 +1,6 @@
 import type { FlowButton, FlowNodeData, LIMITS as L } from "../lib/flow-schema";
 import { LIMITS, byteLength } from "../lib/flow-schema";
+import { accountTimeZone, wallClockIn, wallClockToDate, type WallClock } from "../lib/timezone";
 
 /**
  * Translates flow nodes into Instagram message payloads.
@@ -198,35 +199,46 @@ export function previewOf(d: FlowNodeData): string {
  * pushed to the next moment inside the allowed hours — a 20h delay set at
  * 3am would otherwise wake someone's phone at 11pm.
  *
- * `now` is injectable so tests don't depend on wall-clock time.
+ * The hours are read on a clock in the account's timezone, not the server's:
+ * Vercel runs on UTC, and an 8–22 window measured there is 5–19 in São
+ * Paulo. `now` and `timeZone` are injectable so tests depend on neither the
+ * wall clock nor the machine's zone.
  */
 export function resumeAtFor(
   d: Extract<FlowNodeData, { kind: "delay" }>,
   now: Date = new Date(),
+  timeZone: string = accountTimeZone(),
 ): Date {
   const at = new Date(now.getTime() + d.seconds * 1000);
   if (!d.window) return at;
 
   const { fromHour, toHour } = d.window;
-  const h = at.getHours();
+  const wall = wallClockIn(at, timeZone);
+  const h = wall.hour;
 
   // Normal window, e.g. 8–22: inside means fromHour <= h < toHour.
   if (fromHour < toHour) {
     if (h >= fromHour && h < toHour) return at;
-    if (h < fromHour) {
-      const d2 = new Date(at);
-      d2.setHours(fromHour, 0, 0, 0);
-      return d2;
-    }
-    const d2 = new Date(at);
-    d2.setDate(d2.getDate() + 1);
-    d2.setHours(fromHour, 0, 0, 0);
-    return d2;
+    return openingAt(wall, h < fromHour ? 0 : 1, fromHour, timeZone);
   }
 
   // Overnight window, e.g. 22–6: inside means h >= fromHour or h < toHour.
   if (h >= fromHour || h < toHour) return at;
-  const d2 = new Date(at);
-  d2.setHours(fromHour, 0, 0, 0);
-  return d2;
+  return openingAt(wall, 0, fromHour, timeZone);
+}
+
+/** `hour`:00 on the day `dayOffset` days after `wall`, in `timeZone`. */
+function openingAt(wall: WallClock, dayOffset: number, hour: number, timeZone: string): Date {
+  const day = new Date(Date.UTC(wall.year, wall.month - 1, wall.day + dayOffset));
+  return wallClockToDate(
+    {
+      year: day.getUTCFullYear(),
+      month: day.getUTCMonth() + 1,
+      day: day.getUTCDate(),
+      hour,
+      minute: 0,
+      second: 0,
+    },
+    timeZone,
+  );
 }

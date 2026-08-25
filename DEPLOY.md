@@ -59,6 +59,7 @@ gravar o vídeo que eles exigem.
    | `IG_ACCESS_TOKEN` | preencha na Parte 4 |
    | `GRAPH_API_VERSION` | `v26.0` |
    | `BROADCAST_RATE` | `5` |
+   | `ACCOUNT_TIMEZONE` | `America/Sao_Paulo` (janelas de delay e agendamentos são lidos neste fuso) |
 
    As três da Meta podem ficar vazias por ora — o painel sobe sem elas.
    `ADMIN_PASSWORD` **não** pode: sem ela o painel se tranca com 503.
