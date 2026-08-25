@@ -109,6 +109,7 @@ function fakeDb(opts: { graph?: object; trigger?: boolean } = {}) {
       findFirst: vi.fn().mockResolvedValue(null), // no DEFAULT fallback trigger
     },
     unmatchedMessage: { upsert: vi.fn().mockResolvedValue({}) },
+    contact: { findUnique: vi.fn().mockResolvedValue({ id: CONTACT, subscribed: true }) },
     contactField: { findMany: vi.fn().mockResolvedValue([]), upsert: vi.fn().mockResolvedValue({}) },
     tag: { upsert: vi.fn().mockResolvedValue({ id: "tag-1", name: "lead" }) },
     contactTag: { upsert: vi.fn().mockResolvedValue({}), delete: vi.fn().mockResolvedValue({}) },

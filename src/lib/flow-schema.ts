@@ -287,6 +287,9 @@ export const FieldOp = z.discriminatedUnion("op", [
     op: z.literal("unsetField"),
     key: z.string().regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/),
   }),
+  /** Stop all automated messages to this contact until they opt back in. */
+  z.object({ op: z.literal("unsubscribe") }),
+  z.object({ op: z.literal("resubscribe") }),
 ]);
 export type FieldOp = z.infer<typeof FieldOp>;
 

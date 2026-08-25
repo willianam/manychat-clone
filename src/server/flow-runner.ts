@@ -50,6 +50,15 @@ export async function startFlow(
   const entry = findEntryNode(graph);
   if (!entry) return null;
 
+  // An opted-out contact starts nothing, whatever the entry point — keyword,
+  // comment, story, ref link or menu tap. This is the one place every path
+  // goes through, so it is the one place the rule lives.
+  const contact = await db.contact.findUnique({
+    where: { id: contactId },
+    select: { subscribed: true },
+  });
+  if (!contact?.subscribed) return null;
+
   // If this contact is already mid-flow here, don't start a second run.
   const existing = await db.flowSession.findFirst({
     where: { contactId, flowId, status: { in: ["ACTIVE", "WAITING_INPUT"] } },
@@ -414,6 +423,16 @@ async function applyOps(
         where: { contactId_key: { contactId, key: op.key } },
         create: { contactId, key: op.key, value: op.value },
         update: { value: op.value },
+      });
+      continue;
+    }
+
+    if (op.op === "unsubscribe" || op.op === "resubscribe") {
+      // The running flow continues: the author decides what, if anything, is
+      // said after this. Only future broadcasts and flow starts are affected.
+      await db.contact.update({
+        where: { id: contactId },
+        data: { subscribed: op.op === "resubscribe" },
       });
       continue;
     }

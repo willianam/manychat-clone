@@ -1056,6 +1056,8 @@ const ACTION_LABELS: Record<string, string> = {
   removeTag: "Remover tag",
   setField: "Gravar campo",
   unsetField: "Limpar campo",
+  unsubscribe: "Cancelar inscrição",
+  resubscribe: "Reativar inscrição",
 };
 
 type Op = Extract<FlowNodeData, { kind: "action" }>["ops"][number];
@@ -1071,6 +1073,10 @@ function blankOp(op: Op["op"]): Op {
       return { op: "setField", key: "campo", value: "", valueType: "text" };
     case "unsetField":
       return { op: "unsetField", key: "campo" };
+    case "unsubscribe":
+      return { op: "unsubscribe" };
+    case "resubscribe":
+      return { op: "resubscribe" };
   }
 }
 
@@ -1132,6 +1138,12 @@ function ActionProps({
               <div className="mt-1.5">
                 <TextInput mono value={o.key} onChange={(key) => patch(i, { ...o, key })} />
               </div>
+            )}
+
+            {o.op === "unsubscribe" && (
+              <p className="mt-1.5 text-[11px] text-neutral-500">
+                O contato deixa de receber disparos e novos fluxos até enviar <b>voltar</b>.
+              </p>
             )}
 
             {o.op === "setField" && (

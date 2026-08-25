@@ -610,6 +610,8 @@ export function ActionNode({ data }: NodeProps<WithStats>) {
             {o.op === "removeTag" && <>− tag <b>{o.tagName}</b></>}
             {o.op === "setField" && <>definir <b>{o.key}</b> = {o.value}</>}
             {o.op === "unsetField" && <>limpar <b>{o.key}</b></>}
+            {o.op === "unsubscribe" && <>cancelar inscrição</>}
+            {o.op === "resubscribe" && <>reativar inscrição</>}
           </div>
         ))}
       </div>

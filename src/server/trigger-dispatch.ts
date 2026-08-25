@@ -1,13 +1,20 @@
 import type { PrismaClient, Trigger } from "@prisma/client";
 import { startFlow, resumeWithInput, resumeWithPostback } from "./flow-runner";
-import { sendPrivateReply } from "./instagram";
+import { sendPrivateReply, sendText } from "./instagram";
 import { normalizeText, containsWord, normalizeForGrouping } from "../lib/text-normalize";
+import {
+  classifyGlobalKeyword,
+  OPT_OUT_CONFIRMATION,
+  OPT_IN_CONFIRMATION,
+} from "../lib/global-keywords";
 
 /**
  * Decides what an inbound event should do.
  *
- * Order matters: a contact already parked on a question owns the message.
- * Only when nobody is waiting do we test triggers, so answering "yes" to a
+ * Order matters. Global keywords come first: "parar" must work even while a
+ * question is waiting, or a contact could be trapped in a flow they want out
+ * of. Then a contact already parked on a question owns the message. Only
+ * when nobody is waiting do we test triggers, so answering "yes" to a
  * question can't accidentally fire the "yes" keyword flow.
  */
 export async function handleInboundMessage(
@@ -15,6 +22,9 @@ export async function handleInboundMessage(
   contactId: string,
   text: string,
 ): Promise<void> {
+  if (await handleGlobalKeyword(db, contactId, text)) return;
+  if (!(await isSubscribed(db, contactId))) return;
+
   const waiting = await db.flowSession.findFirst({
     where: { contactId, status: "WAITING_INPUT" },
     orderBy: { updatedAt: "desc" },
@@ -41,6 +51,53 @@ export async function handleInboundMessage(
     orderBy: { priority: "desc" },
   });
   if (fallback) await startFlow(db, fallback.flowId, contactId);
+}
+
+/**
+ * Opt-out and opt-in, before anything else gets a say.
+ *
+ * Returns true when the message was a global command and has been handled.
+ * Opting out abandons every session the contact has: a flow parked on a
+ * question would otherwise swallow their next message and answer it.
+ *
+ * The confirmation is best-effort. The contact just wrote, so the window is
+ * open, but a send failure must not undo the opt-out itself.
+ */
+async function handleGlobalKeyword(
+  db: PrismaClient,
+  contactId: string,
+  text: string,
+): Promise<boolean> {
+  const command = classifyGlobalKeyword(text);
+  if (!command) return false;
+
+  const subscribed = command === "opt_in";
+  await db.contact.update({ where: { id: contactId }, data: { subscribed } });
+
+  if (!subscribed) {
+    await db.flowSession.updateMany({
+      where: { contactId, status: { in: ["ACTIVE", "WAITING_INPUT"] } },
+      data: { status: "ABANDONED" },
+    });
+  }
+
+  await sendText(db, contactId, subscribed ? OPT_IN_CONFIRMATION : OPT_OUT_CONFIRMATION).catch(
+    (err) => console.warn("[dispatch] opt-out confirmation failed:", err),
+  );
+  return true;
+}
+
+/**
+ * An opted-out contact gets nothing automated: no session resume, no
+ * trigger, and no entry in the unmatched list — their messages are not
+ * keyword gaps, they are a person who asked to be left alone.
+ */
+async function isSubscribed(db: PrismaClient, contactId: string): Promise<boolean> {
+  const contact = await db.contact.findUnique({
+    where: { id: contactId },
+    select: { subscribed: true },
+  });
+  return contact?.subscribed ?? false;
 }
 
 /**
@@ -146,6 +203,10 @@ export async function handleStoryReply(
   contactId: string,
   text: string,
 ): Promise<void> {
+  // Global keywords and opt-out apply here exactly as to a plain DM.
+  if (await handleGlobalKeyword(db, contactId, text)) return;
+  if (!(await isSubscribed(db, contactId))) return;
+
   // A session parked on a question owns the reply, same as any message.
   const waiting = await db.flowSession.findFirst({
     where: { contactId, status: "WAITING_INPUT" },

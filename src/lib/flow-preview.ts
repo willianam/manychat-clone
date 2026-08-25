@@ -264,7 +264,8 @@ function describeOps(ops: Extract<FlowNodeData, { kind: "action" }>["ops"]): str
       if (o.op === "addTag") return `+ tag ${o.tagName}`;
       if (o.op === "removeTag") return `− tag ${o.tagName}`;
       if (o.op === "setField") return `${o.key} = ${o.value}`;
-      return `limpa ${o.key}`;
+      if (o.op === "unsetField") return `limpa ${o.key}`;
+      return o.op === "unsubscribe" ? "cancela inscrição" : "reativa inscrição";
     })
     .join(" · ");
 }
