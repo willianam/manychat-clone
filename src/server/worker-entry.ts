@@ -1,5 +1,6 @@
 import { db } from "./db";
 import { runBroadcast, tickDelayedSessions } from "./broadcast-worker";
+import { maybeRefreshToken } from "./token-refresh";
 
 /**
  * Background loop: resumes delayed flow sessions and drains queued
@@ -8,9 +9,22 @@ import { runBroadcast, tickDelayedSessions } from "./broadcast-worker";
  */
 
 const TICK_MS = Number(process.env.WORKER_TICK_MS ?? 5000);
+/** The token check is cheap but a failing refresh must not hit Meta every 5s. */
+const TOKEN_CHECK_MS = 60 * 60 * 1000;
 let stopping = false;
+let lastTokenCheck = 0;
 
 async function tick(): Promise<void> {
+  if (Date.now() - lastTokenCheck >= TOKEN_CHECK_MS) {
+    lastTokenCheck = Date.now();
+    const token = await maybeRefreshToken(db);
+    if (token.action === "refreshed") {
+      console.log(`[worker] Instagram token refreshed, expires ${token.expiresAt.toISOString()}`);
+    } else if (token.action === "failed") {
+      console.warn(`[worker] Instagram token refresh failed: ${token.error}`);
+    }
+  }
+
   const resumed = await tickDelayedSessions(db);
   if (resumed) console.log(`[worker] resumed ${resumed} delayed session(s)`);
 

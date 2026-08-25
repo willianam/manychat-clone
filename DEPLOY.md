@@ -108,8 +108,10 @@ curl -G "https://graph.instagram.com/access_token" \
 Coloque os valores na Vercel (**Settings → Environment Variables**) e
 **redeploy** — variáveis novas só valem no build seguinte.
 
-> **Anote a data.** O token de longa duração expira em ~60 dias e as
-> mensagens param de sair sem aviso claro. Renove antes disso.
+> O token de longa duração expira em ~60 dias. O app o guarda no banco e
+> renova sozinho no tick do cron/worker quando faltam menos de 10 dias; se a
+> renovação falhar, a página **Configurações** avisa. Só nesse caso gere um
+> token novo e atualize `IG_ACCESS_TOKEN`.
 
 ---
 

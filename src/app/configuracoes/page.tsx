@@ -7,14 +7,16 @@ import {
   type MenuItemInput,
 } from "../../lib/messenger-profile";
 import { loadProfile, saveIceBreakers, saveMenu } from "./actions";
+import { tokenStatus } from "../../server/token-refresh";
 import { MenuRow } from "./MenuRow";
 
 export const dynamic = "force-dynamic";
 
 export default async function ConfiguracoesPage() {
-  const [profile, flows] = await Promise.all([
+  const [profile, flows, token] = await Promise.all([
     loadProfile(),
     db.flow.findMany({ orderBy: { name: "asc" } }),
+    tokenStatus(db),
   ]);
 
   // The stored JSON is re-parsed rather than trusted: a schema change or a
@@ -32,6 +34,16 @@ export default async function ConfiguracoesPage() {
           Perguntas iniciais e menu fixo. Publicado direto no seu Instagram.
         </p>
       </div>
+
+      {token.needsAttention && (
+        <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          {token.lastError
+            ? `A renovação automática do token do Instagram falhou: ${token.lastError}.`
+            : `O token do Instagram expira em ${token.daysLeft} dia(s).`}{" "}
+          Gere um token novo no painel da Meta e atualize IG_ACCESS_TOKEN; o valor novo passa a
+          valer em até um minuto.
+        </p>
+      )}
 
       {profile.syncError && (
         <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">

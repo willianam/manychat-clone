@@ -172,6 +172,24 @@ model MessengerProfile {
   updatedAt DateTime @updatedAt
 }
 
+/// The Instagram User Access Token, kept here so it can be renewed without a
+/// deploy. A single row (id "default"), seeded from IG_ACCESS_TOKEN the first
+/// time a token is needed — see server/token-refresh.ts.
+model IgCredential {
+  id String @id @default("default")
+
+  accessToken String
+  /// When Meta says the token stops working. Null until a refresh reports
+  /// it: a token seeded from the env has an unknown lifetime.
+  expiresAt   DateTime?
+  /// Last successful refresh. Null for a token that only ever came from the env.
+  refreshedAt DateTime?
+  /// What the last refresh attempt said when it failed. Cleared on success.
+  lastError   String?
+
+  updatedAt DateTime @updatedAt
+}
+
 enum TriggerKind {
   KEYWORD
   COMMENT

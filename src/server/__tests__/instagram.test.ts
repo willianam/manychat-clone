@@ -9,6 +9,20 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const ORIGINAL = { ...process.env };
 
+// instagram.ts reads the token through the IgCredential store. With an empty
+// table the store seeds itself from IG_ACCESS_TOKEN, so the env-driven cases
+// below still exercise the real fallback path — against a fake, not Neon.
+vi.mock("../db", () => ({
+  db: {
+    igCredential: {
+      findUnique: vi.fn().mockResolvedValue(null),
+      upsert: vi.fn(async ({ create }: { create: object }) => ({
+        expiresAt: null, refreshedAt: null, lastError: null, ...create,
+      })),
+    },
+  },
+}));
+
 function mockFetch(response: object, ok = true) {
   const spy = vi.fn().mockResolvedValue({
     ok,

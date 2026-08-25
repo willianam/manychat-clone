@@ -1,5 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 import { canSend, type MessageTag } from "../lib/messaging-window";
+import { db as defaultDb } from "./db";
+import { getAccessToken } from "./token-refresh";
 
 /**
  * Instagram API with Instagram Login (graph.instagram.com).
@@ -69,7 +71,7 @@ export async function sendSenderAction(
   try {
     const res = await fetch(`${BASE}/${SELF}/messages`, {
       method: "POST",
-      headers: authHeaders(),
+      headers: await authHeaders(defaultDb),
       body: JSON.stringify({
         recipient: { id: igScopedId },
         sender_action: action,
@@ -101,10 +103,14 @@ export class SendBlocked extends Error {
   }
 }
 
-function authHeaders(): Record<string, string> {
+/**
+ * The token comes from the IgCredential row (seeded from IG_ACCESS_TOKEN),
+ * so a refreshed token is picked up without a deploy — see token-refresh.ts.
+ */
+async function authHeaders(db: PrismaClient): Promise<Record<string, string>> {
   return {
     "Content-Type": "application/json",
-    Authorization: `Bearer ${requireEnv("IG_ACCESS_TOKEN")}`,
+    Authorization: `Bearer ${await getAccessToken(db)}`,
   };
 }
 
@@ -158,7 +164,7 @@ export async function sendMessage(
   try {
     const res = await fetch(`${BASE}/${SELF}/messages`, {
       method: "POST",
-      headers: authHeaders(),
+      headers: await authHeaders(db),
       body: JSON.stringify({
         recipient: { id: contact.igScopedId },
         message: payload,
@@ -205,7 +211,7 @@ export async function sendPrivateReply(
 ): Promise<{ recipientId: string; messageId: string }> {
   const res = await fetch(`${BASE}/${SELF}/messages`, {
     method: "POST",
-    headers: authHeaders(),
+    headers: await authHeaders(defaultDb),
     body: JSON.stringify({
       recipient: { comment_id: commentId },
       message: { text },
@@ -237,7 +243,7 @@ export async function fetchProfile(
   try {
     const res = await fetch(
       `${BASE}/${igScopedId}?fields=name,username,profile_pic`,
-      { headers: { Authorization: `Bearer ${requireEnv("IG_ACCESS_TOKEN")}` } },
+      { headers: { Authorization: `Bearer ${await getAccessToken(defaultDb)}` } },
     );
     if (!res.ok) return {};
     const b = (await res.json()) as {
@@ -275,7 +281,7 @@ export async function uploadAttachment(
 
   const res = await fetch(`${BASE}/${SELF}/message_attachments`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${requireEnv("IG_ACCESS_TOKEN")}` },
+    headers: { Authorization: `Bearer ${await getAccessToken(defaultDb)}` },
     body: form,
   });
 
@@ -287,10 +293,4 @@ export async function uploadAttachment(
     throw new Error(body.error?.message ?? `Falha no upload (HTTP ${res.status})`);
   }
   return body.attachment_id;
-}
-
-function requireEnv(key: string): string {
-  const v = process.env[key];
-  if (!v) throw new Error(`Missing required env var ${key}`);
-  return v;
 }

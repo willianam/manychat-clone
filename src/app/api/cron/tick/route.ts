@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "../../../../server/db";
 import { runBroadcast, tickDelayedSessions } from "../../../../server/broadcast-worker";
+import { maybeRefreshToken } from "../../../../server/token-refresh";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,6 +31,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  // Token first: if it is about to expire, nothing below can send anyway.
+  const token = await maybeRefreshToken(db);
+
   const resumed = await tickDelayedSessions(db);
 
   const queued = await db.broadcast.findMany({
@@ -46,5 +50,5 @@ export async function GET(req: NextRequest) {
     broadcast = { name: queued[0].name, ...r };
   }
 
-  return NextResponse.json({ ok: true, resumed, broadcast });
+  return NextResponse.json({ ok: true, token: token.action, resumed, broadcast });
 }
