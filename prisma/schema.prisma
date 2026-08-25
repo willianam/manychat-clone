@@ -197,6 +197,8 @@ enum TriggerKind {
   STORY_MENTION
   REF
   DEFAULT
+  /// First contact: a brand-new DM that matched no keyword. Patternless.
+  WELCOME
 }
 
 enum MatchMode {

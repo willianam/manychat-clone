@@ -93,6 +93,13 @@ async function processPayload(payload: MetaWebhook): Promise<void> {
 
       const igsid = event.sender.id;
 
+      // Known before the upsert creates the row: the WELCOME trigger fires
+      // only for a person we have never heard from.
+      const isNewContact = !(await db.contact.findUnique({
+        where: { igScopedId: igsid },
+        select: { id: true },
+      }));
+
       const profile = await fetchProfile(igsid);
 
       const contact = await db.contact.upsert({
@@ -120,7 +127,7 @@ async function processPayload(payload: MetaWebhook): Promise<void> {
       if (event.message.quick_reply?.payload) continue;
 
       if (event.message.text) {
-        await handleInboundMessage(db, contact.id, event.message.text);
+        await handleInboundMessage(db, contact.id, event.message.text, { isNewContact });
       }
     }
 

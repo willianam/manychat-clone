@@ -17,10 +17,18 @@ import {
  * when nobody is waiting do we test triggers, so answering "yes" to a
  * question can't accidentally fire the "yes" keyword flow.
  */
+/**
+ * `isNewContact` marks the first message ever from this person. When no
+ * keyword matches it, the WELCOME trigger answers before the DEFAULT one:
+ * a stranger saying "oi" gets the welcome, a known contact the fallback.
+ * Instagram has no Get Started button or greeting text, so this is the only
+ * welcome hook the platform offers.
+ */
 export async function handleInboundMessage(
   db: PrismaClient,
   contactId: string,
   text: string,
+  opts: { isNewContact?: boolean } = {},
 ): Promise<void> {
   if (await handleGlobalKeyword(db, contactId, text)) return;
   if (!(await isSubscribed(db, contactId))) return;
@@ -45,6 +53,17 @@ export async function handleInboundMessage(
   // material for /insights — the words people actually type that we have no
   // keyword for. A DEFAULT trigger firing does not make the miss less real.
   await recordUnmatched(db, contactId, text);
+
+  if (opts.isNewContact) {
+    const welcome = await db.trigger.findFirst({
+      where: { kind: "WELCOME", enabled: true, flow: { enabled: true } },
+      orderBy: { priority: "desc" },
+    });
+    if (welcome) {
+      await startFlow(db, welcome.flowId, contactId);
+      return;
+    }
+  }
 
   const fallback = await db.trigger.findFirst({
     where: { kind: "DEFAULT", enabled: true, flow: { enabled: true } },
