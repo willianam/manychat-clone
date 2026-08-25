@@ -109,7 +109,21 @@ Em **Webhooks → Instagram → Assinar este objeto**:
 Clique em **Verificar e salvar**. A Meta faz um GET de handshake na hora —
 se o app não estiver rodando com o `.env` correto, falha aqui.
 
-Depois **assine os campos**: `messages`, `messaging_postbacks` e `comments`.
+Depois **assine os campos**:
+
+| Campo | Para quê |
+|---|---|
+| `messages` | DMs, story replies, menções em story, ref links |
+| `messaging_postbacks` | toques em botão e quick reply |
+| `comments` | comment-to-DM |
+| `messaging_seen` | recibo de leitura: `read.mid` marca como READ tudo o que enviamos até aquela mensagem |
+| `message_reads` | mesma coisa no formato Messenger (`read.watermark`); só existe se o app também usa Páginas |
+| `message_deliveries` | recibo de entrega (`delivery.mids` / `delivery.watermark` → DELIVERED). A API do Instagram com login do Instagram não expõe este campo hoje; a rota já o parseia caso passe a existir ou o app use Messenger |
+
+Os recibos são tratados em `src/lib/entry-events.ts` (parse) e
+`src/server/receipts.ts` (atualização de `Message.status`, sempre para a
+frente: SENT → DELIVERED → READ). Sem `messaging_seen` assinado, as
+mensagens ficam em SENT para sempre e a taxa de leitura do dashboard é zero.
 
 ### 6. Permissões e App Review
 

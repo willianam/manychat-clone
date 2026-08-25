@@ -16,9 +16,12 @@ import {
   parseStoryReply,
   parseStoryMention,
   parseReferral,
+  parseReadReceipt,
+  parseDelivery,
   normalizeRefCode,
   type MessagingEvent,
 } from "../../../../lib/entry-events";
+import { applyReadReceipt, applyDelivery } from "../../../../server/receipts";
 import { parseFlowPayload } from "../../../../lib/messenger-profile";
 import {
   tickDelayedSessions,
@@ -71,6 +74,9 @@ export async function POST(req: NextRequest) {
 async function processPayload(payload: MetaWebhook): Promise<void> {
   for (const entry of payload.entry ?? []) {
     for (const event of entry.messaging ?? []) {
+      // Receipts carry no message and no referral; they only move statuses.
+      if (await processReceipt(event)) continue;
+
       // A ref can ride along on a message, a postback, or its own event, and
       // in the first two cases the message below still needs handling. So
       // referrals are resolved first and their outcome decides whether the
@@ -160,6 +166,37 @@ async function processPayload(payload: MetaWebhook): Promise<void> {
       });
     }
   }
+}
+
+/**
+ * Read (`messaging_seen` / `message_reads`) and delivery
+ * (`message_deliveries`) receipts. Returns true when the event was one.
+ *
+ * Neither carries a mid of its own, so the dedup key is built from the
+ * sender and the receipt's own marker; a replay of the same receipt is a
+ * no-op either way, since status only moves forward.
+ */
+async function processReceipt(event: MessagingEvent): Promise<boolean> {
+  const read = parseReadReceipt(event);
+  const delivery = read ? null : parseDelivery(event);
+  if (!read && !delivery) return false;
+
+  const sender = event.sender?.id ?? "";
+  if (!sender) return true;
+
+  if (read) {
+    const key = `read:${sender}:${read.mid ?? read.watermark?.getTime()}`;
+    if (await seen(key, "read", event)) return true;
+    await applyReadReceipt(db, read);
+    return true;
+  }
+
+  if (delivery) {
+    const marker = delivery.mids[0] ?? delivery.watermark?.getTime();
+    if (await seen(`delivery:${sender}:${marker}`, "delivery", event)) return true;
+    await applyDelivery(db, delivery);
+  }
+  return true;
 }
 
 /**
