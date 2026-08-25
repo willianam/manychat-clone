@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import { parseCsvRecords, serializeCsv } from "../lib/csv";
 import { addTagToContact, removeTagFromContact, setContactSubscribed } from "./contact-events";
 import { saveContactField } from "./contact-fields";
@@ -26,10 +26,15 @@ export const FIXED_COLUMNS = [
 ] as const;
 const FIELD_PREFIX = "field:";
 
-export async function exportContactsCsv(db: PrismaClient): Promise<string> {
+/** `where` narrows the export to the list's current filter; omitted = everyone. */
+export async function exportContactsCsv(
+  db: PrismaClient,
+  opts: { where?: Prisma.ContactWhereInput } = {},
+): Promise<string> {
   const [fields, contacts] = await Promise.all([
     db.customField.findMany({ orderBy: { key: "asc" }, select: { key: true } }),
     db.contact.findMany({
+      where: opts.where,
       orderBy: { createdAt: "asc" },
       include: { tags: { include: { tag: { select: { name: true } } } }, fields: true },
     }),
