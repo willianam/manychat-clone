@@ -13,6 +13,7 @@ import {
 import { windowState, windowSummary } from "../../lib/ui/window";
 import { ContactsFilters } from "./ContactsFilters";
 import { ContactsTable, type ContactListRow } from "./ContactsTable";
+import { ImportCsvDialog } from "./ImportCsvDialog";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
@@ -63,6 +64,7 @@ export default async function ContactsPage({
         description={`${page.total} ${page.total === 1 ? "contato" : "contatos"}${filtered ? " no filtro atual" : ""}`}
         actions={
           <>
+            <ImportCsvDialog />
             <Button asChild variant="outline">
               <a href={exportHref}>
                 <Download aria-hidden />
