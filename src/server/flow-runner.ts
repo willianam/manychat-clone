@@ -1,6 +1,12 @@
 import type { PrismaClient, FlowSession, Prisma } from "@prisma/client";
-import { FlowGraph, findEntryNode, type FlowNodeData } from "../lib/flow-schema";
-import { coerceFieldValue, compareValues } from "../lib/field-values";
+import {
+  FlowGraph,
+  findEntryNode,
+  rulesOf,
+  type FlowNodeData,
+  type ConditionRule,
+} from "../lib/flow-schema";
+import { coerceFieldValue, compareValues, parseDate, parseNumber } from "../lib/field-values";
 import { validateInput, defaultValidationMessage } from "../lib/input-validation";
 import { runRequest, getPath, asFieldValue, type RenderMode } from "./external-request";
 import { sendMessage, sendSenderActionToContact } from "./instagram";
@@ -760,31 +766,84 @@ async function evaluate(
   d: Extract<FlowNodeData, { kind: "condition" }>,
   ctx: Ctx,
 ): Promise<boolean> {
-  if (d.op === "hasTag") {
+  const rules = rulesOf(d);
+  const all = (d.combinator ?? "and") === "and";
+  for (const rule of rules) {
+    const pass = await evaluateRule(db, contactId, rule, ctx);
+    if (all && !pass) return false;
+    if (!all && pass) return true;
+  }
+  return all;
+}
+
+async function evaluateRule(
+  db: PrismaClient,
+  contactId: string,
+  rule: ConditionRule,
+  ctx: Ctx,
+): Promise<boolean> {
+  if (rule.op === "hasTag" || rule.op === "notHasTag") {
     const hit = await db.contactTag.findFirst({
-      where: { contactId, tag: { name: d.key } },
+      where: { contactId, tag: { name: rule.key } },
     });
-    return Boolean(hit);
+    return rule.op === "hasTag" ? Boolean(hit) : !hit;
   }
 
-  const raw = ctx[d.key];
-  switch (d.op) {
+  if (rule.op === "subscribed") {
+    const contact = await db.contact.findUnique({
+      where: { id: contactId },
+      select: { subscribed: true },
+    });
+    return contact?.subscribed ?? false;
+  }
+
+  const raw = ctx[rule.key];
+  const text = raw === undefined || raw === null ? "" : String(raw);
+  const value = String(rule.value ?? "");
+
+  switch (rule.op) {
     case "exists":
-      return raw !== undefined && raw !== null && raw !== "";
+      return text !== "";
+    case "isEmpty":
+      return text.trim() === "";
     case "equals":
-      return String(raw ?? "").toLowerCase() === String(d.value ?? "").toLowerCase();
+      return text.toLowerCase() === value.toLowerCase();
     case "contains":
-      return String(raw ?? "")
-        .toLowerCase()
-        .includes(String(d.value ?? "").toLowerCase());
+      return text.toLowerCase().includes(value.toLowerCase());
+    case "startsWith":
+      return value !== "" && text.toLowerCase().startsWith(value.toLowerCase());
     case "gt":
     case "lt":
     case "before":
     case "after":
-      return compareValues(d.op, raw, d.value);
+      return compareValues(rule.op, raw, rule.value);
+    case "between":
+      return isBetween(text, value);
+    case "inLastDays": {
+      const t = parseDate(text);
+      const days = parseNumber(value);
+      if (t === null || days === null || days < 0) return false;
+      const now = Date.now();
+      return t <= now && t >= now - (days + 1) * 86_400_000;
+    }
     default:
       return false;
   }
+}
+
+/** "min,max" inclusive, as numbers when both parse, otherwise as dates. */
+function isBetween(text: string, range: string): boolean {
+  const [lo, hi] = range.split(",").map((s) => s.trim());
+  if (lo === undefined || hi === undefined) return false;
+  const n = parseNumber(text);
+  const nLo = parseNumber(lo);
+  const nHi = parseNumber(hi);
+  if (n !== null && nLo !== null && nHi !== null) return n >= nLo && n <= nHi;
+  const t = parseDate(text);
+  const tLo = parseDate(lo);
+  const tHi = parseDate(hi);
+  if (t !== null && tLo !== null && tHi !== null) return t >= tLo && t <= tHi;
+  return false;
 }
 
 /**

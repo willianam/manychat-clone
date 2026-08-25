@@ -1,4 +1,4 @@
-import { FlowGraph, findEntryNode, armLabel, type FlowNodeData } from "./flow-schema";
+import { FlowGraph, findEntryNode, armLabel, rulesOf, type FlowNodeData } from "./flow-schema";
 
 /**
  * Flow preview: the graph rendered as the conversation it produces.
@@ -207,7 +207,9 @@ export function previewFrom(
       items.push({
         kind: "fork",
         nodeId: id,
-        label: `Se ${d.key} ${d.op}${d.value ? ` ${d.value}` : ""}`,
+        label: `Se ${rulesOf(d)
+          .map((r) => `${r.key} ${r.op}${r.value ? ` ${r.value}` : ""}`.trim())
+          .join(d.combinator === "or" ? " ou " : " e ")}`,
         choices: choicesHere,
       });
       current = followChoice(choicesHere, picked);

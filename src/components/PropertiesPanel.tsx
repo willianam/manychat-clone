@@ -911,6 +911,12 @@ const OP_LABELS: Record<string, string> = {
   before: "é antes de (data)",
   after: "é depois de (data)",
   hasTag: "tem a tag",
+  notHasTag: "não tem a tag",
+  between: "está entre (min,max)",
+  startsWith: "começa com",
+  isEmpty: "está vazio",
+  inLastDays: "nos últimos N dias",
+  subscribed: "está inscrito",
 };
 
 function ConditionProps({
@@ -921,13 +927,18 @@ function ConditionProps({
   onChange: Update;
 }) {
   // `exists` and `hasTag` are unary — a value box would just be noise.
-  const needsValue = data.op !== "exists" && data.op !== "hasTag";
+  const UNARY = ["exists", "hasTag", "notHasTag", "isEmpty", "subscribed"];
+  const needsValue = !UNARY.includes(data.op);
 
   return (
     <>
       <Field
-        label={data.op === "hasTag" ? "Nome da tag" : "Campo"}
-        hint={data.op === "hasTag" ? "A tag procurada no contato." : "Chave salva no contexto."}
+        label={data.op === "hasTag" || data.op === "notHasTag" ? "Nome da tag" : "Campo"}
+        hint={
+          data.op === "hasTag" || data.op === "notHasTag"
+            ? "A tag procurada no contato."
+            : "Chave salva no contexto."
+        }
       >
         <TextInput mono value={data.key} onChange={(key) => onChange({ ...data, key })} />
       </Field>
@@ -940,7 +951,7 @@ function ConditionProps({
               ...data,
               op,
               // Drop a stale value when switching to a unary operator.
-              value: op === "exists" || op === "hasTag" ? undefined : data.value,
+              value: UNARY.includes(op) ? undefined : data.value,
             })
           }
           options={ConditionOp.options.map((o) => ({ value: o, label: OP_LABELS[o] ?? o }))}

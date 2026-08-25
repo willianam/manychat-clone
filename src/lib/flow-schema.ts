@@ -301,15 +301,51 @@ export const ConditionOp = z.enum([
   "before",
   "after",
   "hasTag",
+  "notHasTag",
+  /** Numbers or dates; value is "min,max", both inclusive. */
+  "between",
+  "startsWith",
+  "isEmpty",
+  /** A date field within the last N days (value = N), today included. */
+  "inLastDays",
+  /** The contact's subscription flag; key is ignored. */
+  "subscribed",
 ]);
+export type ConditionOp = z.infer<typeof ConditionOp>;
 
+/** One test. `key` is a context key, a tag name for the tag ops, or unused. */
+export const ConditionRule = z.object({
+  key: z.string(),
+  op: ConditionOp,
+  value: z.string().optional(),
+});
+export type ConditionRule = z.infer<typeof ConditionRule>;
+
+/**
+ * Condition. A single rule lives on `key`/`op`/`value`, as it always has.
+ * `rules` with a `combinator` makes it compound; when present they replace
+ * the single rule, which is kept only so old graphs and the current editor
+ * keep working.
+ */
 const ConditionData = z.object({
   kind: z.literal("condition"),
   /** Context key, or tag name when op is hasTag. */
   key: z.string().min(1),
   op: ConditionOp,
   value: z.string().optional(),
+  rules: z.array(ConditionRule).min(1).max(10).optional(),
+  combinator: z.enum(["and", "or"]).optional(),
 });
+
+/** The rules a condition actually tests: `rules` when set, else the single one. */
+export function rulesOf(d: {
+  key: string;
+  op: ConditionOp;
+  value?: string;
+  rules?: ConditionRule[];
+}): ConditionRule[] {
+  return d.rules?.length ? d.rules : [{ key: d.key, op: d.op, value: d.value }];
+}
 
 /**
  * Delay. Three modes:
