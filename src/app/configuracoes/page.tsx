@@ -10,6 +10,7 @@ import {
 import { loadProfile, refreshTokenNow } from "./actions";
 import { tokenStatus } from "../../server/token-refresh";
 import { checkHealth } from "../../server/health";
+import { listQuickReplies } from "../../server/inbox";
 import { connectionStatus } from "../../server/connection-status";
 import { KIND_LABEL, WEBHOOK_FIELDS, webhookStatus } from "../../server/webhook-status";
 import { accountTimeZone, formatInTimeZone } from "../../lib/timezone";
@@ -21,6 +22,7 @@ import {
   OPT_OUT_KEYWORDS,
 } from "../../lib/global-keywords";
 import { ProfileForms } from "./ProfileForms";
+import { QuickRepliesManager } from "./QuickRepliesManager";
 import { Callout } from "@/components/ui/callout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
@@ -58,7 +60,7 @@ export default async function ConfiguracoesPage({
   const now = new Date();
   const timeZone = accountTimeZone();
 
-  const [profile, flows, token, health, connection, webhook, defaults, welcomes] =
+  const [profile, flows, token, health, connection, webhook, defaults, welcomes, quickReplies] =
     await Promise.all([
       loadProfile(),
       db.flow.findMany({ orderBy: { name: "asc" } }),
@@ -76,6 +78,7 @@ export default async function ConfiguracoesPage({
         include: { flow: { select: { name: true, enabled: true } } },
         orderBy: { priority: "desc" },
       }),
+      listQuickReplies(db),
     ]);
 
   // The stored JSON is re-parsed rather than trusted: a schema change or a
@@ -353,10 +356,28 @@ export default async function ConfiguracoesPage({
             <CardHeader>
               <CardTitle className="text-base">Respostas rápidas</CardTitle>
               <CardDescription>
-                Atalhos de texto para responder à mão no inbox. O inbox ainda não tem um modelo de
-                respostas salvas; quando tiver, o cadastro entra aqui.
+                Atalhos de texto para responder à mão no inbox. Na caixa de resposta, digite / e o
+                atalho para inserir o texto.
               </CardDescription>
             </CardHeader>
+            <CardContent className="space-y-4">
+              {quickReplies.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Nenhuma resposta rápida cadastrada.</p>
+              ) : (
+                <ul className="divide-y rounded-md border">
+                  {quickReplies.map((q) => (
+                    <li key={q.id} className="px-3 py-2">
+                      <div className="text-sm">
+                        <span className="font-medium">/{q.shortcut}</span>
+                        <span className="ml-2 text-muted-foreground">{q.title}</span>
+                      </div>
+                      <p className="truncate text-xs text-muted-foreground">{q.text}</p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <QuickRepliesManager items={quickReplies} />
+            </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
