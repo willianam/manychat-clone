@@ -108,13 +108,19 @@ export function ContactsTable({
               <SortHead query={query} sort="name">
                 Nome
               </SortHead>
-              <TableHead>Etiquetas</TableHead>
-              <SortHead query={query} sort="lastInbound">
+              {/*
+                Seven columns do not fit a phone. Below md the secondary ones
+                are hidden and the essentials (etiquetas, janela, inscrito)
+                move under the name in the first cell, so the table stops
+                scrolling sideways instead of hiding data behind a swipe.
+              */}
+              <TableHead className="hidden md:table-cell">Etiquetas</TableHead>
+              <SortHead query={query} sort="lastInbound" className="hidden md:table-cell">
                 Última interação
               </SortHead>
-              <TableHead>Janela</TableHead>
-              <TableHead>Inscrito</TableHead>
-              <TableHead>Origem</TableHead>
+              <TableHead className="hidden md:table-cell">Janela</TableHead>
+              <TableHead className="hidden md:table-cell">Inscrito</TableHead>
+              <TableHead className="hidden md:table-cell">Origem</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -138,28 +144,38 @@ export function ContactsTable({
                       <span className="block truncate text-xs text-muted-foreground">
                         @{c.username ?? "sem-user"}
                       </span>
+                      {/* What the hidden columns carried, for small screens. */}
+                      <span className="mt-1 flex flex-wrap items-center gap-1 md:hidden">
+                        <StatusPill tone={WINDOW_TONE[c.window]}>{c.windowLabel}</StatusPill>
+                        {!c.subscribed && <StatusPill tone="destructive">não inscrito</StatusPill>}
+                        {c.tags.map((t) => (
+                          <TagChip key={t.id} name={t.name} color={t.color} />
+                        ))}
+                      </span>
                     </span>
                   </Link>
                 </TableCell>
-                <TableCell>
+                <TableCell className="hidden md:table-cell">
                   <div className="flex flex-wrap gap-1">
                     {c.tags.map((t) => (
                       <TagChip key={t.id} name={t.name} color={t.color} />
                     ))}
                   </div>
                 </TableCell>
-                <TableCell className="whitespace-nowrap text-muted-foreground">
+                <TableCell className="hidden whitespace-nowrap text-muted-foreground md:table-cell">
                   {c.lastInboundLabel ?? "—"}
                 </TableCell>
-                <TableCell>
+                <TableCell className="hidden md:table-cell">
                   <StatusPill tone={WINDOW_TONE[c.window]}>{c.windowLabel}</StatusPill>
                 </TableCell>
-                <TableCell>
+                <TableCell className="hidden md:table-cell">
                   <StatusPill tone={c.subscribed ? "success" : "destructive"}>
                     {c.subscribed ? "sim" : "não"}
                   </StatusPill>
                 </TableCell>
-                <TableCell className="text-muted-foreground">{c.source ?? "—"}</TableCell>
+                <TableCell className="hidden text-muted-foreground md:table-cell">
+                  {c.source ?? "—"}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -173,10 +189,12 @@ function SortHead({
   query,
   sort,
   children,
+  className,
 }: {
   query: ContactQuery;
   sort: ContactSort;
   children: React.ReactNode;
+  className?: string;
 }) {
   const active = query.sort === sort;
   const nextDir = active
@@ -188,7 +206,10 @@ function SortHead({
       : "desc";
   const Icon = !active ? ArrowUpDown : query.dir === "asc" ? ArrowUp : ArrowDown;
   return (
-    <TableHead aria-sort={active ? (query.dir === "asc" ? "ascending" : "descending") : "none"}>
+    <TableHead
+      className={className}
+      aria-sort={active ? (query.dir === "asc" ? "ascending" : "descending") : "none"}
+    >
       <Link
         href={`/contacts${serializeContactQuery(withQuery(query, { sort, dir: nextDir }))}`}
         className={cn(

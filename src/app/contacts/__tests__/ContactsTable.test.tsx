@@ -60,8 +60,10 @@ describe("ContactsTable", () => {
   it("renders one row per contact linking to its page, with window and subscription pills", () => {
     setup();
     expect(screen.getByRole("link", { name: /Ana/ }).getAttribute("href")).toBe("/contacts/c1");
-    expect(screen.getByText("dentro · 21h")).toBeTruthy();
-    expect(screen.getByText("nunca escreveu")).toBeTruthy();
+    // Two of each pill: the desktop column and the mobile summary that
+    // replaces the columns hidden below md.
+    expect(screen.getAllByText("dentro · 21h")).toHaveLength(2);
+    expect(screen.getAllByText("nunca escreveu")).toHaveLength(2);
     expect(screen.queryByRole("region", { name: "Ações em massa" })).toBeNull();
   });
 
