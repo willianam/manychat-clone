@@ -47,7 +47,8 @@ export function Thread({
     (m) => m.direction === "INBOUND" && (!contact.lastReadAt || m.createdAt > contact.lastReadAt),
   );
   useEffect(() => {
-    if (hasUnread) void markReadAction(contact.id);
+    // A read mark that fails to land is not worth a toast; the next open retries.
+    if (hasUnread) markReadAction(contact.id).catch(() => {});
   }, [contact.id, hasUnread]);
 
   async function setPaused(paused: boolean) {
