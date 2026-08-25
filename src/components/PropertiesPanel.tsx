@@ -120,6 +120,12 @@ function Body({ data, onChange }: { data: FlowNodeData; onChange: Update }) {
           chega com o painel completo.
         </p>
       );
+    case "goal":
+      return (
+        <Field label="Nome da meta" hint="Aparece no funil quando o contato passa por aqui.">
+          <TextInput value={data.name} onChange={(name) => onChange({ ...data, name })} />
+        </Field>
+      );
     case "end":
       return (
         <p className="text-xs text-neutral-500">
@@ -1321,6 +1327,7 @@ function titleOf(data: FlowNodeData): string {
     random: "Randomizador",
     tag: "Tag (antigo)",
     goto: "Ir para",
+    goal: "Meta",
     end: "Fim",
   };
   return names[data.kind];

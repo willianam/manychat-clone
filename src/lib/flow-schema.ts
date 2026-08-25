@@ -21,6 +21,7 @@ import { z } from "zod";
  *   random    — split traffic between outputs, for A/B comparison
  *   tag       — legacy: kept so existing flows keep running; action supersedes it
  *   goto      — jump to another node in this flow, or hand the contact to another flow
+ *   goal      — record a conversion when passed through, then continue
  *   end       — terminate the session
  *
  * The numeric caps below are Instagram's, not ours — see LIMITS. Enforcing
@@ -95,6 +96,7 @@ export const NodeKind = z.enum([
   "random",
   "tag",
   "goto",
+  "goal",
   "end",
 ]);
 export type NodeKind = z.infer<typeof NodeKind>;
@@ -407,6 +409,12 @@ const GotoData = z.object({
   target: GotoTarget,
 });
 
+/** Goal: a named conversion point. Passing through records a FlowGoalHit. */
+const GoalData = z.object({
+  kind: z.literal("goal"),
+  name: z.string().trim().min(1).max(80),
+});
+
 const EndData = z.object({ kind: z.literal("end") });
 
 // A refined member can't live in a discriminatedUnion, and media nodes
@@ -427,6 +435,7 @@ export const FlowNodeData = z.union([
   RandomData,
   TagData,
   GotoData,
+  GoalData,
   EndData,
 ]);
 export type FlowNodeData = z.infer<typeof FlowNodeData>;

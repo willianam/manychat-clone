@@ -352,6 +352,27 @@ async function advance(
       return { status: "completed" };
     }
 
+    if (d.kind === "goal") {
+      // Best-effort: a conversion that fails to record must not stop the
+      // conversation that produced it.
+      await db.flowGoalHit
+        .create({
+          data: {
+            sessionId: session.id,
+            flowId: session.flowId,
+            nodeId: node.id,
+            contactId: session.contactId,
+          },
+        })
+        .catch((err) => console.warn("[runner] goal hit not recorded:", err));
+      current = nextOf(graph, node.id);
+      await db.flowSession.update({
+        where: { id: session.id },
+        data: { currentNodeId: current, context: asJson(ctx) },
+      });
+      continue;
+    }
+
     if (d.kind === "goto") {
       if ("nodeId" in d.target) {
         // Same flow: just move. MAX_STEPS still bounds a loop built from gotos.

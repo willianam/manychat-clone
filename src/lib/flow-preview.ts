@@ -255,6 +255,16 @@ export function previewFrom(
       continue;
     }
 
+    if (d.kind === "goal") {
+      items.push({ kind: "note", nodeId: id, text: `Meta "${d.name}" atingida` });
+      current = targetOf(graph, id);
+      if (!current) {
+        items.push({ kind: "dangling", nodeId: id });
+        break;
+      }
+      continue;
+    }
+
     if (d.kind === "goto") {
       if ("flowId" in d.target) {
         items.push({ kind: "note", nodeId: id, text: `Vai para outro fluxo (${d.target.flowId})` });

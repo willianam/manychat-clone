@@ -252,6 +252,21 @@ model FlowSession {
   @@index([status, resumeAt])
 }
 
+/// A contact passed through a goal node. One row per pass; the funnel
+/// reads these by flow and node. Plain ids, no FKs: a deleted session or
+/// contact must not erase the conversion it produced.
+model FlowGoalHit {
+  id        String   @id @default(cuid())
+  sessionId String
+  flowId    String
+  nodeId    String
+  contactId String
+  at        DateTime @default(now())
+
+  @@index([flowId, nodeId])
+  @@index([sessionId])
+}
+
 enum BroadcastStatus {
   DRAFT
   QUEUED

@@ -723,6 +723,20 @@ export function GotoNode({ data }: NodeProps<WithStats>) {
   );
 }
 
+export function GoalNode({ data }: NodeProps<WithStats>) {
+  const d = data as Extract<FlowNodeData, { kind: "goal" }>;
+  return (
+    <div className={`${SHELL} w-[224px]`}>
+      <Handle type="target" position={T} className={`${HANDLE} !top-[-8px] !bg-neutral-400`} />
+      <Head tone="bg-emerald-50 text-emerald-800 border-b border-emerald-100" label="Meta" />
+      <div className="p-2.5 text-[12px] text-neutral-700">
+        Conversão: <b>{d.name}</b>
+      </div>
+      <Handle type="source" position={B} className={`${HANDLE} !bottom-[-8px] !bg-neutral-400`} />
+    </div>
+  );
+}
+
 /** Legacy tag node — superseded by Ações, kept so old flows still render. */
 export function TagNode({ data }: NodeProps<WithStats>) {
   const d = data as Extract<FlowNodeData, { kind: "tag" }>;
@@ -778,5 +792,6 @@ export const nodeTypes = {
   random: RandomNode,
   tag: TagNode,
   goto: GotoNode,
+  goal: GoalNode,
   end: EndNode,
 };
