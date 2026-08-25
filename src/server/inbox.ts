@@ -102,7 +102,9 @@ export async function listConversations(
     where.lastInboundAt = { gt: new Date(now.getTime() - 24 * 3_600_000) };
   if (filter !== "unread" && opts.cursor) {
     const before = new Date(opts.cursor);
-    if (!Number.isNaN(before.getTime())) where.lastMessageAt = { lt: before };
+    // Keep `not: null` — assigning only `lt` dropped it, so a cursor page
+    // could include contacts that have never exchanged a message.
+    if (!Number.isNaN(before.getTime())) where.lastMessageAt = { not: null, lt: before };
   }
 
   const take = filter === "unread" ? 200 : limit + 1;
