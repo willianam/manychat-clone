@@ -28,6 +28,14 @@ const SENDS_MESSAGE: ReadonlySet<FlowNodeData["kind"]> = new Set([
   "image", "video", "audio", "file", "album",
 ]);
 
+/**
+ * Reserved session-context key: set once `mark_seen` has been sent for the
+ * inbound message this run answers. Lives in `context` so it survives a delay
+ * park without a schema change; underscore-prefixed so no question `saveAs`
+ * can collide with it.
+ */
+const SEEN_KEY = "_markSeenSent";
+
 export type StepResult = { status: "waiting" | "completed" | "delayed"; nodeId?: string };
 
 export async function startFlow(
@@ -80,7 +88,7 @@ export async function resumeWithInput(
     });
   }
 
-  return advance(db, session, graph);
+  return advance(db, session, graph, { inbound: true });
 }
 
 /**
@@ -129,14 +137,36 @@ export async function resumeWithPostback(
     },
   });
 
-  return advance(db, updated, graph);
+  return advance(db, updated, graph, { inbound: true });
 }
 
-/** Walk the graph until it blocks (question / delay) or ends. */
+/**
+ * Continue a session parked on a delay node once its `resumeAt` is due.
+ *
+ * No new inbound message is involved, so an earlier read receipt still
+ * stands. This is the worker's entry point — `startFlow` refuses to touch an
+ * existing ACTIVE session on purpose (a keyword typed mid-delay must not
+ * skip the wait), so it cannot be used to resume one.
+ */
+export async function resumeDelayed(
+  db: PrismaClient,
+  session: FlowSession,
+): Promise<StepResult> {
+  const flow = await db.flow.findUniqueOrThrow({ where: { id: session.flowId } });
+  return advance(db, session, FlowGraph.parse(flow.graph));
+}
+
+/**
+ * Walk the graph until it blocks (question / delay) or ends.
+ *
+ * `inbound` marks a run that answers a fresh message from the contact (a
+ * reply or a button tap), as opposed to a delay resume.
+ */
 async function advance(
   db: PrismaClient,
   session: FlowSession,
   graph: FlowGraph,
+  opts: { inbound?: boolean } = {},
 ): Promise<StepResult> {
   let current = session.currentNodeId;
   // Stored contact fields are readable by {{name}} alongside session answers,
@@ -147,6 +177,16 @@ async function advance(
     session.contactId,
     { ...(session.context as Ctx) },
   );
+
+  // Read receipt: once per inbound message, sent only when a node is about
+  // to reply. Marking every inbound DM as seen (the old webhook behaviour)
+  // hid unhandled messages from the account owner in the Instagram app.
+  //
+  // The receipt is remembered in the session context so a run resumed after
+  // a delay does not send it again — but a new inbound message is not
+  // covered by an earlier receipt, so an inbound run starts clean.
+  if (opts.inbound) delete ctx[SEEN_KEY];
+  let markedSeen = ctx[SEEN_KEY] === true;
 
   for (let step = 0; step < MAX_STEPS; step++) {
     if (!current) break;
@@ -166,6 +206,11 @@ async function advance(
     // matching typing_off — sending one would race the message and can blank
     // the bubble early.
     if (SENDS_MESSAGE.has(d.kind)) {
+      if (!markedSeen) {
+        await sendSenderActionToContact(db, session.contactId, "mark_seen");
+        markedSeen = true;
+        ctx[SEEN_KEY] = true;
+      }
       await sendSenderActionToContact(db, session.contactId, "typing_on");
     }
 

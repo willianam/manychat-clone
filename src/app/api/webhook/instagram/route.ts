@@ -10,7 +10,7 @@ import {
   handleRefLink,
   handleProfilePostback,
 } from "../../../../server/trigger-dispatch";
-import { fetchProfile, sendSenderAction } from "../../../../server/instagram";
+import { fetchProfile } from "../../../../server/instagram";
 import { recordInboundMessage } from "../../../../server/inbound-attachments";
 import {
   parseStoryReply,
@@ -89,11 +89,6 @@ async function processPayload(payload: MetaWebhook): Promise<void> {
       if (mid && (await seen(mid, "message", event))) continue;
 
       const igsid = event.sender.id;
-
-      // Mark read before the slower work, so the blue tick lands while the
-      // flow is still thinking. Never throws — a failure here must not cost
-      // us the message.
-      await sendSenderAction(igsid, "mark_seen");
 
       const profile = await fetchProfile(igsid);
 

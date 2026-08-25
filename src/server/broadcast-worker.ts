@@ -186,12 +186,14 @@ export async function tickDelayedSessions(db: PrismaClient): Promise<number> {
     take: 100,
   });
 
-  const { startFlow } = await import("./flow-runner");
+  const { resumeDelayed } = await import("./flow-runner");
   let resumed = 0;
 
   for (const s of due) {
     await db.flowSession.update({ where: { id: s.id }, data: { resumeAt: null } });
-    await startFlow(db, s.flowId, s.contactId).catch(() => {});
+    await resumeDelayed(db, s).catch((err) => {
+      console.warn(`[worker] delayed session ${s.id} failed to resume:`, err);
+    });
     resumed++;
   }
 

@@ -44,7 +44,7 @@ export type SenderAction = "typing_on" | "typing_off" | "mark_seen";
  *
  *   {"recipient":{"id":"<IGSID>"},"sender_action":"typing_on"}
  *
- * Three properties make this safe to call from the webhook path:
+ * Three properties make this safe to call from the reply path:
  *
  *  - **Never throws.** A failed typing bubble must not abort the reply the
  *    contact is actually waiting for. Failures are swallowed and logged.
@@ -54,9 +54,11 @@ export type SenderAction = "typing_on" | "typing_off" | "mark_seen";
  *    message, so it is legal exactly when there is something to acknowledge,
  *    and the window rules apply to sends, not acknowledgements.
  *
- * The caller passes the IGSID directly rather than a contact id, so this can
- * run before any Contact row exists — the whole point of `mark_seen` is that
- * it lands immediately, not after a profile lookup.
+ * `mark_seen` is NOT sent by the webhook for every inbound DM. The flow-runner
+ * sends it right before the first reply of a flow run (see `advance`), so a
+ * message no flow answers stays unread for the account owner in the
+ * Instagram app. Both actions therefore go through `sendSenderActionToContact`
+ * in practice; this IGSID-level function is the primitive underneath it.
  */
 export async function sendSenderAction(
   igScopedId: string,

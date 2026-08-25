@@ -94,6 +94,28 @@ describe("fetchProfile", () => {
   });
 });
 
+describe("sendSenderAction", () => {
+  it("posts recipient and sender_action as top-level siblings, with no message key", async () => {
+    const spy = mockFetch({ recipient_id: "IGSID-1" });
+    const { sendSenderAction } = await import("../instagram");
+
+    await sendSenderAction("IGSID-1", "mark_seen");
+
+    const [url, init] = spy.mock.calls[0];
+    expect(url).toBe("https://graph.instagram.com/v26.0/me/messages");
+    expect(JSON.parse(init.body)).toEqual({
+      recipient: { id: "IGSID-1" },
+      sender_action: "mark_seen",
+    });
+  });
+
+  it("never throws — a failed receipt must not cost the reply", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network")));
+    const { sendSenderAction } = await import("../instagram");
+    await expect(sendSenderAction("IGSID-1", "mark_seen")).resolves.toBeUndefined();
+  });
+});
+
 describe("token configuration", () => {
   it("fails loudly when IG_ACCESS_TOKEN is missing", async () => {
     delete process.env.IG_ACCESS_TOKEN;
