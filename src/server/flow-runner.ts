@@ -497,7 +497,10 @@ async function advance(
         return { status: "waiting", nodeId: node.id };
       }
       current = nextOf(graph, node.id);
-      await db.flowSession.update({ where: { id: session.id }, data: { currentNodeId: current } });
+      await db.flowSession.update({
+        where: { id: session.id },
+        data: { currentNodeId: current, context: asJson(ctx) },
+      });
       continue;
     }
 
@@ -507,7 +510,10 @@ async function advance(
         meta: metaFor(session, node.id),
       });
       current = nextOf(graph, node.id);
-      await db.flowSession.update({ where: { id: session.id }, data: { currentNodeId: current } });
+      await db.flowSession.update({
+        where: { id: session.id },
+        data: { currentNodeId: current, context: asJson(ctx) },
+      });
       continue;
     }
 
@@ -519,7 +525,10 @@ async function advance(
         meta: metaFor(session, node.id),
       });
       current = nextOf(graph, node.id);
-      await db.flowSession.update({ where: { id: session.id }, data: { currentNodeId: current } });
+      await db.flowSession.update({
+        where: { id: session.id },
+        data: { currentNodeId: current, context: asJson(ctx) },
+      });
       continue;
     }
 
@@ -529,7 +538,10 @@ async function advance(
         meta: metaFor(session, node.id),
       });
       current = nextOf(graph, node.id);
-      await db.flowSession.update({ where: { id: session.id }, data: { currentNodeId: current } });
+      await db.flowSession.update({
+        where: { id: session.id },
+        data: { currentNodeId: current, context: asJson(ctx) },
+      });
       continue;
     }
 
@@ -645,14 +657,20 @@ async function advance(
       if (d.action === "add") await addTagToContact(db, session.contactId, d.tagName, "flow");
       else await removeTagFromContact(db, session.contactId, d.tagName, "flow");
       current = nextOf(graph, node.id);
-      await db.flowSession.update({ where: { id: session.id }, data: { currentNodeId: current } });
+      await db.flowSession.update({
+        where: { id: session.id },
+        data: { currentNodeId: current, context: asJson(ctx) },
+      });
       continue;
     }
 
     if (d.kind === "condition") {
       const pass = await evaluate(db, session.contactId, d, ctx);
       current = nextOf(graph, node.id, pass ? "true" : "false");
-      await db.flowSession.update({ where: { id: session.id }, data: { currentNodeId: current } });
+      await db.flowSession.update({
+        where: { id: session.id },
+        data: { currentNodeId: current, context: asJson(ctx) },
+      });
       continue;
     }
   }
