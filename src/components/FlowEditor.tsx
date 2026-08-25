@@ -25,6 +25,7 @@ import {
   PanelLeftOpen,
   Redo2,
   Save,
+  Send,
   Undo2,
   Upload,
   XCircle,
@@ -242,6 +243,8 @@ type FlowEditorProps = {
   triggers?: TriggerView[];
   onAddTrigger?: () => void;
   onEditTrigger?: (trigger: TriggerView) => void;
+  /** Open the "Testar no meu Instagram" dialog. Absent = no button. */
+  onTest?: () => void;
   /** Persist the graph as the draft. */
   onSave: (graph: FlowGraph) => Promise<void>;
   /**
@@ -265,6 +268,7 @@ function FlowEditorInner({
   triggers,
   onAddTrigger,
   onEditTrigger,
+  onTest,
   onSave,
   draft,
 }: FlowEditorProps) {
@@ -811,6 +815,13 @@ function FlowEditorInner({
           <span className="hidden text-xs text-neutral-400 xl:inline">
             Duplo clique edita o texto · ⌘D duplica · ⌘C/⌘V copia e cola · Delete remove
           </span>
+          {onTest && (
+            <Button variant="outline" size="sm" onClick={onTest}>
+              <Send aria-hidden />
+              <span className="hidden lg:inline">Testar no meu Instagram</span>
+              <span className="lg:hidden">Testar</span>
+            </Button>
+          )}
           {metrics && (
             <>
               <Select

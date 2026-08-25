@@ -5,6 +5,7 @@ import { db } from "../../../server/db";
 import { FlowGraph, validateGraph } from "../../../lib/flow-schema";
 import { isStatsPeriod } from "../../../lib/stats-period";
 import { editorMetrics, type EditorMetrics } from "../../../server/flow-editor-metrics";
+import { startFlow } from "../../../server/flow-runner";
 
 /**
  * Draft vs published.
@@ -71,4 +72,41 @@ export async function discardDraft(flowId: string) {
 export async function loadFlowMetrics(flowId: string, period: unknown): Promise<EditorMetrics> {
   if (!isStatsPeriod(period)) throw new Error("Período inválido.");
   return editorMetrics(db, flowId, period);
+}
+
+/** Contacts whose @username contains `q`, for the test dialog. */
+export async function searchContacts(
+  q: string,
+): Promise<Array<{ id: string; username: string | null; name: string | null }>> {
+  const needle = q.trim().replace(/^@/, "");
+  if (!needle) return [];
+  return db.contact.findMany({
+    where: { username: { contains: needle, mode: "insensitive" } },
+    select: { id: true, username: true, name: true },
+    orderBy: { username: "asc" },
+    take: 8,
+  });
+}
+
+/**
+ * Run the PUBLISHED flow for one contact, right now, on Instagram.
+ *
+ * Goes through `startFlow` with takeover so a session that contact already
+ * has in this flow is abandoned first — otherwise the test would silently
+ * do nothing. The runner reads `graph`, so an unpublished draft is not what
+ * gets tested; the dialog says so.
+ */
+export async function testFlowOnContact(
+  flowId: string,
+  contactId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const flow = await db.flow.findUnique({ where: { id: flowId }, select: { enabled: true } });
+  if (!flow) return { ok: false, error: "Fluxo não encontrado." };
+  if (!flow.enabled) return { ok: false, error: "Ative o fluxo antes de testar." };
+
+  const result = await startFlow(db, flowId, contactId, { takeover: true });
+  if (!result) {
+    return { ok: false, error: "O contato está com as mensagens automáticas desativadas." };
+  }
+  return { ok: true };
 }

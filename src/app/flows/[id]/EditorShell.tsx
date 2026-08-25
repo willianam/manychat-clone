@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { FlowEditor } from "../../../components/FlowEditor";
+import { TestFlowDialog } from "../../../components/TestFlowDialog";
 import { TriggerDialog } from "../../../components/TriggerDialog";
 import type { FlowGraph } from "../../../lib/flow-schema";
 import type { EditorMetrics } from "../../../server/flow-editor-metrics";
@@ -61,6 +62,7 @@ export function EditorShell({
   const [dialog, setDialog] = useState<
     { mode: "closed" } | { mode: "new" } | { mode: "edit"; trigger: TriggerView }
   >({ mode: "closed" });
+  const [testing, setTesting] = useState(false);
 
   return (
     <>
@@ -74,6 +76,7 @@ export function EditorShell({
         triggers={triggers}
         onAddTrigger={() => setDialog({ mode: "new" })}
         onEditTrigger={(trigger) => setDialog({ mode: "edit", trigger })}
+        onTest={() => setTesting(true)}
         onSave={async (graph) => {
           try {
             await saveFlow(flowId, graph);
@@ -115,6 +118,13 @@ export function EditorShell({
             }
           },
         }}
+      />
+
+      <TestFlowDialog
+        open={testing}
+        flowId={flowId}
+        hasDraft={hasDraft}
+        onClose={() => setTesting(false)}
       />
 
       <TriggerDialog
