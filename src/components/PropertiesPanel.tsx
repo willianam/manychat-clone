@@ -885,6 +885,8 @@ const OP_LABELS: Record<string, string> = {
   exists: "existe",
   gt: "é maior que",
   lt: "é menor que",
+  before: "é antes de (data)",
+  after: "é depois de (data)",
   hasTag: "tem a tag",
 };
 

@@ -246,6 +246,9 @@ export const ConditionOp = z.enum([
   "exists",
   "gt",
   "lt",
+  /** Date-only ordering; false when either side is not a date. */
+  "before",
+  "after",
   "hasTag",
 ]);
 

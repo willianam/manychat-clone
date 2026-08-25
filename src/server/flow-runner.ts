@@ -1,5 +1,6 @@
 import type { PrismaClient, FlowSession, Prisma } from "@prisma/client";
 import { FlowGraph, findEntryNode, type FlowNodeData } from "../lib/flow-schema";
+import { coerceFieldValue, compareValues } from "../lib/field-values";
 import { sendText, sendMessage, sendSenderActionToContact } from "./instagram";
 import {
   buildMessage, buildQuickReply, buildCarousel, buildImage,
@@ -418,11 +419,14 @@ async function applyOps(
     }
 
     if (op.op === "setField") {
-      ctx[op.key] = op.value;
+      // Stored in canonical form for the declared type, so a later condition
+      // compares "1500" with "1499" as numbers — see lib/field-values.ts.
+      const value = coerceFieldValue(op.value, op.valueType);
+      ctx[op.key] = value;
       await db.contactField.upsert({
         where: { contactId_key: { contactId, key: op.key } },
-        create: { contactId, key: op.key, value: op.value },
-        update: { value: op.value },
+        create: { contactId, key: op.key, value },
+        update: { value },
       });
       continue;
     }
@@ -496,9 +500,10 @@ async function evaluate(
     case "contains":
       return String(raw ?? "").toLowerCase().includes(String(d.value ?? "").toLowerCase());
     case "gt":
-      return Number(raw) > Number(d.value);
     case "lt":
-      return Number(raw) < Number(d.value);
+    case "before":
+    case "after":
+      return compareValues(d.op, raw, d.value);
     default:
       return false;
   }
