@@ -13,6 +13,13 @@ describe("classifyGlobalKeyword", () => {
     expect(classifyGlobalKeyword("Voltar 🙏")).toBe("opt_in");
   });
 
+  it("recognises the escape words, accents folded", () => {
+    expect(classifyGlobalKeyword("menu")).toBe("escape");
+    expect(classifyGlobalKeyword("Recomeçar")).toBe("escape");
+    expect(classifyGlobalKeyword("recomecar")).toBe("escape");
+    expect(classifyGlobalKeyword("reiniciar!")).toBe("escape");
+  });
+
   it("matches the whole message only — a sentence is not a command", () => {
     expect(classifyGlobalKeyword("quero parar")).toBeNull();
     expect(classifyGlobalKeyword("parar agora")).toBeNull();

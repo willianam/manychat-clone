@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { runBroadcast, tickDelayedSessions } from "./broadcast-worker";
+import { runBroadcast, tickDelayedSessions, sweepStaleSessions } from "./broadcast-worker";
 import { maybeRefreshToken } from "./token-refresh";
 
 /**
@@ -27,6 +27,9 @@ async function tick(): Promise<void> {
 
   const resumed = await tickDelayedSessions(db);
   if (resumed) console.log(`[worker] resumed ${resumed} delayed session(s)`);
+
+  const swept = await sweepStaleSessions(db);
+  if (swept) console.log(`[worker] abandoned ${swept} stale session(s)`);
 
   const queued = await db.broadcast.findMany({
     where: { status: "QUEUED", OR: [{ scheduledAt: null }, { scheduledAt: { lte: new Date() } }] },

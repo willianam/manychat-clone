@@ -200,6 +200,25 @@ export async function tickDelayedSessions(db: PrismaClient): Promise<number> {
   return resumed;
 }
 
+/** A question nobody answered for this long is over. */
+export const STALE_SESSION_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Sister of tickDelayedSessions: sessions parked on a question with no
+ * answer for 24h are marked ABANDONED. Without this a contact who walked
+ * away mid-flow stays "waiting" forever, and whatever they type next week is
+ * taken as the answer to a question they no longer remember.
+ *
+ * Runs on the same schedule as the delay resumer. Returns how many it swept.
+ */
+export async function sweepStaleSessions(db: PrismaClient, now = new Date()): Promise<number> {
+  const { count } = await db.flowSession.updateMany({
+    where: { status: "WAITING_INPUT", updatedAt: { lt: new Date(now.getTime() - STALE_SESSION_MS) } },
+    data: { status: "ABANDONED" },
+  });
+  return count;
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }

@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "../../../../server/db";
-import { runBroadcast, tickDelayedSessions } from "../../../../server/broadcast-worker";
+import {
+  runBroadcast,
+  tickDelayedSessions,
+  sweepStaleSessions,
+} from "../../../../server/broadcast-worker";
 import { maybeRefreshToken } from "../../../../server/token-refresh";
 
 export const runtime = "nodejs";
@@ -35,6 +39,7 @@ export async function GET(req: NextRequest) {
   const token = await maybeRefreshToken(db);
 
   const resumed = await tickDelayedSessions(db);
+  const swept = await sweepStaleSessions(db);
 
   const queued = await db.broadcast.findMany({
     where: {
@@ -50,5 +55,5 @@ export async function GET(req: NextRequest) {
     broadcast = { name: queued[0].name, ...r };
   }
 
-  return NextResponse.json({ ok: true, token: token.action, resumed, broadcast });
+  return NextResponse.json({ ok: true, token: token.action, resumed, swept, broadcast });
 }

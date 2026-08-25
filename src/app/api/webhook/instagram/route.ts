@@ -20,7 +20,11 @@ import {
   type MessagingEvent,
 } from "../../../../lib/entry-events";
 import { parseFlowPayload } from "../../../../lib/messenger-profile";
-import { tickDelayedSessions, runBroadcast } from "../../../../server/broadcast-worker";
+import {
+  tickDelayedSessions,
+  sweepStaleSessions,
+  runBroadcast,
+} from "../../../../server/broadcast-worker";
 
 export const runtime = "nodejs"; // crypto + Prisma need Node, not Edge
 export const dynamic = "force-dynamic";
@@ -274,6 +278,7 @@ async function processReferral(event: MessagingEvent): Promise<boolean> {
 async function drainDueWork(): Promise<void> {
   try {
     await tickDelayedSessions(db);
+    await sweepStaleSessions(db);
 
     const queued = await db.broadcast.findFirst({
       where: {

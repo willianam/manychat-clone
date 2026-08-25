@@ -54,14 +54,18 @@ export async function handleInboundMessage(
 }
 
 /**
- * Opt-out and opt-in, before anything else gets a say.
+ * Global keywords, before anything else gets a say.
  *
- * Returns true when the message was a global command and has been handled.
- * Opting out abandons every session the contact has: a flow parked on a
- * question would otherwise swallow their next message and answer it.
+ * Returns true when the message was fully handled here. Opt-out and opt-in
+ * are; an escape word ("menu", "recomeçar") is not — it abandons the
+ * contact's sessions and returns false so the message goes on to trigger
+ * matching, where the owner may well have a "menu" keyword flow. Without
+ * this a flow parked on a question keeps the contact forever: every word
+ * they type is taken as the answer.
  *
- * The confirmation is best-effort. The contact just wrote, so the window is
- * open, but a send failure must not undo the opt-out itself.
+ * Opting out abandons the sessions for the same reason. The confirmation is
+ * best-effort: the contact just wrote, so the window is open, but a send
+ * failure must not undo the opt-out itself.
  */
 async function handleGlobalKeyword(
   db: PrismaClient,
@@ -71,20 +75,27 @@ async function handleGlobalKeyword(
   const command = classifyGlobalKeyword(text);
   if (!command) return false;
 
+  if (command === "escape") {
+    await abandonSessions(db, contactId);
+    return false;
+  }
+
   const subscribed = command === "opt_in";
   await db.contact.update({ where: { id: contactId }, data: { subscribed } });
 
-  if (!subscribed) {
-    await db.flowSession.updateMany({
-      where: { contactId, status: { in: ["ACTIVE", "WAITING_INPUT"] } },
-      data: { status: "ABANDONED" },
-    });
-  }
+  if (!subscribed) await abandonSessions(db, contactId);
 
   await sendText(db, contactId, subscribed ? OPT_IN_CONFIRMATION : OPT_OUT_CONFIRMATION).catch(
     (err) => console.warn("[dispatch] opt-out confirmation failed:", err),
   );
   return true;
+}
+
+async function abandonSessions(db: PrismaClient, contactId: string): Promise<void> {
+  await db.flowSession.updateMany({
+    where: { contactId, status: { in: ["ACTIVE", "WAITING_INPUT"] } },
+    data: { status: "ABANDONED" },
+  });
 }
 
 /**
