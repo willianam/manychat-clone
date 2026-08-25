@@ -172,21 +172,62 @@ export async function previewAudience(
   };
 }
 
-export type BroadcastReport = { sent: number; skipped: number; failed: number };
+export type BroadcastReport = {
+  sent: number;
+  skipped: number;
+  failed: number;
+  /** False when another drainer holds the broadcast; nothing was done. */
+  claimed: boolean;
+};
+
+/** A SENDING claim older than this is a dead drainer and may be re-taken. */
+export const BROADCAST_LOCK_MS = 10 * 60 * 1000;
+
+/**
+ * Take the broadcast for this drainer, or find out someone else has it.
+ *
+ * The webhook drain, the daily cron and the dev worker can all reach a
+ * QUEUED row at the same time; two of them walking the same PENDING
+ * recipients would double-send. The claim is one conditional UPDATE — the
+ * row flips QUEUED→SENDING only for the first caller, and Postgres serializes
+ * concurrent updates of one row — so at most one drainer proceeds. A claim
+ * expires after BROADCAST_LOCK_MS so a drainer killed mid-run (Vercel's 60s
+ * cap) does not leave the broadcast stuck in SENDING forever.
+ */
+export async function claimBroadcast(
+  db: PrismaClient,
+  broadcastId: string,
+  now = new Date(),
+): Promise<boolean> {
+  const { count } = await db.broadcast.updateMany({
+    where: {
+      id: broadcastId,
+      OR: [
+        { status: "QUEUED" },
+        { status: "SENDING", lockedAt: null },
+        { status: "SENDING", lockedAt: { lt: new Date(now.getTime() - BROADCAST_LOCK_MS) } },
+      ],
+    },
+    data: { status: "SENDING", lockedAt: now },
+  });
+  return count === 1;
+}
 
 export async function runBroadcast(
   db: PrismaClient,
   broadcastId: string,
 ): Promise<BroadcastReport> {
+  if (!(await claimBroadcast(db, broadcastId))) {
+    return { sent: 0, skipped: 0, failed: 0, claimed: false };
+  }
   const b = await db.broadcast.findUniqueOrThrow({ where: { id: broadcastId } });
-  await db.broadcast.update({ where: { id: b.id }, data: { status: "SENDING" } });
 
   const pending = await db.broadcastRecipient.findMany({
     where: { broadcastId: b.id, status: "PENDING" },
     include: { contact: true },
   });
 
-  const report: BroadcastReport = { sent: 0, skipped: 0, failed: 0 };
+  const report: BroadcastReport = { sent: 0, skipped: 0, failed: 0, claimed: true };
   const body = parseBroadcastBody(b);
 
   for (const r of pending) {
@@ -222,10 +263,104 @@ export async function runBroadcast(
 
   await db.broadcast.update({
     where: { id: b.id },
-    data: { status: report.failed > 0 && report.sent === 0 ? "FAILED" : "DONE" },
+    data: { status: report.failed > 0 && report.sent === 0 ? "FAILED" : "DONE", lockedAt: null },
   });
 
   return report;
+}
+
+/**
+ * A recipient failure caused by the messaging window rather than by the
+ * send itself. These are not retried: the window will not reopen by trying
+ * again, only by the contact writing.
+ */
+export function isWindowError(error: string | null): boolean {
+  if (!error) return false;
+  return /messaging window|never sent us a message|HUMAN_AGENT window/i.test(error);
+}
+
+export type BroadcastStatusReport = {
+  id: string;
+  name: string;
+  status: string;
+  counts: { pending: number; sent: number; failed: number; total: number };
+  /** Rows that failed for a reason other than the window — retryable. */
+  errors: Array<{ contactId: string; username: string | null; name: string | null; error: string }>;
+  /** Rows the window blocked. */
+  outOfWindow: number;
+};
+
+export async function broadcastReport(
+  db: PrismaClient,
+  broadcastId: string,
+): Promise<BroadcastStatusReport> {
+  const b = await db.broadcast.findUniqueOrThrow({ where: { id: broadcastId } });
+  const [grouped, failedRows] = await Promise.all([
+    db.broadcastRecipient.groupBy({
+      by: ["status"],
+      where: { broadcastId },
+      _count: { _all: true },
+    }),
+    db.broadcastRecipient.findMany({
+      where: { broadcastId, status: "FAILED" },
+      select: {
+        contactId: true,
+        error: true,
+        contact: { select: { username: true, name: true } },
+      },
+    }),
+  ]);
+
+  const counts = { pending: 0, sent: 0, failed: 0, total: 0 };
+  for (const g of grouped) {
+    const n = g._count._all;
+    counts.total += n;
+    if (g.status === "PENDING") counts.pending += n;
+    else if (g.status === "FAILED") counts.failed += n;
+    else counts.sent += n; // SENT, DELIVERED, READ
+  }
+
+  const errors = failedRows
+    .filter((r) => !isWindowError(r.error))
+    .map((r) => ({
+      contactId: r.contactId,
+      username: r.contact.username,
+      name: r.contact.name,
+      error: r.error ?? "",
+    }));
+
+  return {
+    id: b.id,
+    name: b.name,
+    status: b.status,
+    counts,
+    errors,
+    outOfWindow: failedRows.length - errors.length,
+  };
+}
+
+/**
+ * Put the retryable failures back in the queue. Window failures stay FAILED
+ * (see isWindowError). Returns how many rows were re-queued; zero leaves the
+ * broadcast untouched.
+ */
+export async function retryFailed(db: PrismaClient, broadcastId: string): Promise<number> {
+  const failed = await db.broadcastRecipient.findMany({
+    where: { broadcastId, status: "FAILED" },
+    select: { id: true, error: true },
+  });
+  const ids = failed.filter((r) => !isWindowError(r.error)).map((r) => r.id);
+  if (ids.length === 0) return 0;
+
+  await db.broadcastRecipient.updateMany({
+    where: { id: { in: ids } },
+    data: { status: "PENDING", error: null },
+  });
+  await db.broadcast.update({
+    where: { id: broadcastId },
+    data: { status: "QUEUED", lockedAt: null },
+  });
+  return ids.length;
 }
 
 /**
