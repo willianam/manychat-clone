@@ -42,6 +42,10 @@ export function ReplyBox({
   const [sending, setSending] = useState(false);
   const [remaining, setRemaining] = useState(w.remainingMs);
   const [cursor, setCursor] = useState(0);
+  // Esc closes the shortcut picker. The picker is derived from the draft, so
+  // dismissing it needs its own flag — clearing the text would throw away
+  // what the operator typed.
+  const [pickerDismissed, setPickerDismissed] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -66,9 +70,13 @@ export function ReplyBox({
       .filter((q) => q.shortcut.includes(query) || q.title.toLowerCase().includes(query))
       .slice(0, 8);
   }, [query, quickReplies]);
-  const pickerOpen = suggestions.length > 0;
+  const pickerOpen = suggestions.length > 0 && !pickerDismissed;
 
-  useEffect(() => setCursor(0), [query]);
+  useEffect(() => {
+    setCursor(0);
+    // A new query is a new picker: a past Esc must not keep it shut.
+    setPickerDismissed(false);
+  }, [query]);
 
   function pick(q: QuickReplyTemplate) {
     setText(q.text);
@@ -112,8 +120,10 @@ export function ReplyBox({
         return;
       }
       if (e.key === "Escape") {
+        // Close the picker only. This used to setText(""), so dismissing the
+        // suggestions deleted the whole draft.
         e.preventDefault();
-        setText("");
+        setPickerDismissed(true);
         return;
       }
     }

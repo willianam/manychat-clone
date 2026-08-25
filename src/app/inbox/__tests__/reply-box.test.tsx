@@ -127,7 +127,23 @@ describe("ReplyBox", () => {
     expect(screen.queryByRole("listbox")).toBeNull();
     fireEvent.change(ta, { target: { value: "/" } });
     fireEvent.keyDown(ta, { key: "Escape" });
-    expect(ta.value).toBe("");
+    // Escape closes the picker and KEEPS the draft — it used to clear it.
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(ta.value).toBe("/");
+  });
+
+  it("Escape does not discard a draft, and typing reopens the picker", () => {
+    const ta = box();
+    fireEvent.change(ta, { target: { value: "/pre" } });
+    expect(screen.queryByRole("listbox")).not.toBeNull();
+
+    fireEvent.keyDown(ta, { key: "Escape" });
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(ta.value).toBe("/pre");
+
+    // A dismissal applies to that query only, not to the picker forever.
+    fireEvent.change(ta, { target: { value: "/prec" } });
+    expect(screen.queryByRole("listbox")).not.toBeNull();
   });
 
   it("outside the 24h window, requires the human-agent mark before sending", async () => {
