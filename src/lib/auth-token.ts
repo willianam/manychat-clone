@@ -12,8 +12,9 @@
  * 20+, and in Vitest, so one implementation serves all three.
  *
  * The secret is AUTH_SECRET, or — so a working deployment keeps working —
- * derived from ADMIN_PASSWORD with a fixed salt. Changing either value logs
- * everyone out, which is the point.
+ * derived from ADMIN_PASSWORD with a fixed salt. AUTH_SECRET wins when both
+ * are set, so rotating ADMIN_PASSWORD alone does NOT revoke live sessions
+ * once AUTH_SECRET exists: rotate AUTH_SECRET to log everyone out.
  */
 
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;

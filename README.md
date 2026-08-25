@@ -40,14 +40,20 @@ paradas, avançar um disparo, renovar o token) acontece por três caminhos:
 ## Segurança
 
 Tudo exceto `/api/webhook/*` e `/api/cron/*` fica atrás de uma senha única
-(`ADMIN_PASSWORD`), aplicada em `src/middleware.ts`. Se a variável não
-estiver definida em produção, o painel responde 503 e se tranca — o padrão
-oposto exporia todos os contatos silenciosamente.
+(`ADMIN_PASSWORD`), aplicada em `src/middleware.ts`. O painel se tranca com
+503 quando **nenhuma** das duas variáveis de sessão existe (nem
+`AUTH_SECRET`, nem `ADMIN_PASSWORD`) — o padrão oposto exporia todos os
+contatos silenciosamente.
 
 O cookie de sessão não é a senha: é um token `exp.hmac` assinado com
 HMAC-SHA256 (`src/lib/auth-token.ts`, Web Crypto, roda no Edge) que expira
 em 30 dias. A chave é `AUTH_SECRET` ou, se ausente, derivada de
-`ADMIN_PASSWORD` com um salt fixo. O login aceita 5 tentativas erradas por
+`ADMIN_PASSWORD` com um salt fixo.
+
+**Para revogar todas as sessões abertas, rotacione `AUTH_SECRET`.** Trocar
+apenas `ADMIN_PASSWORD` não desloga ninguém enquanto `AUTH_SECRET` estiver
+definida: ela tem prioridade na derivação da chave, então os cookies já
+emitidos continuam válidos até expirar. O login aceita 5 tentativas erradas por
 IP a cada 15 minutos (`src/lib/login-rate-limit.ts`); o contador é em
 memória, por processo — suficiente para um painel de uma pessoa, não uma
 defesa contra ataque distribuído.

@@ -36,17 +36,21 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Fail closed. A missing password in production must lock the panel, not
+  // Fail closed. No configured secret in production must lock the panel, not
   // open it — the opposite default would silently expose every contact.
-  if (!process.env.ADMIN_PASSWORD) {
+  //
+  // The gate is authSecret(), not ADMIN_PASSWORD: a deployment that sets only
+  // AUTH_SECRET can verify cookies perfectly well, and checking the password
+  // here used to 503 it into a panel nobody could open.
+  const secret = authSecret();
+  if (secret === null) {
     return new NextResponse(
-      "ADMIN_PASSWORD is not set. The panel is locked until it is configured.",
+      "Neither AUTH_SECRET nor ADMIN_PASSWORD is set. The panel is locked until one is configured.",
       { status: 503 },
     );
   }
 
-  const secret = authSecret();
-  if (secret && (await verifyToken(secret, req.cookies.get(COOKIE)?.value))) {
+  if (await verifyToken(secret, req.cookies.get(COOKIE)?.value)) {
     return NextResponse.next();
   }
 
