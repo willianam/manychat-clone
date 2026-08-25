@@ -1,7 +1,10 @@
+import QRCode from "qrcode";
 import { Link2, Plus } from "lucide-react";
 import { db } from "../../server/db";
 import { refLinkUrl } from "../../lib/entry-events";
+import { refLinkStats } from "../../server/ref-link-stats";
 import { CopyLink } from "./CopyLink";
+import { LinkInsights } from "./LinkInsights";
 import { createRefLink, setRefLinkEnabled, deleteRefLink } from "./actions";
 import { Callout } from "@/components/ui/callout";
 import { Card, CardContent } from "@/components/ui/card";
@@ -33,6 +36,26 @@ export default async function RefLinksPage() {
     db.refLink.findMany({ include: { flow: true }, orderBy: { createdAt: "desc" } }),
     db.flow.findMany({ orderBy: { name: "asc" } }),
   ]);
+  const stats = await refLinkStats(
+    db,
+    links.map((l) => l.code),
+  );
+
+  // QR codes need the full url, hence the username; without it there is
+  // nothing to encode and the section simply omits them.
+  const qrByCode = new Map(
+    USERNAME
+      ? await Promise.all(
+          links.map(
+            async (l) =>
+              [
+                l.code,
+                await QRCode.toDataURL(refLinkUrl(USERNAME, l.code), { width: 512, margin: 1 }),
+              ] as const,
+          ),
+        )
+      : [],
+  );
 
   return (
     <main className="mx-auto w-full max-w-4xl px-6 py-8">
@@ -173,6 +196,12 @@ export default async function RefLinksPage() {
                     <CopyLink url={refLinkUrl(USERNAME, link.code)} />
                   </div>
                 )}
+
+                <LinkInsights
+                  code={link.code}
+                  rows={stats.byCode.get(link.code) ?? []}
+                  qrDataUrl={qrByCode.get(link.code) ?? null}
+                />
               </CardContent>
             </Card>
           </li>
