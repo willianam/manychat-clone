@@ -249,6 +249,21 @@ export function previewFrom(
       continue;
     }
 
+    if (d.kind === "goto") {
+      if ("flowId" in d.target) {
+        items.push({ kind: "note", nodeId: id, text: `Vai para outro fluxo (${d.target.flowId})` });
+        break;
+      }
+      items.push({ kind: "note", nodeId: id, text: `Volta para o passo "${d.target.nodeId}"` });
+      const to = d.target.nodeId;
+      current = graph.nodes.some((n) => n.id === to) ? to : null;
+      if (!current) {
+        items.push({ kind: "dangling", nodeId: id });
+        break;
+      }
+      continue;
+    }
+
     if (d.kind === "tag") {
       items.push({
         kind: "note",

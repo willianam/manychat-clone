@@ -696,6 +696,18 @@ export function RandomNode({ data }: NodeProps<WithStats>) {
   );
 }
 
+export function GotoNode({ data }: NodeProps<WithStats>) {
+  const d = data as Extract<FlowNodeData, { kind: "goto" }>;
+  const target = "flowId" in d.target ? `fluxo ${d.target.flowId}` : `passo ${d.target.nodeId}`;
+  return (
+    <div className={`${SHELL} w-[224px]`}>
+      <Handle type="target" position={T} className={`${HANDLE} !top-[-8px] !bg-neutral-400`} />
+      <Head tone="bg-violet-50 text-violet-800 border-b border-violet-100" label="Ir para" />
+      <div className="p-2.5 font-mono text-[11px] text-neutral-700">→ {target}</div>
+    </div>
+  );
+}
+
 /** Legacy tag node — superseded by Ações, kept so old flows still render. */
 export function TagNode({ data }: NodeProps<WithStats>) {
   const d = data as Extract<FlowNodeData, { kind: "tag" }>;
@@ -750,5 +762,6 @@ export const nodeTypes = {
   action: ActionNode,
   random: RandomNode,
   tag: TagNode,
+  goto: GotoNode,
   end: EndNode,
 };

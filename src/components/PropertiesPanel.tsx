@@ -113,6 +113,13 @@ function Body({ data, onChange }: { data: FlowNodeData; onChange: Update }) {
       return <RandomProps data={data} onChange={onChange} />;
     case "tag":
       return <TagProps data={data} onChange={onChange} />;
+    case "goto":
+      return (
+        <p className="text-xs text-neutral-500">
+          Salta para {"flowId" in data.target ? "outro fluxo" : "outro passo deste fluxo"}. A edição
+          chega com o painel completo.
+        </p>
+      );
     case "end":
       return (
         <p className="text-xs text-neutral-500">
@@ -1313,6 +1320,7 @@ function titleOf(data: FlowNodeData): string {
     action: "Ações",
     random: "Randomizador",
     tag: "Tag (antigo)",
+    goto: "Ir para",
     end: "Fim",
   };
   return names[data.kind];

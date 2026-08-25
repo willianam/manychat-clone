@@ -20,6 +20,7 @@ import { z } from "zod";
  *   action    — add/remove tags and set fields without sending anything
  *   random    — split traffic between outputs, for A/B comparison
  *   tag       — legacy: kept so existing flows keep running; action supersedes it
+ *   goto      — jump to another node in this flow, or hand the contact to another flow
  *   end       — terminate the session
  *
  * The numeric caps below are Instagram's, not ours — see LIMITS. Enforcing
@@ -93,6 +94,7 @@ export const NodeKind = z.enum([
   "action",
   "random",
   "tag",
+  "goto",
   "end",
 ]);
 export type NodeKind = z.infer<typeof NodeKind>;
@@ -363,6 +365,22 @@ const TagData = z.object({
   tagName: z.string().min(1),
 });
 
+/**
+ * Go To. A node target jumps inside this flow; a flow target completes the
+ * current session and starts the other flow from its entry node. Either way
+ * the goto has no outputs of its own.
+ */
+export const GotoTarget = z.union([
+  z.object({ nodeId: z.string().min(1) }),
+  z.object({ flowId: z.string().min(1) }),
+]);
+export type GotoTarget = z.infer<typeof GotoTarget>;
+
+const GotoData = z.object({
+  kind: z.literal("goto"),
+  target: GotoTarget,
+});
+
 const EndData = z.object({ kind: z.literal("end") });
 
 // A refined member can't live in a discriminatedUnion, and media nodes
@@ -382,6 +400,7 @@ export const FlowNodeData = z.union([
   ActionData,
   RandomData,
   TagData,
+  GotoData,
   EndData,
 ]);
 export type FlowNodeData = z.infer<typeof FlowNodeData>;
@@ -448,6 +467,7 @@ export function outputsOf(
             { handle: "invalid", label: "inválida" },
           ]
         : [{ handle: "", label: "" }];
+    case "goto":
     case "end":
       return [];
     default:
@@ -505,6 +525,16 @@ export function validateGraph(graph: FlowGraph): FlowIssue[] {
         issues.push({
           level: "error",
           message: `A condição "${n.id}" precisa dos dois caminhos: sim e não.`,
+        });
+      }
+      continue;
+    }
+
+    if (d.kind === "goto") {
+      if ("nodeId" in d.target && !ids.has(d.target.nodeId)) {
+        issues.push({
+          level: "error",
+          message: `O salto "${n.id}" aponta para um passo que não existe (${d.target.nodeId}).`,
         });
       }
       continue;

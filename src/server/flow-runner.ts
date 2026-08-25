@@ -31,6 +31,8 @@ const asJson = (ctx: Ctx) => ctx as Prisma.InputJsonValue;
  */
 
 const MAX_STEPS = 50; // cycle guard — a graph loop would otherwise spin forever
+/** Go To jumps one inbound message may trigger; two flows pointing at each other stop here. */
+const MAX_HOPS = 5;
 
 /** Node kinds that put a message on the wire, and so deserve a typing bubble. */
 const SENDS_MESSAGE: ReadonlySet<FlowNodeData["kind"]> = new Set([
@@ -59,10 +61,17 @@ const DEFAULT_MAX_ATTEMPTS = 3;
 
 export type StepResult = { status: "waiting" | "completed" | "delayed"; nodeId?: string };
 
+/**
+ * `hops` counts Go To Flow jumps already taken while answering this message.
+ * `takeover` is set by a Go To Flow: a session already running in the target
+ * flow is abandoned rather than blocking the jump — the author said "go
+ * there", and a stale session from last week must not veto that.
+ */
 export async function startFlow(
   db: PrismaClient,
   flowId: string,
   contactId: string,
+  opts: { hops?: number; takeover?: boolean } = {},
 ): Promise<StepResult | null> {
   const flow = await db.flow.findUnique({ where: { id: flowId } });
   if (!flow || !flow.enabled) return null;
@@ -84,13 +93,19 @@ export async function startFlow(
   const existing = await db.flowSession.findFirst({
     where: { contactId, flowId, status: { in: ["ACTIVE", "WAITING_INPUT"] } },
   });
-  if (existing) return { status: "waiting", nodeId: existing.currentNodeId ?? undefined };
+  if (existing) {
+    if (!opts.takeover) return { status: "waiting", nodeId: existing.currentNodeId ?? undefined };
+    await db.flowSession.updateMany({
+      where: { contactId, flowId, status: { in: ["ACTIVE", "WAITING_INPUT"] } },
+      data: { status: "ABANDONED" },
+    });
+  }
 
   const session = await db.flowSession.create({
     data: { flowId, contactId, currentNodeId: entry, status: "ACTIVE", context: {} },
   });
 
-  return advance(db, session, graph);
+  return advance(db, session, graph, { hops: opts.hops });
 }
 
 /**
@@ -256,7 +271,7 @@ async function advance(
   db: PrismaClient,
   session: FlowSession,
   graph: FlowGraph,
-  opts: { inbound?: boolean } = {},
+  opts: { inbound?: boolean; hops?: number } = {},
 ): Promise<StepResult> {
   let current = session.currentNodeId;
   // Stored contact fields are readable by {{name}} alongside session answers,
@@ -306,6 +321,37 @@ async function advance(
         data: { status: "COMPLETED", currentNodeId: null, context: asJson(ctx) },
       });
       return { status: "completed" };
+    }
+
+    if (d.kind === "goto") {
+      if ("nodeId" in d.target) {
+        // Same flow: just move. MAX_STEPS still bounds a loop built from gotos.
+        const to = d.target.nodeId;
+        current = graph.nodes.some((n) => n.id === to) ? to : null;
+        await db.flowSession.update({
+          where: { id: session.id },
+          data: { currentNodeId: current, context: asJson(ctx) },
+        });
+        continue;
+      }
+
+      // Another flow: this session is done, the other one starts fresh. The
+      // hop cap stops two flows that point at each other; on overflow the
+      // contact is left where they are rather than spun forever.
+      await db.flowSession.update({
+        where: { id: session.id },
+        data: { status: "COMPLETED", currentNodeId: null, context: asJson(ctx) },
+      });
+      const hops = (opts.hops ?? 0) + 1;
+      if (hops > MAX_HOPS) {
+        console.warn(`[runner] goto hop limit reached at ${session.flowId}/${node.id}`);
+        return { status: "completed" };
+      }
+      const result = await startFlow(db, d.target.flowId, session.contactId, {
+        hops,
+        takeover: true,
+      });
+      return result ?? { status: "completed" };
     }
 
     if (d.kind === "message") {
