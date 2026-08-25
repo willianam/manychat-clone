@@ -27,7 +27,7 @@ const WINDOW_ERR =
  * fake has to be honest about it.
  */
 function fakeDb(
-  init: { status: string; lockedAt: Date | null },
+  init: { status: string; lockedAt: Date | null; tag?: string | null },
   recipients: Array<Record<string, unknown>> = [],
 ) {
   const b = {
@@ -168,5 +168,34 @@ describe("report and retry", () => {
     ]);
     expect(await retryFailed(db, "b1")).toBe(0);
     expect(b.status).toBe("DONE");
+  });
+});
+
+describe("message tags", () => {
+  it("a HUMAN_AGENT broadcast reaches a contact 3 days out and passes the tag to sendMessage", async () => {
+    vi.mocked(sendMessage).mockClear();
+    const threeDays = new Date(Date.now() - 3 * 24 * 3_600_000);
+    const { db, rows } = fakeDb({ status: "QUEUED", lockedAt: null, tag: "HUMAN_AGENT" }, [
+      { contact: { lastInboundAt: threeDays, username: "u", name: null } },
+    ]);
+    const r = await runBroadcast(db, "b1");
+    expect(r).toMatchObject({ sent: 1, skipped: 0 });
+    expect(sendMessage).toHaveBeenCalledWith(
+      db,
+      "c0",
+      { text: "oi" },
+      { preview: "oi", tag: "HUMAN_AGENT" },
+    );
+    expect(rows[0]!.status).toBe("SENT");
+  });
+
+  it("without a tag the same contact is skipped; an unknown tag is ignored", async () => {
+    vi.mocked(sendMessage).mockClear();
+    const threeDays = new Date(Date.now() - 3 * 24 * 3_600_000);
+    const { db } = fakeDb({ status: "QUEUED", lockedAt: null, tag: "MADE_UP" }, [
+      { contact: { lastInboundAt: threeDays, username: "u", name: null } },
+    ]);
+    expect(await runBroadcast(db, "b1")).toMatchObject({ sent: 0, skipped: 1 });
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 });

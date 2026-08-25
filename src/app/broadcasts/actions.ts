@@ -25,7 +25,7 @@ function parseWindow(raw: FormDataEntryValue | null): "in" | "out" | undefined {
  * is still in the future, so nothing else is needed for it to wait.
  */
 export async function createBroadcast(formData: FormData) {
-  const { name, text, content, flowId, filterTagIds, segmentId, scheduledAt } =
+  const { name, text, content, flowId, tag, filterTagIds, segmentId, scheduledAt } =
     parseBroadcastForm(formData);
 
   const b = await db.broadcast.create({
@@ -34,6 +34,7 @@ export async function createBroadcast(formData: FormData) {
       text,
       content: content ?? undefined,
       flowId,
+      tag,
       filterTagIds,
       segmentId,
       scheduledAt,

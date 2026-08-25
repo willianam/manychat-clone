@@ -2,7 +2,7 @@ import type { PrismaClient } from "@prisma/client";
 import { sendMessage, SendBlocked } from "./instagram";
 import { parseBroadcastBody, type BroadcastBody } from "../lib/broadcast-content";
 import { broadcastPayload } from "./broadcast-payload";
-import { canSend, WINDOW_MS } from "../lib/messaging-window";
+import { canSend, parseMessageTag, WINDOW_MS, type MessageTag } from "../lib/messaging-window";
 import {
   parseSegmentRules,
   segmentWhere,
@@ -229,9 +229,10 @@ export async function runBroadcast(
 
   const report: BroadcastReport = { sent: 0, skipped: 0, failed: 0, claimed: true };
   const body = parseBroadcastBody(b);
+  const tag = parseMessageTag(b.tag);
 
   for (const r of pending) {
-    const decision = canSend(r.contact.lastInboundAt);
+    const decision = canSend(r.contact.lastInboundAt, { tag });
     if (!decision.allowed) {
       await db.broadcastRecipient.update({
         where: { id: r.id },
@@ -242,7 +243,7 @@ export async function runBroadcast(
     }
 
     try {
-      await deliver(db, b.id, body, r.contactId);
+      await deliver(db, b.id, body, r.contactId, tag);
       await db.broadcastRecipient.update({
         where: { id: r.id },
         data: { status: "SENT", sentAt: new Date() },
@@ -375,8 +376,10 @@ async function deliver(
   broadcastId: string,
   body: BroadcastBody,
   contactId: string,
+  tag?: MessageTag,
 ): Promise<void> {
   if (body.kind === "flow") {
+    // The flow's own sends carry no tag: the runner decides those.
     const { startFlow } = await import("./flow-runner");
     const result = await startFlow(db, body.flowId, contactId);
     if (!result) throw new Error("Fluxo desativado ou contato descadastrado.");
@@ -384,10 +387,10 @@ async function deliver(
   }
   if (body.kind === "content") {
     const { payload, preview } = broadcastPayload(broadcastId, body.content);
-    await sendMessage(db, contactId, payload, { preview });
+    await sendMessage(db, contactId, payload, { preview, tag });
     return;
   }
-  await sendMessage(db, contactId, { text: body.text }, { preview: body.text });
+  await sendMessage(db, contactId, { text: body.text }, { preview: body.text, tag });
 }
 
 /**

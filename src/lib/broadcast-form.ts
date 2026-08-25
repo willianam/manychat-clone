@@ -1,5 +1,6 @@
 import { accountTimeZone, parseLocalDateTime } from "./timezone";
 import { BroadcastContent } from "./broadcast-content";
+import { parseMessageTag, type MessageTag } from "./messaging-window";
 
 /**
  * What the broadcast form posts, validated. Kept apart from the server
@@ -14,6 +15,8 @@ export type BroadcastDraft = {
   content: BroadcastContent | null;
   /** "Send a flow" instead of a message. */
   flowId: string | null;
+  /** Message tag to send under; null = standard message, 24h window only. */
+  tag: MessageTag | null;
   filterTagIds: string[];
   /** A saved segment; replaces `filterTagIds` when set. */
   segmentId: string | null;
@@ -47,6 +50,10 @@ export function parseBroadcastForm(
   const text = String(formData.get("text") ?? "").trim() || null;
   if (!text && !content && !flowId) throw new Error("A mensagem não pode ficar vazia.");
 
+  const rawTag = String(formData.get("tag") ?? "").trim();
+  const tag = rawTag ? parseMessageTag(rawTag) : undefined;
+  if (rawTag && !tag) throw new Error(`Tag de mensagem desconhecida: ${rawTag}`);
+
   const filterTagIds = formData.getAll("tagIds").map(String).filter(Boolean);
   const segmentId = String(formData.get("segmentId") ?? "").trim() || null;
 
@@ -61,5 +68,5 @@ export function parseBroadcastForm(
     }
   }
 
-  return { name, text, content, flowId, filterTagIds, segmentId, scheduledAt };
+  return { name, text, content, flowId, tag: tag ?? null, filterTagIds, segmentId, scheduledAt };
 }

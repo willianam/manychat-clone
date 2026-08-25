@@ -121,6 +121,23 @@ export async function sendText(
 }
 
 /**
+ * A message typed by a human in the inbox.
+ *
+ * Sent under the HUMAN_AGENT tag, which extends the window to 7 days for a
+ * real person replying. Meta grants that tag per app (the human_agent
+ * permission); without it the API rejects the send and the failure is
+ * recorded on the Message row like any other. Automations must never call
+ * this — the tag is for people, and misuse gets the app flagged.
+ */
+export async function sendHumanAgentMessage(
+  contactId: string,
+  text: string,
+  db: PrismaClient = defaultDb,
+): Promise<void> {
+  return sendText(db, contactId, text, { tag: "HUMAN_AGENT" });
+}
+
+/**
  * Send any message payload, enforcing the messaging window before we spend
  * an API call.
  *

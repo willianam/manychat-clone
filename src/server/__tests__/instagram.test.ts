@@ -141,3 +141,32 @@ describe("token configuration", () => {
     await expect(sendPrivateReply("c1", "oi")).rejects.toThrow(/IG_ACCESS_TOKEN/);
   });
 });
+
+describe("sendHumanAgentMessage", () => {
+  it("sends under the HUMAN_AGENT tag when the 24h window is closed", async () => {
+    const spy = mockFetch({ message_id: "mid-ha" });
+    const { sendHumanAgentMessage } = await import("../instagram");
+    const db = {
+      contact: {
+        findUniqueOrThrow: vi.fn(async () => ({
+          igScopedId: "IGSID-1",
+          lastInboundAt: new Date(Date.now() - 2 * 24 * 3_600_000),
+        })),
+      },
+      message: {
+        create: vi.fn(async () => ({ id: "m1" })),
+        update: vi.fn(async () => ({})),
+      },
+    } as never;
+
+    await sendHumanAgentMessage("c1", "olá, sou eu", db);
+
+    const body = JSON.parse(spy.mock.calls[0][1].body);
+    expect(body).toMatchObject({
+      recipient: { id: "IGSID-1" },
+      message: { text: "olá, sou eu" },
+      messaging_type: "MESSAGE_TAG",
+      tag: "HUMAN_AGENT",
+    });
+  });
+});
