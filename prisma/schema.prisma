@@ -110,6 +110,18 @@ model Segment {
   broadcasts Broadcast[]
 }
 
+/// A canned answer for the inbox reply box. Typing "/" lists them; the
+/// shortcut is what the operator types after the slash to pick one.
+model QuickReplyTemplate {
+  id        String   @id @default(cuid())
+  title     String
+  text      String
+  /// Lowercase, no spaces, unique — "preco", "horario".
+  shortcut  String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 /// Free text the owner writes about a contact. Shown on the timeline.
 model ContactNote {
   id        String   @id @default(cuid())
