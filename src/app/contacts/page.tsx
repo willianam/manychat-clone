@@ -125,9 +125,14 @@ function Pagination({
   const href = (p: number) => `/contacts${serializeContactQuery(withQuery(query, { page: p }))}`;
   return (
     <nav aria-label="Paginação" className="mt-4 flex items-center justify-between text-sm">
-      <Button asChild variant="outline" size="sm" disabled={page <= 1}>
+      {/*
+        `disabled` on <Button asChild> is a no-op: the prop lands on the Slot,
+        not on the rendered <span>. The dimming is what actually shows the
+        disabled state, so mirror the "Próxima" side.
+      */}
+      <Button asChild variant="outline" size="sm">
         {page <= 1 ? (
-          <span aria-disabled>
+          <span aria-disabled className="opacity-50">
             <ChevronLeft aria-hidden /> Anterior
           </span>
         ) : (
