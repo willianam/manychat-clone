@@ -68,7 +68,12 @@ export async function rollupDay(db: PrismaClient, day: DayKey): Promise<Row[]> {
         where: { direction: "OUTBOUND", status: { not: "FAILED" }, createdAt: range },
       }),
       db.broadcastRecipient.count({ where: { status: "SENT", sentAt: range } }),
-      db.contact.count({ where: { unsubscribedAt: range } }),
+      // Counted from ContactEvent, not Contact.unsubscribedAt: that field is
+      // nulled on re-opt-in, so a contact who came back would silently erase
+      // the opt-out they really made. Re-running an old day then rewrote its
+      // number DOWN for good, because the upsert below stores an absolute
+      // value. The event log is the historical record and never moves.
+      db.contactEvent.count({ where: { kind: "UNSUBSCRIBED", createdAt: range } }),
       db.triggerFire.groupBy({ by: ["triggerId"], where: { at: range }, _count: { _all: true } }),
       goalHits(db, range),
     ]);

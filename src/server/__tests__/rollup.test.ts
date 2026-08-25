@@ -14,11 +14,9 @@ afterEach(() => {
 function fakeDb() {
   const upsert = vi.fn().mockResolvedValue({});
   const db = {
-    contact: {
-      count: vi.fn(async ({ where }: { where: Record<string, unknown> }) =>
-        "unsubscribedAt" in where ? 2 : 7,
-      ),
-    },
+    contact: { count: vi.fn().mockResolvedValue(7) },
+    // Opt-outs are counted from the event log, not Contact.unsubscribedAt.
+    contactEvent: { count: vi.fn().mockResolvedValue(2) },
     message: {
       count: vi.fn(async ({ where }: { where: { direction: string } }) =>
         where.direction === "INBOUND" ? 40 : 55,
@@ -88,6 +86,26 @@ describe("rollupDay", () => {
     };
     expect(where.createdAt.gte.toISOString()).toBe("2026-08-25T03:00:00.000Z");
     expect(where.createdAt.lt.toISOString()).toBe("2026-08-26T03:00:00.000Z");
+  });
+
+  it("counts opt-outs from the event log, not the mutable contact field", async () => {
+    const { db } = fakeDb();
+    const rows = await rollupDay(db, "2026-08-25");
+
+    // Contact.unsubscribedAt is nulled on re-opt-in, so counting it would
+    // rewrite an old day's number downward every time someone came back.
+    expect(db.contactEvent.count).toHaveBeenCalledWith({
+      where: {
+        kind: "UNSUBSCRIBED",
+        createdAt: { gte: expect.any(Date), lt: expect.any(Date) },
+      },
+    });
+    const contactWheres = vi
+      .mocked(db.contact.count)
+      .mock.calls.map((c) => JSON.stringify(c[0]?.where ?? {}));
+    expect(contactWheres.some((w) => w.includes("unsubscribedAt"))).toBe(false);
+
+    expect(rows).toContainEqual({ metric: METRICS.optOuts, key: "", value: 2 });
   });
 
   it("counts goal hits per flow", async () => {

@@ -29,7 +29,9 @@ model Contact {
 
   subscribed     Boolean   @default(true)
   /// When the contact last opted out (global keyword or action node). Null
-  /// while subscribed; kept so the daily opt-out count survives re-opt-ins.
+  /// while subscribed — this is "unsubscribed since", NOT a metric source.
+  /// The daily opt-out count reads ContactEvent (kind UNSUBSCRIBED), which
+  /// survives a re-opt-in; this field does not.
   unsubscribedAt DateTime?
 
   /// Set from the inbox when a human takes over: no flow starts or advances
