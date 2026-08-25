@@ -18,7 +18,12 @@ import { authSecret, verifyToken } from "./lib/auth-token";
 // Meta fetches /privacidade unauthenticated while reviewing the app, so a
 // login wall there reads as a missing policy and blocks publishing.
 const PUBLIC_PREFIXES = [
-  "/api/webhook", "/api/cron", "/login", "/privacidade", "/_next", "/favicon",
+  "/api/webhook",
+  "/api/cron",
+  "/login",
+  "/privacidade",
+  "/_next",
+  "/favicon",
 ];
 const COOKIE = "mc_auth";
 

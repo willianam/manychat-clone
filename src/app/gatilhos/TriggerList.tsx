@@ -42,8 +42,7 @@ export function TriggerList({
         <div className="mt-8 rounded-xl border border-dashed p-10 text-center">
           <p className="font-medium">Nenhum gatilho ainda.</p>
           <p className="mt-1 text-sm text-neutral-500">
-            Sem gatilho, nenhum fluxo começa sozinho — nada responde no
-            Instagram. Crie o primeiro.
+            Sem gatilho, nenhum fluxo começa sozinho — nada responde no Instagram. Crie o primeiro.
           </p>
           <button
             onClick={() => setDialog({ mode: "new" })}
@@ -184,10 +183,7 @@ function TriggerRow({ row, onEdit }: { row: TriggerRowData; onEdit: () => void }
               >
                 Sim
               </button>
-              <button
-                onClick={() => setConfirming(false)}
-                className="text-xs text-neutral-500"
-              >
+              <button onClick={() => setConfirming(false)} className="text-xs text-neutral-500">
                 Não
               </button>
             </div>

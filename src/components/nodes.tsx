@@ -53,8 +53,7 @@ type WithStats = FlowNodeData & {
 const HANDLE =
   "!h-3 !w-3 !border-2 !border-white !shadow-sm hover:!scale-125 !transition-transform";
 
-const SHELL =
-  "rounded-xl border bg-white shadow-sm text-sm";
+const SHELL = "rounded-xl border bg-white shadow-sm text-sm";
 
 /** Colored header strip, the way each node announces its kind. */
 function Head({ tone, label, right }: { tone: string; label: string; right?: React.ReactNode }) {
@@ -196,11 +195,7 @@ function EditableText({
         onCommit ? "cursor-text hover:ring-1 hover:ring-indigo-300" : ""
       }`}
     >
-      {value === "" ? (
-        <span className="text-neutral-400">{placeholder ?? "…"}</span>
-      ) : (
-        value
-      )}
+      {value === "" ? <span className="text-neutral-400">{placeholder ?? "…"}</span> : value}
     </div>
   );
 }
@@ -249,7 +244,10 @@ export function MessageNode({ data }: NodeProps<WithStats>) {
   return (
     <div className={`${SHELL} w-[248px]`}>
       <Handle type="target" position={T} className={`${HANDLE} !top-[-8px] !bg-neutral-400`} />
-      <Head tone="bg-emerald-50 text-emerald-800 border-b border-emerald-100" label="Enviar mensagem" />
+      <Head
+        tone="bg-emerald-50 text-emerald-800 border-b border-emerald-100"
+        label="Enviar mensagem"
+      />
       <Stats s={s} />
       <div className="p-2.5">
         <EditableBubble text={d.text} onCommit={data._onText} max={inlineLimitOf(d)} />
@@ -259,7 +257,11 @@ export function MessageNode({ data }: NodeProps<WithStats>) {
             id={b.id}
             title={b.title}
             external={b.type === "url"}
-            ctr={s?.byHandle[b.id] && s.sent ? Math.round((s.byHandle[b.id]! / s.sent) * 100) : undefined}
+            ctr={
+              s?.byHandle[b.id] && s.sent
+                ? Math.round((s.byHandle[b.id]! / s.sent) * 100)
+                : undefined
+            }
           />
         ))}
       </div>
@@ -324,7 +326,9 @@ export function QuickReplyNode({ data }: NodeProps<WithStats>) {
               <div className="inline-flex items-center gap-1 rounded-full border border-indigo-300 px-2.5 py-0.5 text-[11px] font-semibold text-indigo-600">
                 {o.title}
                 {s?.byHandle[o.id] ? (
-                  <span className="text-[9px] font-medium text-neutral-400">{s.byHandle[o.id]}</span>
+                  <span className="text-[9px] font-medium text-neutral-400">
+                    {s.byHandle[o.id]}
+                  </span>
                 ) : null}
               </div>
               <Handle
@@ -383,7 +387,11 @@ export function CarouselNode({ data, id }: NodeProps<WithStats>) {
                 className={`flex items-center justify-center bg-neutral-100 text-[9px] text-neutral-400 ${open ? "h-[72px]" : "h-[40px]"}`}
                 style={
                   c.imageUrl
-                    ? { backgroundImage: `url(${c.imageUrl})`, backgroundSize: "cover", backgroundPosition: "center" }
+                    ? {
+                        backgroundImage: `url(${c.imageUrl})`,
+                        backgroundSize: "cover",
+                        backgroundPosition: "center",
+                      }
                     : undefined
                 }
               >
@@ -393,7 +401,9 @@ export function CarouselNode({ data, id }: NodeProps<WithStats>) {
                 <>
                   <div className="truncate px-1.5 pt-1 text-[11px] font-semibold">{c.title}</div>
                   {c.subtitle && (
-                    <div className="truncate px-1.5 pb-1 text-[10px] text-neutral-500">{c.subtitle}</div>
+                    <div className="truncate px-1.5 pb-1 text-[10px] text-neutral-500">
+                      {c.subtitle}
+                    </div>
                   )}
                   {(c.buttons ?? []).map((b) => (
                     <div key={b.id} className="relative border-t">
@@ -434,7 +444,11 @@ export function ImageNode({ data }: NodeProps<WithStats>) {
       <div className="p-2.5">
         <div
           className="flex h-[86px] items-center justify-center rounded-lg bg-neutral-100 text-[10px] text-neutral-400"
-          style={{ backgroundImage: `url(${d.url ?? "arquivo enviado"})`, backgroundSize: "cover", backgroundPosition: "center" }}
+          style={{
+            backgroundImage: `url(${d.url ?? "arquivo enviado"})`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+          }}
         />
         <div className="mt-1.5 text-[11px] text-neutral-600">
           <EditableText
@@ -463,9 +477,7 @@ function MediaCard({ icon, url, label }: { icon: string; url: string; label: str
     <div className="flex items-center gap-2 rounded-lg bg-neutral-100 px-2.5 py-2">
       <span className="text-[18px] leading-none">{icon}</span>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[11px] font-medium text-neutral-700">
-          {label}
-        </div>
+        <div className="truncate text-[11px] font-medium text-neutral-700">{label}</div>
         <div className="truncate text-[9px] text-neutral-400" title={url}>
           {basenameOf(url)}
         </div>
@@ -535,7 +547,11 @@ export function AlbumNode({ data }: NodeProps<WithStats>) {
           <div
             key={`${u}-${i}`}
             className="h-[46px] rounded bg-neutral-100"
-            style={{ backgroundImage: `url(${u})`, backgroundSize: "cover", backgroundPosition: "center" }}
+            style={{
+              backgroundImage: `url(${u})`,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+            }}
           />
         ))}
         {d.urls.length > 6 && (
@@ -574,8 +590,20 @@ export function ConditionNode({ data }: NodeProps<WithStats>) {
           <span className="text-rose-600">não</span>
         </div>
       </div>
-      <Handle type="source" position={B} id="true" style={{ left: "25%" }} className={`${HANDLE} !bottom-[-8px] !bg-emerald-500`} />
-      <Handle type="source" position={B} id="false" style={{ left: "75%" }} className={`${HANDLE} !bottom-[-8px] !bg-rose-500`} />
+      <Handle
+        type="source"
+        position={B}
+        id="true"
+        style={{ left: "25%" }}
+        className={`${HANDLE} !bottom-[-8px] !bg-emerald-500`}
+      />
+      <Handle
+        type="source"
+        position={B}
+        id="false"
+        style={{ left: "75%" }}
+        className={`${HANDLE} !bottom-[-8px] !bg-rose-500`}
+      />
     </div>
   );
 }
@@ -589,7 +617,13 @@ export function DelayNode({ data }: NodeProps<WithStats>) {
       <div className="p-2.5 text-[12px] text-neutral-700">
         Aguarde <b>{humanize(d.seconds)}</b>
         {d.window && (
-          <> e continue entre <b>{pad(d.window.fromHour)}:00–{pad(d.window.toHour)}:00</b></>
+          <>
+            {" "}
+            e continue entre{" "}
+            <b>
+              {pad(d.window.fromHour)}:00–{pad(d.window.toHour)}:00
+            </b>
+          </>
         )}
       </div>
       <Handle type="source" position={B} className={`${HANDLE} !bottom-[-8px] !bg-neutral-400`} />
@@ -606,10 +640,26 @@ export function ActionNode({ data }: NodeProps<WithStats>) {
       <div className="space-y-0.5 p-2.5 text-[11px] text-neutral-700">
         {d.ops.map((o, i) => (
           <div key={i}>
-            {o.op === "addTag" && <>+ tag <b>{o.tagName}</b></>}
-            {o.op === "removeTag" && <>− tag <b>{o.tagName}</b></>}
-            {o.op === "setField" && <>definir <b>{o.key}</b> = {o.value}</>}
-            {o.op === "unsetField" && <>limpar <b>{o.key}</b></>}
+            {o.op === "addTag" && (
+              <>
+                + tag <b>{o.tagName}</b>
+              </>
+            )}
+            {o.op === "removeTag" && (
+              <>
+                − tag <b>{o.tagName}</b>
+              </>
+            )}
+            {o.op === "setField" && (
+              <>
+                definir <b>{o.key}</b> = {o.value}
+              </>
+            )}
+            {o.op === "unsetField" && (
+              <>
+                limpar <b>{o.key}</b>
+              </>
+            )}
             {o.op === "unsubscribe" && <>cancelar inscrição</>}
             {o.op === "resubscribe" && <>reativar inscrição</>}
           </div>

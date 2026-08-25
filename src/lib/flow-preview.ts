@@ -30,7 +30,13 @@ export type PreviewItem =
   | { kind: "bubble"; nodeId: string; text: string; buttons: PreviewChoice[] }
   | { kind: "quickreply"; nodeId: string; text: string; options: PreviewChoice[] }
   | { kind: "carousel"; nodeId: string; cards: PreviewCard[] }
-  | { kind: "media"; nodeId: string; media: "image" | "video" | "audio" | "file" | "album"; urls: string[]; label: string }
+  | {
+      kind: "media";
+      nodeId: string;
+      media: "image" | "video" | "audio" | "file" | "album";
+      urls: string[];
+      label: string;
+    }
   | { kind: "input"; nodeId: string; saveAs: string }
   | { kind: "note"; nodeId: string; text: string }
   | { kind: "fork"; nodeId: string; label: string; choices: PreviewChoice[] }
@@ -97,7 +103,10 @@ export function previewFrom(
         continue;
       }
       current = targetOf(graph, id);
-      if (!current) { items.push({ kind: "dangling", nodeId: id }); break; }
+      if (!current) {
+        items.push({ kind: "dangling", nodeId: id });
+        break;
+      }
       continue;
     }
 
@@ -117,7 +126,10 @@ export function previewFrom(
       items.push({ kind: "bubble", nodeId: id, text: d.text, buttons: [] });
       items.push({ kind: "input", nodeId: id, saveAs: d.saveAs });
       current = targetOf(graph, id);
-      if (!current) { items.push({ kind: "dangling", nodeId: id }); break; }
+      if (!current) {
+        items.push({ kind: "dangling", nodeId: id });
+        break;
+      }
       continue;
     }
 
@@ -141,7 +153,10 @@ export function previewFrom(
         continue;
       }
       current = targetOf(graph, id);
-      if (!current) { items.push({ kind: "dangling", nodeId: id }); break; }
+      if (!current) {
+        items.push({ kind: "dangling", nodeId: id });
+        break;
+      }
       continue;
     }
 
@@ -153,15 +168,18 @@ export function previewFrom(
         urls: d.url ? [d.url] : [],
         label:
           d.kind === "image"
-            ? d.caption ?? "Imagem"
+            ? (d.caption ?? "Imagem")
             : d.kind === "file"
-              ? d.filename ?? "Documento PDF"
+              ? (d.filename ?? "Documento PDF")
               : d.kind === "video"
                 ? "Vídeo"
                 : "Áudio",
       });
       current = targetOf(graph, id);
-      if (!current) { items.push({ kind: "dangling", nodeId: id }); break; }
+      if (!current) {
+        items.push({ kind: "dangling", nodeId: id });
+        break;
+      }
       continue;
     }
 
@@ -174,7 +192,10 @@ export function previewFrom(
         label: `${d.urls.length} ${d.urls.length === 1 ? "imagem" : "imagens"}`,
       });
       current = targetOf(graph, id);
-      if (!current) { items.push({ kind: "dangling", nodeId: id }); break; }
+      if (!current) {
+        items.push({ kind: "dangling", nodeId: id });
+        break;
+      }
       continue;
     }
 
@@ -211,14 +232,20 @@ export function previewFrom(
     if (d.kind === "delay") {
       items.push({ kind: "note", nodeId: id, text: `Espera ${humanize(d.seconds)}` });
       current = targetOf(graph, id);
-      if (!current) { items.push({ kind: "dangling", nodeId: id }); break; }
+      if (!current) {
+        items.push({ kind: "dangling", nodeId: id });
+        break;
+      }
       continue;
     }
 
     if (d.kind === "action") {
       items.push({ kind: "note", nodeId: id, text: describeOps(d.ops) });
       current = targetOf(graph, id);
-      if (!current) { items.push({ kind: "dangling", nodeId: id }); break; }
+      if (!current) {
+        items.push({ kind: "dangling", nodeId: id });
+        break;
+      }
       continue;
     }
 
@@ -229,7 +256,10 @@ export function previewFrom(
         text: `${d.action === "add" ? "Marca" : "Remove"} a tag "${d.tagName}"`,
       });
       current = targetOf(graph, id);
-      if (!current) { items.push({ kind: "dangling", nodeId: id }); break; }
+      if (!current) {
+        items.push({ kind: "dangling", nodeId: id });
+        break;
+      }
       continue;
     }
 

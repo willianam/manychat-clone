@@ -48,8 +48,8 @@ export function TriggerNode({ data }: NodeProps<TriggerNodeData>) {
       <div className="space-y-1 p-2">
         {triggers.length === 0 && (
           <p className="px-1 py-2 text-[11px] leading-snug text-neutral-500">
-            Este fluxo ainda não tem gatilho — nada faz ele começar. Adicione um
-            para que o Instagram possa dispará-lo.
+            Este fluxo ainda não tem gatilho — nada faz ele começar. Adicione um para que o
+            Instagram possa dispará-lo.
           </p>
         )}
 
@@ -67,9 +67,7 @@ export function TriggerNode({ data }: NodeProps<TriggerNodeData>) {
                 }`}
                 title={t.enabled ? "Ativo" : "Desativado"}
               />
-              <span className="truncate text-[12px] font-medium">
-                {describeTrigger(t)}
-              </span>
+              <span className="truncate text-[12px] font-medium">{describeTrigger(t)}</span>
             </div>
             {t.mediaId && (
               <div className="mt-0.5 pl-3 text-[10px] text-neutral-500">

@@ -122,9 +122,9 @@ describe("mediaLabel", () => {
   };
 
   it("uses the first non-empty caption line", () => {
-    expect(
-      mediaLabel({ ...base, caption: "\n\nPromo de setembro\nsegunda linha" }),
-    ).toBe("Promo de setembro");
+    expect(mediaLabel({ ...base, caption: "\n\nPromo de setembro\nsegunda linha" })).toBe(
+      "Promo de setembro",
+    );
   });
 
   it("truncates a long caption so the picker stays one line per post", () => {
@@ -135,9 +135,7 @@ describe("mediaLabel", () => {
 
   it("names the type instead of showing a bare id when there is no caption", () => {
     expect(mediaLabel({ ...base, mediaType: "VIDEO" })).toBe("Reel sem legenda");
-    expect(mediaLabel({ ...base, mediaType: "CAROUSEL_ALBUM" })).toBe(
-      "Carrossel sem legenda",
-    );
+    expect(mediaLabel({ ...base, mediaType: "CAROUSEL_ALBUM" })).toBe("Carrossel sem legenda");
     expect(mediaLabel({ ...base, mediaType: "IMAGE" })).toBe("Foto sem legenda");
     expect(mediaLabel({ ...base, mediaType: null })).toBe("Publicação sem legenda");
   });

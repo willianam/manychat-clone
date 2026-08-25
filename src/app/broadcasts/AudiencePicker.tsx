@@ -97,9 +97,9 @@ export function AudiencePicker({ tags }: { tags: Tag[] }) {
             </div>
             {preview.mostlyOutOfWindow && (
               <div className="mt-1 text-amber-900">
-                A maioria ({preview.outOfWindow}) está fora da janela de 24h e não vai
-                receber. O Instagram recusa mensagens para quem não escreveu nas últimas
-                24 horas — esses contatos entram no relatório como não enviados.
+                A maioria ({preview.outOfWindow}) está fora da janela de 24h e não vai receber. O
+                Instagram recusa mensagens para quem não escreveu nas últimas 24 horas — esses
+                contatos entram no relatório como não enviados.
               </div>
             )}
             {window !== "" && targeted !== null && (

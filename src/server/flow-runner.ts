@@ -3,9 +3,15 @@ import { FlowGraph, findEntryNode, type FlowNodeData } from "../lib/flow-schema"
 import { coerceFieldValue, compareValues } from "../lib/field-values";
 import { sendText, sendMessage, sendSenderActionToContact } from "./instagram";
 import {
-  buildMessage, buildQuickReply, buildCarousel, buildImage,
-  buildMedia, buildAlbum,
-  previewOf, resumeAtFor, parsePostback,
+  buildMessage,
+  buildQuickReply,
+  buildCarousel,
+  buildImage,
+  buildMedia,
+  buildAlbum,
+  previewOf,
+  resumeAtFor,
+  parsePostback,
 } from "./message-payload";
 
 /** Session context values. Prisma's Json input type needs the cast. */
@@ -25,8 +31,15 @@ const MAX_STEPS = 50; // cycle guard — a graph loop would otherwise spin forev
 
 /** Node kinds that put a message on the wire, and so deserve a typing bubble. */
 const SENDS_MESSAGE: ReadonlySet<FlowNodeData["kind"]> = new Set([
-  "message", "question", "quickreply", "carousel",
-  "image", "video", "audio", "file", "album",
+  "message",
+  "question",
+  "quickreply",
+  "carousel",
+  "image",
+  "video",
+  "audio",
+  "file",
+  "album",
 ]);
 
 /**
@@ -158,10 +171,7 @@ export async function resumeWithPostback(
  * existing ACTIVE session on purpose (a keyword typed mid-delay must not
  * skip the wait), so it cannot be used to resume one.
  */
-export async function resumeDelayed(
-  db: PrismaClient,
-  session: FlowSession,
-): Promise<StepResult> {
+export async function resumeDelayed(db: PrismaClient, session: FlowSession): Promise<StepResult> {
   const flow = await db.flow.findUniqueOrThrow({ where: { id: session.flowId } });
   return advance(db, session, FlowGraph.parse(flow.graph));
 }
@@ -182,11 +192,7 @@ async function advance(
   // Stored contact fields are readable by {{name}} alongside session answers,
   // so a flow can greet by a name captured weeks ago in a different flow.
   // Session context wins on conflict — see loadContactFields.
-  const ctx: Ctx = await loadContactFields(
-    db,
-    session.contactId,
-    { ...(session.context as Ctx) },
-  );
+  const ctx: Ctx = await loadContactFields(db, session.contactId, { ...(session.context as Ctx) });
 
   // Read receipt: once per inbound message, sent only when a node is about
   // to reply. Marking every inbound DM as seen (the old webhook behaviour)
@@ -324,10 +330,14 @@ async function advance(
       // Weighted pick. Deterministic per session so a retry can't reroute a
       // contact into the other arm mid-conversation.
       const roll = hashToUnit(session.id + node.id) * total;
-      let acc = 0, chosen = 0;
+      let acc = 0,
+        chosen = 0;
       for (let i = 0; i < d.weights.length; i++) {
         acc += d.weights[i]!;
-        if (roll < acc) { chosen = i; break; }
+        if (roll < acc) {
+          chosen = i;
+          break;
+        }
       }
       current = nextOf(graph, node.id, String(chosen));
       await db.flowSession.update({ where: { id: session.id }, data: { currentNodeId: current } });
@@ -347,7 +357,12 @@ async function advance(
       const resumeAt = resumeAtFor(d);
       await db.flowSession.update({
         where: { id: session.id },
-        data: { status: "ACTIVE", currentNodeId: nextOf(graph, node.id), resumeAt, context: asJson(ctx) },
+        data: {
+          status: "ACTIVE",
+          currentNodeId: nextOf(graph, node.id),
+          resumeAt,
+          context: asJson(ctx),
+        },
       });
       return { status: "delayed", nodeId: node.id };
     }
@@ -498,7 +513,9 @@ async function evaluate(
     case "equals":
       return String(raw ?? "").toLowerCase() === String(d.value ?? "").toLowerCase();
     case "contains":
-      return String(raw ?? "").toLowerCase().includes(String(d.value ?? "").toLowerCase());
+      return String(raw ?? "")
+        .toLowerCase()
+        .includes(String(d.value ?? "").toLowerCase());
     case "gt":
     case "lt":
     case "before":

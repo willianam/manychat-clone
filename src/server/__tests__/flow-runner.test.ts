@@ -29,7 +29,10 @@ const CONTACT = "contact-1";
 const FLOW = "flow-1";
 
 const node = (id: string, data: object, type = (data as { kind: string }).kind) => ({
-  id, type, position: { x: 0, y: 0 }, data,
+  id,
+  type,
+  position: { x: 0, y: 0 },
+  data,
 });
 const edge = (source: string, target: string) => ({ id: `${source}-${target}`, source, target });
 const chain = (...nodes: ReturnType<typeof node>[]) => ({
@@ -38,7 +41,10 @@ const chain = (...nodes: ReturnType<typeof node>[]) => ({
 });
 
 /** message → end: a flow that replies. */
-const REPLYING_GRAPH = chain(node("m1", { kind: "message", text: "olá" }), node("e1", { kind: "end" }));
+const REPLYING_GRAPH = chain(
+  node("m1", { kind: "message", text: "olá" }),
+  node("e1", { kind: "end" }),
+);
 
 /** message → message → end: two sends, still one receipt. */
 const TWO_MESSAGE_GRAPH = chain(
@@ -48,7 +54,10 @@ const TWO_MESSAGE_GRAPH = chain(
 );
 
 /** tag → end: a flow that runs but never sends anything. */
-const SILENT_GRAPH = chain(node("t1", { kind: "tag", tagName: "lead", action: "add" }), node("e1", { kind: "end" }));
+const SILENT_GRAPH = chain(
+  node("t1", { kind: "tag", tagName: "lead", action: "add" }),
+  node("e1", { kind: "end" }),
+);
 
 /** message → delay → message → end. */
 const MESSAGE_DELAY_MESSAGE_GRAPH = chain(
@@ -79,9 +88,15 @@ const QUESTION_GRAPH = chain(
  */
 function fakeDb(opts: { graph?: object; trigger?: boolean } = {}) {
   const session: FlowSession = {
-    id: "session-1", flowId: FLOW, contactId: CONTACT, currentNodeId: null,
-    status: "ACTIVE", context: {}, resumeAt: null,
-    createdAt: new Date(), updatedAt: new Date(),
+    id: "session-1",
+    flowId: FLOW,
+    contactId: CONTACT,
+    currentNodeId: null,
+    status: "ACTIVE",
+    context: {},
+    resumeAt: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
   } as unknown as FlowSession;
   const write = ({ data }: { data: object }) => {
     Object.assign(session, data);
@@ -101,16 +116,31 @@ function fakeDb(opts: { graph?: object; trigger?: boolean } = {}) {
       update: vi.fn(write),
     },
     trigger: {
-      findMany: vi.fn().mockResolvedValue(
-        opts.trigger
-          ? [{ id: "trg-1", flowId: FLOW, kind: "KEYWORD", pattern: "preço", match: "CONTAINS", enabled: true, priority: 0 }]
-          : [],
-      ),
+      findMany: vi
+        .fn()
+        .mockResolvedValue(
+          opts.trigger
+            ? [
+                {
+                  id: "trg-1",
+                  flowId: FLOW,
+                  kind: "KEYWORD",
+                  pattern: "preço",
+                  match: "CONTAINS",
+                  enabled: true,
+                  priority: 0,
+                },
+              ]
+            : [],
+        ),
       findFirst: vi.fn().mockResolvedValue(null), // no DEFAULT fallback trigger
     },
     unmatchedMessage: { upsert: vi.fn().mockResolvedValue({}) },
     contact: { findUnique: vi.fn().mockResolvedValue({ id: CONTACT, subscribed: true }) },
-    contactField: { findMany: vi.fn().mockResolvedValue([]), upsert: vi.fn().mockResolvedValue({}) },
+    contactField: {
+      findMany: vi.fn().mockResolvedValue([]),
+      upsert: vi.fn().mockResolvedValue({}),
+    },
     tag: { upsert: vi.fn().mockResolvedValue({ id: "tag-1", name: "lead" }) },
     contactTag: { upsert: vi.fn().mockResolvedValue({}), delete: vi.fn().mockResolvedValue({}) },
   } as unknown as PrismaClient;

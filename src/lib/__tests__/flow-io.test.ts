@@ -40,7 +40,10 @@ describe("import rejects bad files with a specific reason", () => {
       version: 1,
       name: "Quebrado",
       // A message node with no text cannot exist.
-      graph: { nodes: [{ id: "a", type: "message", position: { x: 0, y: 0 }, data: { kind: "message" } }], edges: [] },
+      graph: {
+        nodes: [{ id: "a", type: "message", position: { x: 0, y: 0 }, data: { kind: "message" } }],
+        edges: [],
+      },
     });
     const res = parseFlowFile(bad);
     expect(res.ok).toBe(false);
@@ -56,8 +59,18 @@ describe("import rejects bad files with a specific reason", () => {
       name: "Ciclo",
       graph: {
         nodes: [
-          { id: "a", type: "message", position: { x: 0, y: 0 }, data: { kind: "message", text: "a" } },
-          { id: "b", type: "message", position: { x: 0, y: 0 }, data: { kind: "message", text: "b" } },
+          {
+            id: "a",
+            type: "message",
+            position: { x: 0, y: 0 },
+            data: { kind: "message", text: "a" },
+          },
+          {
+            id: "b",
+            type: "message",
+            position: { x: 0, y: 0 },
+            data: { kind: "message", text: "b" },
+          },
         ],
         edges: [
           { id: "e1", source: "a", target: "b" },
@@ -87,7 +100,12 @@ describe("import rejects bad files with a specific reason", () => {
   it("passes structural warnings through without blocking", () => {
     const dangling: FlowGraph = {
       nodes: [
-        { id: "m1", type: "message", position: { x: 0, y: 0 }, data: { kind: "message", text: "Oi" } },
+        {
+          id: "m1",
+          type: "message",
+          position: { x: 0, y: 0 },
+          data: { kind: "message", text: "Oi" },
+        },
       ],
       edges: [],
     };

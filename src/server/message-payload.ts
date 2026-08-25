@@ -111,9 +111,7 @@ export function buildCarousel(
   };
 }
 
-export function buildImage(
-  d: Extract<FlowNodeData, { kind: "image" }>,
-): Record<string, unknown> {
+export function buildImage(d: Extract<FlowNodeData, { kind: "image" }>): Record<string, unknown> {
   return { attachment: { type: "image", payload: mediaPayload(d) } };
 }
 
@@ -157,9 +155,7 @@ function mediaPayload(d: { url?: string; attachmentId?: string }): Record<string
  * is accepted by JSON but rejected by the Graph API, so the distinction is
  * load-bearing and covered by a test.
  */
-export function buildAlbum(
-  d: Extract<FlowNodeData, { kind: "album" }>,
-): Record<string, unknown> {
+export function buildAlbum(d: Extract<FlowNodeData, { kind: "album" }>): Record<string, unknown> {
   return {
     attachments: d.urls.slice(0, LIMITS.albumImages).map((url) => ({
       type: "image",

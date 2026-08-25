@@ -41,8 +41,7 @@ export function serializeFlow(name: string, graph: FlowGraph): string {
 }
 
 export type ParseResult =
-  | { ok: true; file: FlowFile; warnings: string[] }
-  | { ok: false; error: string };
+  { ok: true; file: FlowFile; warnings: string[] } | { ok: false; error: string };
 
 /**
  * Parse and fully validate an exported flow file.

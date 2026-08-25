@@ -62,10 +62,7 @@ export function FlowRow({ flow }: { flow: FlowRowData }) {
           ) : (
             <>
               <div className="flex items-center gap-2">
-                <Link
-                  href={`/flows/${flow.id}`}
-                  className="truncate font-medium hover:underline"
-                >
+                <Link href={`/flows/${flow.id}`} className="truncate font-medium hover:underline">
                   {flow.name}
                 </Link>
                 <StatusPill enabled={flow.enabled} broken={flow.broken} />
@@ -162,9 +159,7 @@ function StatusPill({ enabled, broken }: { enabled: boolean; broken: boolean }) 
   return (
     <span
       className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-        enabled
-          ? "bg-emerald-50 text-emerald-700"
-          : "bg-neutral-100 text-neutral-500"
+        enabled ? "bg-emerald-50 text-emerald-700" : "bg-neutral-100 text-neutral-500"
       }`}
     >
       {enabled ? "ativo" : "pausado"}

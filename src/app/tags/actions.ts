@@ -14,7 +14,9 @@ import { db } from "../../server/db";
  */
 
 function cleanName(raw: FormDataEntryValue | null): string {
-  return String(raw ?? "").trim().slice(0, 60);
+  return String(raw ?? "")
+    .trim()
+    .slice(0, 60);
 }
 
 /**
@@ -81,8 +83,9 @@ export async function renameTag(formData: FormData) {
 
   await db.$transaction([
     db.tag.update({ where: { id }, data: { name } }),
-    ...usage.flows.map((f) =>
-      db.$executeRaw`UPDATE "Flow" SET graph = REPLACE(graph::text, ${JSON.stringify(tag.name)}, ${JSON.stringify(name)})::jsonb WHERE id = ${f.id}`,
+    ...usage.flows.map(
+      (f) =>
+        db.$executeRaw`UPDATE "Flow" SET graph = REPLACE(graph::text, ${JSON.stringify(tag.name)}, ${JSON.stringify(name)})::jsonb WHERE id = ${f.id}`,
     ),
   ]);
 
@@ -110,7 +113,9 @@ export async function deleteTag(formData: FormData) {
 
   if (inUse && !confirmed) {
     const parts = [
-      usage.flows.length ? `${usage.flows.length} fluxo(s): ${usage.flows.map((f) => f.name).join(", ")}` : "",
+      usage.flows.length
+        ? `${usage.flows.length} fluxo(s): ${usage.flows.map((f) => f.name).join(", ")}`
+        : "",
       usage.broadcasts.length ? `${usage.broadcasts.length} disparo(s)` : "",
     ].filter(Boolean);
     throw new Error(
@@ -167,8 +172,9 @@ export async function mergeTags(formData: FormData) {
       data: links.map((l) => ({ contactId: l.contactId, tagId: targetId })),
       skipDuplicates: true,
     }),
-    ...usage.flows.map((f) =>
-      db.$executeRaw`UPDATE "Flow" SET graph = REPLACE(graph::text, ${JSON.stringify(source.name)}, ${JSON.stringify(target.name)})::jsonb WHERE id = ${f.id}`,
+    ...usage.flows.map(
+      (f) =>
+        db.$executeRaw`UPDATE "Flow" SET graph = REPLACE(graph::text, ${JSON.stringify(source.name)}, ${JSON.stringify(target.name)})::jsonb WHERE id = ${f.id}`,
     ),
     // Deleting the source cascades its ContactTag rows.
     db.tag.delete({ where: { id: sourceId } }),
@@ -176,9 +182,7 @@ export async function mergeTags(formData: FormData) {
 
   for (const b of usage.broadcasts) {
     const row = await db.broadcast.findUniqueOrThrow({ where: { id: b.id } });
-    const next = Array.from(
-      new Set(row.filterTagIds.map((t) => (t === sourceId ? targetId : t))),
-    );
+    const next = Array.from(new Set(row.filterTagIds.map((t) => (t === sourceId ? targetId : t))));
     await db.broadcast.update({ where: { id: b.id }, data: { filterTagIds: next } });
   }
 

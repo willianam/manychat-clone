@@ -167,10 +167,7 @@ export function starterGraph(): FlowGraph {
  * either would be ambiguous. `handleMap` records old→new so callers that
  * also copy edges can repoint them.
  */
-function reindexData(
-  data: FlowNodeData,
-  handleMap: Map<string, string>,
-): FlowNodeData {
+function reindexData(data: FlowNodeData, handleMap: Map<string, string>): FlowNodeData {
   const remapButtons = (buttons: FlowButton[] | undefined): FlowButton[] | undefined =>
     buttons?.map((b) => {
       const next = uid("b");
@@ -237,7 +234,9 @@ export function reindexGraph(graph: FlowGraph): FlowGraph {
     id: uid("e"),
     source: nodeMap.get(e.source) ?? e.source,
     target: nodeMap.get(e.target) ?? e.target,
-    sourceHandle: e.sourceHandle ? handleMap.get(e.sourceHandle) ?? e.sourceHandle : e.sourceHandle,
+    sourceHandle: e.sourceHandle
+      ? (handleMap.get(e.sourceHandle) ?? e.sourceHandle)
+      : e.sourceHandle,
   }));
 
   return { nodes, edges };

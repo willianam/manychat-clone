@@ -1,9 +1,5 @@
 import { db } from "../../server/db";
-import {
-  createTriggerFromUnmatched,
-  dismissUnmatched,
-  restoreUnmatched,
-} from "./actions";
+import { createTriggerFromUnmatched, dismissUnmatched, restoreUnmatched } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -39,8 +35,8 @@ export default async function InsightsPage({
     <main className="mx-auto max-w-4xl px-6 py-8">
       <h1 className="text-2xl font-semibold">O que digitaram e não casou</h1>
       <p className="mt-1 text-sm text-neutral-600">
-        Mensagens que não bateram com nenhum gatilho, agrupadas por texto. Uma linha
-        pode representar muita gente — use a contagem para decidir o que vira palavra-chave.
+        Mensagens que não bateram com nenhum gatilho, agrupadas por texto. Uma linha pode
+        representar muita gente — use a contagem para decidir o que vira palavra-chave.
       </p>
 
       <div className="mt-4 flex items-center gap-4 text-sm">
@@ -77,9 +73,7 @@ export default async function InsightsPage({
             <div className="flex items-start gap-3">
               <span
                 className={`shrink-0 rounded-full px-2.5 py-1 text-sm font-semibold tabular-nums ${
-                  r.count >= 10
-                    ? "bg-amber-100 text-amber-900"
-                    : "bg-neutral-100 text-neutral-700"
+                  r.count >= 10 ? "bg-amber-100 text-amber-900" : "bg-neutral-100 text-neutral-700"
                 }`}
                 title={`${r.count} pessoa(s) escreveram algo equivalente`}
               >

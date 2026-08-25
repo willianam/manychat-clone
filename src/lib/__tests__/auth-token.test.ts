@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { authSecret, constantTimeEqual, signToken, verifyToken, SESSION_TTL_MS } from "../auth-token";
+import {
+  authSecret,
+  constantTimeEqual,
+  signToken,
+  verifyToken,
+  SESSION_TTL_MS,
+} from "../auth-token";
 import { LoginRateLimiter } from "../login-rate-limit";
 
 const NOW = Date.parse("2026-08-25T12:00:00Z");
@@ -34,14 +40,25 @@ describe("session token", () => {
   });
 
   it("rejects malformed and missing tokens without throwing", async () => {
-    for (const bad of [undefined, "", "abc", "123", ".abc", "123.", "123.zz", `${NOW + 1}.${"0".repeat(63)}`]) {
+    for (const bad of [
+      undefined,
+      "",
+      "abc",
+      "123",
+      ".abc",
+      "123.",
+      "123.zz",
+      `${NOW + 1}.${"0".repeat(63)}`,
+    ]) {
       expect(await verifyToken(SECRET, bad, NOW), String(bad)).toBe(false);
     }
   });
 
   it("never treats the raw password as a valid cookie", async () => {
     // The old scheme: cookie === ADMIN_PASSWORD. It must not verify now.
-    expect(await verifyToken(authSecret({ ADMIN_PASSWORD: "hunter2" })!, "hunter2", NOW)).toBe(false);
+    expect(await verifyToken(authSecret({ ADMIN_PASSWORD: "hunter2" })!, "hunter2", NOW)).toBe(
+      false,
+    );
   });
 });
 

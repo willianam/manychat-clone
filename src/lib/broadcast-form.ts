@@ -20,7 +20,10 @@ export function parseBroadcastForm(
   const now = opts.now ?? new Date();
   const timeZone = opts.timeZone ?? accountTimeZone();
 
-  const name = String(formData.get("name") ?? "").trim().slice(0, 120) || "Disparo sem nome";
+  const name =
+    String(formData.get("name") ?? "")
+      .trim()
+      .slice(0, 120) || "Disparo sem nome";
   const text = String(formData.get("text") ?? "").trim();
   if (!text) throw new Error("A mensagem não pode ficar vazia.");
 

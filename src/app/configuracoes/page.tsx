@@ -58,8 +58,8 @@ export default async function ConfiguracoesPage() {
 
       {liveFlows.length === 0 && (
         <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          Nenhum fluxo ativo. Ative um fluxo antes de publicar — o Instagram só aceita
-          perguntas e itens que abrem algo.
+          Nenhum fluxo ativo. Ative um fluxo antes de publicar — o Instagram só aceita perguntas e
+          itens que abrem algo.
         </p>
       )}
 
@@ -67,8 +67,8 @@ export default async function ConfiguracoesPage() {
       <section className="mt-8 rounded-xl border bg-white p-5">
         <h2 className="font-medium">Perguntas iniciais</h2>
         <p className="mt-0.5 text-sm text-neutral-500">
-          Até {PROFILE_LIMITS.iceBreakers} perguntas que aparecem antes da primeira mensagem.
-          Deixe em branco para remover.
+          Até {PROFILE_LIMITS.iceBreakers} perguntas que aparecem antes da primeira mensagem. Deixe
+          em branco para remover.
         </p>
 
         <form action={saveIceBreakers} className="mt-4 space-y-3">
@@ -113,8 +113,8 @@ export default async function ConfiguracoesPage() {
       <section className="mt-6 rounded-xl border bg-white p-5">
         <h2 className="font-medium">Menu fixo</h2>
         <p className="mt-0.5 text-sm text-neutral-500">
-          Até {PROFILE_LIMITS.menuItems} itens sempre visíveis na conversa. Cada item abre um
-          fluxo ou um link externo.
+          Até {PROFILE_LIMITS.menuItems} itens sempre visíveis na conversa. Cada item abre um fluxo
+          ou um link externo.
         </p>
 
         <form action={saveMenu} className="mt-4 space-y-3">

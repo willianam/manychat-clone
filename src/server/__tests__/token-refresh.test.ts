@@ -140,7 +140,10 @@ describe("maybeRefreshToken", () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("ECONNRESET")));
     const { maybeRefreshToken } = await import("../token-refresh");
 
-    await expect(maybeRefreshToken(db, NOW)).resolves.toEqual({ action: "failed", error: "ECONNRESET" });
+    await expect(maybeRefreshToken(db, NOW)).resolves.toEqual({
+      action: "failed",
+      error: "ECONNRESET",
+    });
     expect(row()?.lastError).toBe("ECONNRESET");
   });
 
@@ -195,10 +198,16 @@ describe("tokenStatus", () => {
   it("needs attention under 7 days or after a failed refresh, not otherwise", async () => {
     const { tokenStatus } = await import("../token-refresh");
 
-    const fine = await tokenStatus(fakeDb({ expiresAt: new Date(NOW.getTime() + 20 * DAY) }).db, NOW);
+    const fine = await tokenStatus(
+      fakeDb({ expiresAt: new Date(NOW.getTime() + 20 * DAY) }).db,
+      NOW,
+    );
     expect(fine).toMatchObject({ configured: true, daysLeft: 20, needsAttention: false });
 
-    const soon = await tokenStatus(fakeDb({ expiresAt: new Date(NOW.getTime() + 3 * DAY) }).db, NOW);
+    const soon = await tokenStatus(
+      fakeDb({ expiresAt: new Date(NOW.getTime() + 3 * DAY) }).db,
+      NOW,
+    );
     expect(soon).toMatchObject({ daysLeft: 3, needsAttention: true });
 
     const broken = await tokenStatus(fakeDb({ lastError: "boom" }).db, NOW);

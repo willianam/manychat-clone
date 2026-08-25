@@ -32,8 +32,7 @@ const SELF = process.env.IG_USER_ID ?? "me";
  * deploy. `SENDER_ACTIONS=off` disables it; anything else (including unset)
  * leaves it on, since the perception win is the point of the feature.
  */
-export const SENDER_ACTIONS_ENABLED =
-  (process.env.SENDER_ACTIONS ?? "on").toLowerCase() !== "off";
+export const SENDER_ACTIONS_ENABLED = (process.env.SENDER_ACTIONS ?? "on").toLowerCase() !== "off";
 
 export type SenderAction = "typing_on" | "typing_off" | "mark_seen";
 
@@ -62,10 +61,7 @@ export type SenderAction = "typing_on" | "typing_off" | "mark_seen";
  * Instagram app. Both actions therefore go through `sendSenderActionToContact`
  * in practice; this IGSID-level function is the primitive underneath it.
  */
-export async function sendSenderAction(
-  igScopedId: string,
-  action: SenderAction,
-): Promise<void> {
+export async function sendSenderAction(igScopedId: string, action: SenderAction): Promise<void> {
   if (!SENDER_ACTIONS_ENABLED || !igScopedId) return;
 
   try {
@@ -241,10 +237,9 @@ export async function fetchProfile(
   igScopedId: string,
 ): Promise<{ name?: string; username?: string; profilePic?: string }> {
   try {
-    const res = await fetch(
-      `${BASE}/${igScopedId}?fields=name,username,profile_pic`,
-      { headers: { Authorization: `Bearer ${await getAccessToken(defaultDb)}` } },
-    );
+    const res = await fetch(`${BASE}/${igScopedId}?fields=name,username,profile_pic`, {
+      headers: { Authorization: `Bearer ${await getAccessToken(defaultDb)}` },
+    });
     if (!res.ok) return {};
     const b = (await res.json()) as {
       name?: string;
@@ -273,10 +268,7 @@ export async function uploadAttachment(
   type: "image" | "audio" | "video" | "file",
 ): Promise<string> {
   const form = new FormData();
-  form.append(
-    "message",
-    JSON.stringify({ attachment: { type, payload: { is_reusable: true } } }),
-  );
+  form.append("message", JSON.stringify({ attachment: { type, payload: { is_reusable: true } } }));
   form.append("filedata", file);
 
   const res = await fetch(`${BASE}/${SELF}/message_attachments`, {

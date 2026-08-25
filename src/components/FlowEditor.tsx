@@ -2,10 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import ReactFlow, {
-  Background, Controls, MiniMap, addEdge,
-  useNodesState, useEdgesState,
-  ConnectionLineType, MarkerType,
-  type Connection, type Edge, type Node,
+  Background,
+  Controls,
+  MiniMap,
+  addEdge,
+  useNodesState,
+  useEdgesState,
+  ConnectionLineType,
+  MarkerType,
+  type Connection,
+  type Edge,
+  type Node,
 } from "reactflow";
 import "reactflow/dist/style.css";
 import { FlowGraph, validateGraph, type FlowIssue, type FlowNodeData } from "../lib/flow-schema";
@@ -36,33 +43,78 @@ const BLOCKS: Array<{
   hint: string;
   tone: string;
 }> = [
-  { kind: "message",    label: "Texto",          hint: "Mensagem simples, com ou sem botões", tone: "text-indigo-600" },
-  { kind: "quickreply", label: "Resposta rápida", hint: "Opções tocáveis que somem depois",   tone: "text-amber-600" },
-  { kind: "carousel",   label: "Carrossel",       hint: "Cards lado a lado com botões",       tone: "text-violet-600" },
-  { kind: "image",      label: "Imagem",          hint: "Manda uma imagem",                   tone: "text-sky-600" },
-  { kind: "album",      label: "Álbum",           hint: "Até 10 imagens numa mensagem só",    tone: "text-sky-600" },
-  { kind: "video",      label: "Vídeo",           hint: "Manda um vídeo (até 25 MB)",         tone: "text-fuchsia-600" },
-  { kind: "audio",      label: "Áudio",           hint: "Manda um áudio (até 25 MB)",         tone: "text-cyan-600" },
-  { kind: "file",       label: "PDF",             hint: "Manda um documento em PDF",          tone: "text-stone-600" },
-  { kind: "question",   label: "Coleta de dados", hint: "Espera uma resposta escrita",        tone: "text-amber-600" },
-  { kind: "delay",      label: "Atraso",          hint: "Espera, respeitando horário",        tone: "text-rose-600" },
-  { kind: "condition",  label: "Condição",        hint: "Divide o caminho em sim / não",      tone: "text-teal-600" },
-  { kind: "action",     label: "Ações",           hint: "Marca tags e grava campos",          tone: "text-yellow-600" },
-  { kind: "random",     label: "Randomizador",    hint: "Divide o tráfego para testar",       tone: "text-slate-600" },
-  { kind: "end",        label: "Fim",             hint: "Encerra a conversa",                 tone: "text-neutral-600" },
+  {
+    kind: "message",
+    label: "Texto",
+    hint: "Mensagem simples, com ou sem botões",
+    tone: "text-indigo-600",
+  },
+  {
+    kind: "quickreply",
+    label: "Resposta rápida",
+    hint: "Opções tocáveis que somem depois",
+    tone: "text-amber-600",
+  },
+  {
+    kind: "carousel",
+    label: "Carrossel",
+    hint: "Cards lado a lado com botões",
+    tone: "text-violet-600",
+  },
+  { kind: "image", label: "Imagem", hint: "Manda uma imagem", tone: "text-sky-600" },
+  { kind: "album", label: "Álbum", hint: "Até 10 imagens numa mensagem só", tone: "text-sky-600" },
+  { kind: "video", label: "Vídeo", hint: "Manda um vídeo (até 25 MB)", tone: "text-fuchsia-600" },
+  { kind: "audio", label: "Áudio", hint: "Manda um áudio (até 25 MB)", tone: "text-cyan-600" },
+  { kind: "file", label: "PDF", hint: "Manda um documento em PDF", tone: "text-stone-600" },
+  {
+    kind: "question",
+    label: "Coleta de dados",
+    hint: "Espera uma resposta escrita",
+    tone: "text-amber-600",
+  },
+  { kind: "delay", label: "Atraso", hint: "Espera, respeitando horário", tone: "text-rose-600" },
+  {
+    kind: "condition",
+    label: "Condição",
+    hint: "Divide o caminho em sim / não",
+    tone: "text-teal-600",
+  },
+  { kind: "action", label: "Ações", hint: "Marca tags e grava campos", tone: "text-yellow-600" },
+  {
+    kind: "random",
+    label: "Randomizador",
+    hint: "Divide o tráfego para testar",
+    tone: "text-slate-600",
+  },
+  { kind: "end", label: "Fim", hint: "Encerra a conversa", tone: "text-neutral-600" },
 ];
 
 const DEFAULTS: Record<string, () => object> = {
   message: () => ({ kind: "message", text: "Olá!" }),
   quickreply: () => ({
-    kind: "quickreply", text: "Escolha uma opção:", saveAs: "escolha",
-    options: [{ id: uid("o"), title: "Opção A" }, { id: uid("o"), title: "Opção B" }],
+    kind: "quickreply",
+    text: "Escolha uma opção:",
+    saveAs: "escolha",
+    options: [
+      { id: uid("o"), title: "Opção A" },
+      { id: uid("o"), title: "Opção B" },
+    ],
   }),
   carousel: () => ({
     kind: "carousel",
     cards: [
-      { id: uid("c"), title: "Card 1", subtitle: "Subtítulo", buttons: [{ type: "postback", id: uid("b"), title: "Quero" }] },
-      { id: uid("c"), title: "Card 2", subtitle: "Subtítulo", buttons: [{ type: "postback", id: uid("b"), title: "Quero" }] },
+      {
+        id: uid("c"),
+        title: "Card 1",
+        subtitle: "Subtítulo",
+        buttons: [{ type: "postback", id: uid("b"), title: "Quero" }],
+      },
+      {
+        id: uid("c"),
+        title: "Card 2",
+        subtitle: "Subtítulo",
+        buttons: [{ type: "postback", id: uid("b"), title: "Quero" }],
+      },
     ],
   }),
   image: () => ({ kind: "image", url: "https://picsum.photos/600/400" }),
@@ -322,7 +374,9 @@ export function FlowEditor({
     const parsed = FlowGraph.safeParse(clean);
     if (!parsed.success) {
       const first = parsed.error.issues[0];
-      return [{ level: "error", message: `Campo inválido: ${first?.path.join(".")} — ${first?.message}` }];
+      return [
+        { level: "error", message: `Campo inválido: ${first?.path.join(".")} — ${first?.message}` },
+      ];
     }
     return validateGraph(parsed.data);
   }, [clean]);
@@ -374,10 +428,7 @@ export function FlowEditor({
 
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex items-center gap-2 border-b px-3 py-2">
-          <button
-            onClick={() => setPanel((v) => !v)}
-            className="rounded border px-2 py-1 text-xs"
-          >
+          <button onClick={() => setPanel((v) => !v)} className="rounded border px-2 py-1 text-xs">
             {panel ? "◀" : "▶"} Blocos
           </button>
           <span className="text-xs text-neutral-500">
@@ -387,9 +438,7 @@ export function FlowEditor({
             Duplo clique edita o texto · ⌘D duplica · Delete remove
           </span>
           <div className="ml-auto flex items-center gap-3">
-            {saveError && (
-              <span className="text-xs font-medium text-rose-600">{saveError}</span>
-            )}
+            {saveError && <span className="text-xs font-medium text-rose-600">{saveError}</span>}
             {!saveError && savedAt && !saving && (
               <span className="text-xs font-medium text-emerald-600">
                 ✓ Salvo às {timeOf(savedAt)}
@@ -427,9 +476,7 @@ export function FlowEditor({
             // Changes to the synthetic card (position, selection) are dropped
             // before they can reach graph state.
             onNodesChange={(changes) =>
-              onNodesChange(
-                changes.filter((c) => !("id" in c) || c.id !== TRIGGER_NODE_ID),
-              )
+              onNodesChange(changes.filter((c) => !("id" in c) || c.id !== TRIGGER_NODE_ID))
             }
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}

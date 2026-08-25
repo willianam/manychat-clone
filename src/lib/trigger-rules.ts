@@ -23,12 +23,7 @@
 import { normalizeText } from "./text-normalize";
 
 export type TriggerKindName =
-  | "KEYWORD"
-  | "COMMENT"
-  | "STORY_REPLY"
-  | "STORY_MENTION"
-  | "REF"
-  | "DEFAULT";
+  "KEYWORD" | "COMMENT" | "STORY_REPLY" | "STORY_MENTION" | "REF" | "DEFAULT";
 
 export type MatchModeName = "EXACT" | "CONTAINS" | "REGEX";
 

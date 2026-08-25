@@ -22,7 +22,10 @@ const FALSY_WORDS = new Set(["", "0", "false", "falso", "não", "nao", "no", "n"
  * separators. "1.5" and "1500.5" keep their dot as a decimal point.
  */
 export function parseNumber(input: string): number | null {
-  let s = input.trim().replace(/^r\$\s*/i, "").replace(/\s+/g, "");
+  let s = input
+    .trim()
+    .replace(/^r\$\s*/i, "")
+    .replace(/\s+/g, "");
   if (!s) return null;
   if (s.includes(",")) {
     // A comma is the decimal separator; any dots before it are thousands.
@@ -44,8 +47,16 @@ export function parseNumber(input: string): number | null {
 export function parseDate(input: string): number | null {
   const s = input.trim();
   let m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?/.exec(s);
-  let y: number, mo: number, d: number, h = 0, mi = 0, sec = 0;
-  if (m && /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/.test(s)) {
+  let y: number,
+    mo: number,
+    d: number,
+    h = 0,
+    mi = 0,
+    sec = 0;
+  if (
+    m &&
+    /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/.test(s)
+  ) {
     // Full ISO with an explicit zone: let the platform parse it.
     if (/Z|[+-]\d{2}:?\d{2}$/.test(s) && s.includes("T")) {
       const t = Date.parse(s);

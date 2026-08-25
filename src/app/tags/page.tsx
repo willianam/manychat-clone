@@ -29,8 +29,8 @@ export default async function TagsPage() {
     <main className="mx-auto max-w-4xl px-6 py-8">
       <h1 className="text-2xl font-semibold">Etiquetas</h1>
       <p className="mt-1 text-sm text-neutral-600">
-        Etiquetas marcam contatos e são usadas por fluxos e disparos. Renomear atualiza
-        os fluxos que citam a etiqueta; excluir avisa antes se ela estiver em uso.
+        Etiquetas marcam contatos e são usadas por fluxos e disparos. Renomear atualiza os fluxos
+        que citam a etiqueta; excluir avisa antes se ela estiver em uso.
       </p>
 
       <form
@@ -56,9 +56,7 @@ export default async function TagsPage() {
             className="mt-1 h-9 w-14 rounded border"
           />
         </div>
-        <button className="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white">
-          Criar
-        </button>
+        <button className="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white">Criar</button>
       </form>
 
       {tags.length === 0 && (
@@ -83,10 +81,7 @@ export default async function TagsPage() {
                   {t._count.contacts} contato{t._count.contacts === 1 ? "" : "s"}
                 </span>
                 {inFlows.length > 0 && (
-                  <span
-                    className="text-xs text-amber-800"
-                    title={inFlows.join(", ")}
-                  >
+                  <span className="text-xs text-amber-800" title={inFlows.join(", ")}>
                     usada por {inFlows.length} fluxo{inFlows.length === 1 ? "" : "s"}
                   </span>
                 )}
@@ -139,7 +134,12 @@ export default async function TagsPage() {
         >
           <div>
             <label className="block text-xs text-neutral-500">Mesclar esta…</label>
-            <select name="sourceId" required defaultValue="" className="mt-1 rounded border px-2 py-1.5 text-sm">
+            <select
+              name="sourceId"
+              required
+              defaultValue=""
+              className="mt-1 rounded border px-2 py-1.5 text-sm"
+            >
               <option value="" disabled>
                 escolha…
               </option>
@@ -152,7 +152,12 @@ export default async function TagsPage() {
           </div>
           <div>
             <label className="block text-xs text-neutral-500">…dentro desta</label>
-            <select name="targetId" required defaultValue="" className="mt-1 rounded border px-2 py-1.5 text-sm">
+            <select
+              name="targetId"
+              required
+              defaultValue=""
+              className="mt-1 rounded border px-2 py-1.5 text-sm"
+            >
               <option value="" disabled>
                 escolha…
               </option>
@@ -163,12 +168,10 @@ export default async function TagsPage() {
               ))}
             </select>
           </div>
-          <button className="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white">
-            Mesclar
-          </button>
+          <button className="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white">Mesclar</button>
           <p className="w-full text-xs text-neutral-500">
-            Os contatos da primeira passam a ter a segunda, os fluxos e disparos são
-            atualizados, e a primeira é excluída.
+            Os contatos da primeira passam a ter a segunda, os fluxos e disparos são atualizados, e
+            a primeira é excluída.
           </p>
         </form>
       )}

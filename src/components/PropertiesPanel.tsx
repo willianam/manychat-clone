@@ -169,9 +169,7 @@ function TextInput({
         onChange={(e) => onChange(e.target.value)}
         className={`${INPUT} ${mono ? "font-mono" : ""}`}
       />
-      {max !== undefined && (
-        <Counter len={value.length} max={max} />
-      )}
+      {max !== undefined && <Counter len={value.length} max={max} />}
     </>
   );
 }
@@ -225,11 +223,7 @@ function Select<T extends string>({
   options: Array<{ value: T; label: string }>;
 }) {
   return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value as T)}
-      className={INPUT}
-    >
+    <select value={value} onChange={(e) => onChange(e.target.value as T)} className={INPUT}>
       {options.map((o) => (
         <option key={o.value} value={o.value}>
           {o.label}
@@ -337,10 +331,7 @@ function ButtonList({
   return (
     <div className="space-y-2">
       {buttons.map((b, i) => (
-        <div
-          key={b.id}
-          className="rounded-lg border p-2"
-        >
+        <div key={b.id} className="rounded-lg border p-2">
           <div className="mb-1.5 flex items-center gap-1">
             <span className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
               Botão {i + 1}
@@ -534,7 +525,9 @@ function QuickReplyProps({
                   value={o.value ?? ""}
                   placeholder="valor salvo (padrão: o título)"
                   onChange={(v) =>
-                    set(opts.map((x, n) => (n === i ? { ...x, value: v === "" ? undefined : v } : x)))
+                    set(
+                      opts.map((x, n) => (n === i ? { ...x, value: v === "" ? undefined : v } : x)),
+                    )
                   }
                 />
               </div>
@@ -570,8 +563,8 @@ function CarouselProps({
   return (
     <>
       <p className="text-[11px] text-neutral-500">
-        Cards aparecem lado a lado. Máx. {LIMITS.carouselCards} cards e{" "}
-        {LIMITS.carouselButtons} botões por card.
+        Cards aparecem lado a lado. Máx. {LIMITS.carouselCards} cards e {LIMITS.carouselButtons}{" "}
+        botões por card.
       </p>
 
       <div className="space-y-3">
@@ -688,8 +681,18 @@ function ImageProps({
  * passes would be worse than none, because it would imply a check happened.
  */
 const MEDIA_COPY = {
-  video: { label: "URL do vídeo", title: "Vídeo", mb: LIMITS.mediaMb, formats: MEDIA_FORMATS.video },
-  audio: { label: "URL do áudio", title: "Áudio", mb: LIMITS.mediaMb, formats: MEDIA_FORMATS.audio },
+  video: {
+    label: "URL do vídeo",
+    title: "Vídeo",
+    mb: LIMITS.mediaMb,
+    formats: MEDIA_FORMATS.video,
+  },
+  audio: {
+    label: "URL do áudio",
+    title: "Áudio",
+    mb: LIMITS.mediaMb,
+    formats: MEDIA_FORMATS.audio,
+  },
   file: { label: "URL do PDF", title: "PDF", mb: LIMITS.mediaMb, formats: MEDIA_FORMATS.file },
 } as const;
 
@@ -838,8 +841,8 @@ function AlbumProps({
   return (
     <>
       <p className="text-[11px] text-neutral-500">
-        Várias imagens em uma só mensagem. Máx. {LIMITS.albumImages} imagens,{" "}
-        {LIMITS.imageMb} MB cada ({MEDIA_FORMATS.image}).
+        Várias imagens em uma só mensagem. Máx. {LIMITS.albumImages} imagens, {LIMITS.imageMb} MB
+        cada ({MEDIA_FORMATS.image}).
       </p>
 
       <div className="space-y-2">
@@ -1039,11 +1042,7 @@ function DelayProps({
 
 function HourSelect({ value, onChange }: { value: number; onChange: (h: number) => void }) {
   return (
-    <select
-      value={value}
-      onChange={(e) => onChange(Number(e.target.value))}
-      className={INPUT}
-    >
+    <select value={value} onChange={(e) => onChange(Number(e.target.value))} className={INPUT}>
       {Array.from({ length: 24 }, (_, h) => (
         <option key={h} value={h}>
           {String(h).padStart(2, "0")}:00
@@ -1279,8 +1278,7 @@ function TagProps({
   return (
     <>
       <p className="rounded-lg bg-amber-50 px-2.5 py-2 text-[11px] text-amber-700">
-        Bloco antigo, mantido para os fluxos que já o usam. Em blocos novos,
-        prefira <b>Ações</b>.
+        Bloco antigo, mantido para os fluxos que já o usam. Em blocos novos, prefira <b>Ações</b>.
       </p>
       <Field label="O que fazer">
         <Select

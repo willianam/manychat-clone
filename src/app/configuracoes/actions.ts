@@ -60,9 +60,7 @@ function readMenuItems(formData: FormData): MenuItemInput[] {
     if (title === "" && url === "" && flowId === "") return; // unused slot
 
     rows.push(
-      type === "web_url"
-        ? { type: "web_url", title, url }
-        : { type: "postback", title, flowId },
+      type === "web_url" ? { type: "web_url", title, url } : { type: "postback", title, flowId },
     );
   });
   return rows;
@@ -89,9 +87,7 @@ export async function saveMenu(formData: FormData) {
   const parsed = MenuItemsInput.safeParse(readMenuItems(formData));
   if (!parsed.success) throw new Error(describe(parsed.error));
 
-  await assertFlowsUsable(
-    parsed.data.flatMap((i) => (i.type === "postback" ? [i.flowId] : [])),
-  );
+  await assertFlowsUsable(parsed.data.flatMap((i) => (i.type === "postback" ? [i.flowId] : [])));
 
   await syncAndStore(() => pushPersistentMenu(parsed.data), { menuItems: parsed.data as never });
 }

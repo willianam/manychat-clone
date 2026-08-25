@@ -213,7 +213,10 @@ export const STALE_SESSION_MS = 24 * 60 * 60 * 1000;
  */
 export async function sweepStaleSessions(db: PrismaClient, now = new Date()): Promise<number> {
   const { count } = await db.flowSession.updateMany({
-    where: { status: "WAITING_INPUT", updatedAt: { lt: new Date(now.getTime() - STALE_SESSION_MS) } },
+    where: {
+      status: "WAITING_INPUT",
+      updatedAt: { lt: new Date(now.getTime() - STALE_SESSION_MS) },
+    },
     data: { status: "ABANDONED" },
   });
   return count;

@@ -12,11 +12,7 @@ export const dynamic = "force-dynamic";
  * Nothing on this route can send: no API client is imported, and the only
  * server work is one read.
  */
-export default async function FlowPreviewPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
+export default async function FlowPreviewPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const flow = await db.flow.findUnique({ where: { id } });
   if (!flow) return <main className="p-8">Fluxo não encontrado.</main>;
@@ -43,9 +39,8 @@ export default async function FlowPreviewPage({
         </Link>
         <h1 className="mt-1 text-xl font-semibold">Prévia: {flow.name}</h1>
         <p className="mt-1 text-sm text-neutral-500">
-          O fluxo como a conversa vai aparecer no celular. Toque nos botões para
-          seguir cada caminho. Nada é enviado — serve para revisar o texto sem
-          mandar DM de verdade.
+          O fluxo como a conversa vai aparecer no celular. Toque nos botões para seguir cada
+          caminho. Nada é enviado — serve para revisar o texto sem mandar DM de verdade.
         </p>
       </div>
 

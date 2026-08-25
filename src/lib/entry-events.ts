@@ -159,7 +159,9 @@ export const REF_CODE_MAX = 250;
  * just opens a normal DM" — a bug with no error message anywhere. Rejecting
  * at creation is the only place this is visible.
  */
-export function validateRefCode(raw: string): { ok: true; code: string } | { ok: false; error: string } {
+export function validateRefCode(
+  raw: string,
+): { ok: true; code: string } | { ok: false; error: string } {
   const code = normalizeRefCode(raw);
   if (!code) return { ok: false, error: "Informe um código para o link." };
   if (code.length > REF_CODE_MAX) {

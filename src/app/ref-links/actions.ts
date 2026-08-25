@@ -14,7 +14,9 @@ import { generateRefCode, validateRefCode } from "../../lib/entry-events";
  */
 
 export async function createRefLink(formData: FormData) {
-  const label = String(formData.get("label") ?? "").trim().slice(0, 120);
+  const label = String(formData.get("label") ?? "")
+    .trim()
+    .slice(0, 120);
   if (!label) throw new Error("Dê um nome ao link para reconhecê-lo depois.");
 
   const flowId = String(formData.get("flowId") ?? "");

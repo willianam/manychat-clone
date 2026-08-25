@@ -17,8 +17,7 @@ export default async function Home() {
     <main className="mx-auto max-w-6xl px-6 py-8">
       <h1 className="text-2xl font-semibold">Painel</h1>
       <p className="mt-1 text-sm text-neutral-600">
-        Conectado ao Postgres de produção. O envio de mensagens depende das
-        credenciais da Meta.
+        Conectado ao Postgres de produção. O envio de mensagens depende das credenciais da Meta.
       </p>
 
       <div className="mt-6 grid grid-cols-2 gap-4 md:grid-cols-4">
@@ -41,7 +40,9 @@ export default async function Home() {
                   </Link>
                   <span
                     className={`rounded-full px-2 py-0.5 text-xs ${
-                      f.enabled ? "bg-emerald-100 text-emerald-800" : "bg-neutral-100 text-neutral-600"
+                      f.enabled
+                        ? "bg-emerald-100 text-emerald-800"
+                        : "bg-neutral-100 text-neutral-600"
                     }`}
                   >
                     {f.enabled ? "ativo" : "inativo"}

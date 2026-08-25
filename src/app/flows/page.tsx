@@ -54,8 +54,8 @@ export default async function FlowsPage() {
         <div className="mt-8 rounded-xl border border-dashed p-10 text-center">
           <p className="font-medium">Nenhum fluxo ainda.</p>
           <p className="mt-1 text-sm text-neutral-500">
-            Crie o primeiro acima escolhendo o que deve iniciá-lo — comentário,
-            resposta a story ou palavra-chave. O gatilho nasce junto com o fluxo.
+            Crie o primeiro acima escolhendo o que deve iniciá-lo — comentário, resposta a story ou
+            palavra-chave. O gatilho nasce junto com o fluxo.
           </p>
         </div>
       ) : (
@@ -67,8 +67,8 @@ export default async function FlowsPage() {
       )}
 
       <p className="mt-6 text-xs text-neutral-400">
-        Um fluxo ativo responde no Instagram assim que um gatilho casa. Fluxos
-        com erro não podem ser ativados.
+        Um fluxo ativo responde no Instagram assim que um gatilho casa. Fluxos com erro não podem
+        ser ativados.
       </p>
     </main>
   );

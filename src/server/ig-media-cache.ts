@@ -52,9 +52,7 @@ export type MediaListResult = {
  * On failure a stale cached list is returned rather than an empty one: an
  * old list of the owner's real posts is more useful than nothing.
  */
-export async function listMedia(
-  opts: { refresh?: boolean } = {},
-): Promise<MediaListResult> {
+export async function listMedia(opts: { refresh?: boolean } = {}): Promise<MediaListResult> {
   const now = Date.now();
 
   if (!opts.refresh && cache && now - cache.at < TTL_MS) {

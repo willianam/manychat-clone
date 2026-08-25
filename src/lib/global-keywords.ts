@@ -24,8 +24,7 @@ export const ESCAPE_KEYWORDS = ["menu", "recomeçar", "reiniciar"] as const;
 
 export const OPT_OUT_CONFIRMATION =
   "Pronto, você não receberá mais mensagens automáticas. Envie *voltar* para reativar.";
-export const OPT_IN_CONFIRMATION =
-  "Pronto, você voltou a receber mensagens automáticas.";
+export const OPT_IN_CONFIRMATION = "Pronto, você voltou a receber mensagens automáticas.";
 
 export type GlobalKeyword = "opt_out" | "opt_in" | "escape";
 

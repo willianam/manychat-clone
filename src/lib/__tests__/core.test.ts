@@ -71,7 +71,12 @@ describe("webhook signature", () => {
 describe("flow graph", () => {
   const good = {
     nodes: [
-      { id: "a", type: "message" as const, position: { x: 0, y: 0 }, data: { kind: "message" as const, text: "hi" } },
+      {
+        id: "a",
+        type: "message" as const,
+        position: { x: 0, y: 0 },
+        data: { kind: "message" as const, text: "hi" },
+      },
       { id: "b", type: "end" as const, position: { x: 0, y: 1 }, data: { kind: "end" as const } },
     ],
     edges: [{ id: "e", source: "a", target: "b" }],
@@ -91,7 +96,12 @@ describe("flow graph", () => {
   it("requires both branches on a condition", () => {
     const g = FlowGraph.parse({
       nodes: [
-        { id: "c", type: "condition", position: { x: 0, y: 0 }, data: { kind: "condition", key: "k", op: "exists" } },
+        {
+          id: "c",
+          type: "condition",
+          position: { x: 0, y: 0 },
+          data: { kind: "condition", key: "k", op: "exists" },
+        },
         { id: "b", type: "end", position: { x: 0, y: 1 }, data: { kind: "end" } },
       ],
       edges: [{ id: "e", source: "c", target: "b", sourceHandle: "true" }],
@@ -102,8 +112,18 @@ describe("flow graph", () => {
   it("detects a graph with no entry point", () => {
     const g = FlowGraph.parse({
       nodes: [
-        { id: "a", type: "message", position: { x: 0, y: 0 }, data: { kind: "message", text: "x" } },
-        { id: "b", type: "message", position: { x: 0, y: 1 }, data: { kind: "message", text: "y" } },
+        {
+          id: "a",
+          type: "message",
+          position: { x: 0, y: 0 },
+          data: { kind: "message", text: "x" },
+        },
+        {
+          id: "b",
+          type: "message",
+          position: { x: 0, y: 1 },
+          data: { kind: "message", text: "y" },
+        },
       ],
       edges: [
         { id: "e1", source: "a", target: "b" },
@@ -115,7 +135,14 @@ describe("flow graph", () => {
 
   it("rejects an invalid saveAs identifier", () => {
     const bad = {
-      nodes: [{ id: "q", type: "question", position: { x: 0, y: 0 }, data: { kind: "question", text: "?", saveAs: "9bad name" } }],
+      nodes: [
+        {
+          id: "q",
+          type: "question",
+          position: { x: 0, y: 0 },
+          data: { kind: "question", text: "?", saveAs: "9bad name" },
+        },
+      ],
       edges: [],
     };
     expect(FlowGraph.safeParse(bad).success).toBe(false);
@@ -137,8 +164,14 @@ describe("limites em bytes (não caracteres)", () => {
     expect(byteLength(long)).toBeGreaterThan(1000);
 
     const bad = FlowGraph.safeParse({
-      nodes: [{ id: "a", type: "message", position: { x: 0, y: 0 },
-                data: { kind: "message", text: long } }],
+      nodes: [
+        {
+          id: "a",
+          type: "message",
+          position: { x: 0, y: 0 },
+          data: { kind: "message", text: long },
+        },
+      ],
       edges: [],
     });
     expect(bad.success).toBe(false);
@@ -146,8 +179,14 @@ describe("limites em bytes (não caracteres)", () => {
 
   it("aceita texto dentro do limite de bytes", () => {
     const ok = FlowGraph.safeParse({
-      nodes: [{ id: "a", type: "message", position: { x: 0, y: 0 },
-                data: { kind: "message", text: "Olá! 👋" } }],
+      nodes: [
+        {
+          id: "a",
+          type: "message",
+          position: { x: 0, y: 0 },
+          data: { kind: "message", text: "Olá! 👋" },
+        },
+      ],
       edges: [],
     });
     expect(ok.success).toBe(true);

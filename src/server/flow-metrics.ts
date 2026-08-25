@@ -58,7 +58,10 @@ export async function flowStats(db: PrismaClient, flowId: string): Promise<FlowS
   // handle → tap count, keyed by the full "<nodeId>:<handle>" payload.
   const tapsByPayload = new Map<string, number>();
   for (const t of taps) {
-    const raw = t.raw as { postback?: { payload?: string }; message?: { quick_reply?: { payload?: string } } };
+    const raw = t.raw as {
+      postback?: { payload?: string };
+      message?: { quick_reply?: { payload?: string } };
+    };
     const p = raw?.postback?.payload ?? raw?.message?.quick_reply?.payload;
     if (p) tapsByPayload.set(p, (tapsByPayload.get(p) ?? 0) + 1);
   }
@@ -89,7 +92,9 @@ export async function flowStats(db: PrismaClient, flowId: string): Promise<FlowS
         : d.kind === "message"
           ? (d.buttons ?? []).filter((b) => b.type === "postback").map((b) => b.id)
           : d.kind === "carousel"
-            ? d.cards.flatMap((c) => (c.buttons ?? []).filter((b) => b.type === "postback").map((b) => b.id))
+            ? d.cards.flatMap((c) =>
+                (c.buttons ?? []).filter((b) => b.type === "postback").map((b) => b.id),
+              )
             : [];
 
     for (const h of handles) {

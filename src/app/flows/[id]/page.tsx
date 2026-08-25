@@ -30,17 +30,15 @@ export default async function FlowPage({ params }: { params: Promise<{ id: strin
             <h1 className="truncate font-medium">{flow.name}</h1>
             <span
               className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                flow.enabled
-                  ? "bg-emerald-50 text-emerald-700"
-                  : "bg-neutral-100 text-neutral-500"
+                flow.enabled ? "bg-emerald-50 text-emerald-700" : "bg-neutral-100 text-neutral-500"
               }`}
             >
               {flow.enabled ? "ativo" : "pausado"}
             </span>
           </div>
           <p className="text-xs text-neutral-500">
-            Duplo clique edita o texto. Selecione um bloco para abrir as
-            propriedades. Os números aparecem depois que o fluxo roda.
+            Duplo clique edita o texto. Selecione um bloco para abrir as propriedades. Os números
+            aparecem depois que o fluxo roda.
           </p>
         </div>
 

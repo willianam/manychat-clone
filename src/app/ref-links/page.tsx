@@ -22,8 +22,8 @@ export default async function RefLinksPage() {
       <div>
         <h1 className="text-2xl font-semibold">Links rastreáveis</h1>
         <p className="mt-0.5 text-sm text-neutral-500">
-          Um link <code className="font-mono text-xs">ig.me</code> que abre a DM já disparando
-          um fluxo. Use um por canal para saber de onde vem cada contato.
+          Um link <code className="font-mono text-xs">ig.me</code> que abre a DM já disparando um
+          fluxo. Use um por canal para saber de onde vem cada contato.
         </p>
       </div>
 

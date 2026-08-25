@@ -23,14 +23,22 @@ const CONTACT = "contact-1";
 const FLOW = "flow-1";
 
 const node = (id: string, data: object) => ({
-  id, type: (data as { kind: string }).kind, position: { x: 0, y: 0 }, data,
+  id,
+  type: (data as { kind: string }).kind,
+  position: { x: 0, y: 0 },
+  data,
 });
 const chain = (...nodes: ReturnType<typeof node>[]) => ({
   nodes,
-  edges: nodes.slice(1).map((n, i) => ({ id: `${nodes[i]!.id}-${n.id}`, source: nodes[i]!.id, target: n.id })),
+  edges: nodes
+    .slice(1)
+    .map((n, i) => ({ id: `${nodes[i]!.id}-${n.id}`, source: nodes[i]!.id, target: n.id })),
 });
 
-const REPLYING_GRAPH = chain(node("m1", { kind: "message", text: "olá" }), node("e1", { kind: "end" }));
+const REPLYING_GRAPH = chain(
+  node("m1", { kind: "message", text: "olá" }),
+  node("e1", { kind: "end" }),
+);
 const UNSUBSCRIBE_GRAPH = chain(
   node("a1", { kind: "action", ops: [{ op: "unsubscribe" }] }),
   node("m1", { kind: "message", text: "até logo" }),
@@ -44,9 +52,23 @@ const RESUBSCRIBE_GRAPH = chain(
 function fakeDb(opts: { graph?: object; subscribed?: boolean; waiting?: boolean } = {}) {
   const contact = { id: CONTACT, subscribed: opts.subscribed ?? true };
   const waiting: FlowSession | null = opts.waiting
-    ? ({ id: "s-wait", flowId: FLOW, contactId: CONTACT, currentNodeId: "q1", status: "WAITING_INPUT", context: {} } as unknown as FlowSession)
+    ? ({
+        id: "s-wait",
+        flowId: FLOW,
+        contactId: CONTACT,
+        currentNodeId: "q1",
+        status: "WAITING_INPUT",
+        context: {},
+      } as unknown as FlowSession)
     : null;
-  const session = { id: "s-new", flowId: FLOW, contactId: CONTACT, currentNodeId: null, status: "ACTIVE", context: {} };
+  const session = {
+    id: "s-new",
+    flowId: FLOW,
+    contactId: CONTACT,
+    currentNodeId: null,
+    status: "ACTIVE",
+    context: {},
+  };
   const write = ({ data }: { data: object }) => {
     Object.assign(session, data);
     return Promise.resolve({ ...session });
@@ -74,13 +96,26 @@ function fakeDb(opts: { graph?: object; subscribed?: boolean; waiting?: boolean 
       update: vi.fn(write),
     },
     trigger: {
-      findMany: vi.fn().mockResolvedValue([
-        { id: "trg-1", flowId: FLOW, kind: "KEYWORD", pattern: "preco", match: "CONTAINS", enabled: true, priority: 0 },
-      ]),
+      findMany: vi
+        .fn()
+        .mockResolvedValue([
+          {
+            id: "trg-1",
+            flowId: FLOW,
+            kind: "KEYWORD",
+            pattern: "preco",
+            match: "CONTAINS",
+            enabled: true,
+            priority: 0,
+          },
+        ]),
       findFirst: vi.fn().mockResolvedValue(null),
     },
     unmatchedMessage: { upsert: vi.fn().mockResolvedValue({}) },
-    contactField: { findMany: vi.fn().mockResolvedValue([]), upsert: vi.fn().mockResolvedValue({}) },
+    contactField: {
+      findMany: vi.fn().mockResolvedValue([]),
+      upsert: vi.fn().mockResolvedValue({}),
+    },
   } as unknown as PrismaClient;
 
   return { db, contact };

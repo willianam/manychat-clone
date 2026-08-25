@@ -62,8 +62,7 @@ export default async function TriggersPage() {
         <div>
           <h1 className="text-2xl font-semibold">Gatilhos</h1>
           <p className="mt-0.5 text-sm text-neutral-500">
-            {rows.length} {rows.length === 1 ? "gatilho" : "gatilhos"} · {live}{" "}
-            realmente no ar
+            {rows.length} {rows.length === 1 ? "gatilho" : "gatilhos"} · {live} realmente no ar
           </p>
         </div>
       </div>
@@ -71,9 +70,9 @@ export default async function TriggersPage() {
       <TriggerList rows={rows} flows={flows} />
 
       <p className="mt-6 text-xs text-neutral-400">
-        Um gatilho só dispara se ele estiver ativo <em>e</em> o fluxo de destino
-        também estiver. Para comentários, um gatilho preso a uma publicação
-        específica ganha do que vale para qualquer publicação.
+        Um gatilho só dispara se ele estiver ativo <em>e</em> o fluxo de destino também estiver.
+        Para comentários, um gatilho preso a uma publicação específica ganha do que vale para
+        qualquer publicação.
       </p>
     </main>
   );

@@ -17,7 +17,10 @@ vi.mock("../db", () => ({
     igCredential: {
       findUnique: vi.fn().mockResolvedValue(null),
       upsert: vi.fn(async ({ create }: { create: object }) => ({
-        expiresAt: null, refreshedAt: null, lastError: null, ...create,
+        expiresAt: null,
+        refreshedAt: null,
+        lastError: null,
+        ...create,
       })),
     },
   },

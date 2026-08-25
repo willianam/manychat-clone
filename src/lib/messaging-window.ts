@@ -16,9 +16,7 @@ export const HUMAN_AGENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 export type MessageTag = "HUMAN_AGENT" | "ACCOUNT_UPDATE" | "POST_PURCHASE_UPDATE";
 
-export type SendDecision =
-  | { allowed: true; tag?: MessageTag }
-  | { allowed: false; reason: string };
+export type SendDecision = { allowed: true; tag?: MessageTag } | { allowed: false; reason: string };
 
 /**
  * Decide whether we may message a contact right now.
@@ -34,8 +32,7 @@ export function canSend(
   if (!lastInboundAt) {
     return {
       allowed: false,
-      reason:
-        "Contact has never sent us a message. Instagram forbids initiating a conversation.",
+      reason: "Contact has never sent us a message. Instagram forbids initiating a conversation.",
     };
   }
 

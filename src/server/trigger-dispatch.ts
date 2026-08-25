@@ -121,11 +121,7 @@ async function isSubscribed(db: PrismaClient, contactId: string): Promise<boolea
  *
  * Never throws: a failure to record analytics must not stop us replying.
  */
-async function recordUnmatched(
-  db: PrismaClient,
-  contactId: string,
-  text: string,
-): Promise<void> {
+async function recordUnmatched(db: PrismaClient, contactId: string, text: string): Promise<void> {
   const normalized = normalizeForGrouping(text);
   if (!normalized) return; // a sticker or a bare emoji has no keyword to suggest
 
@@ -244,10 +240,7 @@ export async function handleStoryReply(
  * Patternless by nature: whichever enabled STORY_MENTION trigger has the
  * highest priority wins.
  */
-export async function handleStoryMention(
-  db: PrismaClient,
-  contactId: string,
-): Promise<void> {
+export async function handleStoryMention(db: PrismaClient, contactId: string): Promise<void> {
   const trigger = await db.trigger.findFirst({
     where: { kind: "STORY_MENTION", enabled: true, flow: { enabled: true } },
     orderBy: { priority: "desc" },
@@ -349,10 +342,7 @@ async function matchComment(
  * literal message, and silently folding accents out from under it would
  * break patterns that match accents deliberately.
  */
-export function matches(
-  trigger: Pick<Trigger, "pattern" | "match">,
-  text: string,
-): boolean {
+export function matches(trigger: Pick<Trigger, "pattern" | "match">, text: string): boolean {
   if (!trigger.pattern) return false;
 
   if (trigger.match === "REGEX") {

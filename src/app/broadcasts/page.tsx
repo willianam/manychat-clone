@@ -23,10 +23,7 @@ export default async function BroadcastsPage() {
     await Promise.all(
       broadcasts
         .filter((b) => b.status === "DRAFT")
-        .map(
-          async (b) =>
-            [b.id, await previewAudience(db, { tagIds: b.filterTagIds })] as const,
-        ),
+        .map(async (b) => [b.id, await previewAudience(db, { tagIds: b.filterTagIds })] as const),
     ),
   );
 
@@ -34,8 +31,8 @@ export default async function BroadcastsPage() {
     <main className="mx-auto max-w-4xl px-6 py-8">
       <h1 className="text-2xl font-semibold">Disparos</h1>
       <p className="mt-1 text-sm text-neutral-600">
-        Uma mensagem para muitos contatos. Só chega em quem escreveu nas últimas 24 horas
-        — por isso o número aparece antes de você disparar, e não só no relatório.
+        Uma mensagem para muitos contatos. Só chega em quem escreveu nas últimas 24 horas — por isso
+        o número aparece antes de você disparar, e não só no relatório.
       </p>
 
       <form action={createBroadcast} className="mt-6 space-y-4 rounded-lg border bg-white p-4">
@@ -118,7 +115,11 @@ export default async function BroadcastsPage() {
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <form action={queueBroadcast} className="flex items-center gap-2">
                     <input type="hidden" name="id" value={b.id} />
-                    <select name="window" defaultValue="in" className="rounded border px-2 py-1 text-sm">
+                    <select
+                      name="window"
+                      defaultValue="in"
+                      className="rounded border px-2 py-1 text-sm"
+                    >
                       <option value="in">Só quem está dentro da janela</option>
                       <option value="">Todos (fora da janela vai falhar)</option>
                     </select>

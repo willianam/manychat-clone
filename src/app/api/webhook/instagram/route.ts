@@ -33,10 +33,7 @@ export const maxDuration = 15;
 
 /** Meta's subscription handshake. */
 export async function GET(req: NextRequest) {
-  const challenge = verifyChallenge(
-    req.nextUrl.searchParams,
-    process.env.IG_VERIFY_TOKEN ?? "",
-  );
+  const challenge = verifyChallenge(req.nextUrl.searchParams, process.env.IG_VERIFY_TOKEN ?? "");
   if (!challenge) return new NextResponse("Forbidden", { status: 403 });
   return new NextResponse(challenge, { status: 200 });
 }
@@ -45,7 +42,9 @@ export async function POST(req: NextRequest) {
   // Raw body first — parsing then re-serializing breaks the HMAC.
   const raw = await req.text();
 
-  if (!verifySignature(raw, req.headers.get("x-hub-signature-256"), process.env.IG_APP_SECRET ?? "")) {
+  if (
+    !verifySignature(raw, req.headers.get("x-hub-signature-256"), process.env.IG_APP_SECRET ?? "")
+  ) {
     return new NextResponse("Invalid signature", { status: 401 });
   }
 
@@ -234,7 +233,8 @@ async function processReferral(event: MessagingEvent): Promise<boolean> {
   // Dedup on the mid so a Meta replay doesn't inflate the click count. A
   // standalone referral event has no mid; fall back to sender+code, which
   // is stable for the one arrival it represents.
-  const dedupId = event.message?.mid ?? event.postback?.mid ?? `ref:${event.sender?.id ?? ""}:${code}`;
+  const dedupId =
+    event.message?.mid ?? event.postback?.mid ?? `ref:${event.sender?.id ?? ""}:${code}`;
   if (await seen(dedupId, "referral", event)) return false;
 
   const link = await db.refLink.findUnique({ where: { code } });

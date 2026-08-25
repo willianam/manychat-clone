@@ -67,8 +67,7 @@ export function TriggerDialog({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const needsPattern = requiresPattern(kind);
-  const canSubmit =
-    targetFlow !== "" && (!needsPattern || pattern.trim() !== "") && !saving;
+  const canSubmit = targetFlow !== "" && (!needsPattern || pattern.trim() !== "") && !saving;
 
   const submit = async () => {
     setSaving(true);
@@ -126,9 +125,7 @@ export function TriggerDialog({
         className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border bg-white shadow-xl"
       >
         <div className="flex items-center justify-between border-b px-4 py-3">
-          <h2 className="text-sm font-semibold">
-            {existing ? "Editar gatilho" : "Novo gatilho"}
-          </h2>
+          <h2 className="text-sm font-semibold">{existing ? "Editar gatilho" : "Novo gatilho"}</h2>
           <button
             onClick={onClose}
             className="rounded px-2 text-lg leading-none text-neutral-400 hover:text-neutral-700"
@@ -156,9 +153,7 @@ export function TriggerDialog({
                   }`}
                 >
                   <div className="text-[12px] font-semibold">{KIND_LABEL[k]}</div>
-                  <div className="text-[11px] leading-tight text-neutral-500">
-                    {KIND_HINT[k]}
-                  </div>
+                  <div className="text-[11px] leading-tight text-neutral-500">{KIND_HINT[k]}</div>
                 </button>
               ))}
             </div>

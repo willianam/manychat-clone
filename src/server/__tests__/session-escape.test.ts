@@ -23,7 +23,12 @@ const MENU_FLOW = "flow-menu";
 
 const MENU_GRAPH = {
   nodes: [
-    { id: "m1", type: "message", position: { x: 0, y: 0 }, data: { kind: "message", text: "Menu:" } },
+    {
+      id: "m1",
+      type: "message",
+      position: { x: 0, y: 0 },
+      data: { kind: "message", text: "Menu:" },
+    },
     { id: "e1", type: "end", position: { x: 0, y: 0 }, data: { kind: "end" } },
   ],
   edges: [{ id: "m1-e1", source: "m1", target: "e1" }],
@@ -31,8 +36,12 @@ const MENU_GRAPH = {
 
 function fakeDb(opts: { menuTrigger?: boolean } = {}) {
   const waiting = {
-    id: "s-wait", flowId: "flow-question", contactId: CONTACT,
-    currentNodeId: "q1", status: "WAITING_INPUT", context: {},
+    id: "s-wait",
+    flowId: "flow-question",
+    contactId: CONTACT,
+    currentNodeId: "q1",
+    status: "WAITING_INPUT",
+    context: {},
   } as unknown as FlowSession;
   const session = { id: "s-new", status: "ACTIVE", context: {}, currentNodeId: null };
   const write = ({ data }: { data: object }) => {
@@ -44,7 +53,9 @@ function fakeDb(opts: { menuTrigger?: boolean } = {}) {
     contact: { findUnique: vi.fn().mockResolvedValue({ id: CONTACT, subscribed: true }) },
     flow: {
       findUnique: vi.fn().mockResolvedValue({ id: MENU_FLOW, enabled: true, graph: MENU_GRAPH }),
-      findUniqueOrThrow: vi.fn().mockResolvedValue({ id: MENU_FLOW, enabled: true, graph: MENU_GRAPH }),
+      findUniqueOrThrow: vi
+        .fn()
+        .mockResolvedValue({ id: MENU_FLOW, enabled: true, graph: MENU_GRAPH }),
     },
     flowSession: {
       // The waiting session is only visible until the escape abandons it.
@@ -54,15 +65,30 @@ function fakeDb(opts: { menuTrigger?: boolean } = {}) {
       update: vi.fn(write),
     },
     trigger: {
-      findMany: vi.fn().mockResolvedValue(
-        opts.menuTrigger
-          ? [{ id: "trg-menu", flowId: MENU_FLOW, kind: "KEYWORD", pattern: "menu", match: "EXACT", enabled: true, priority: 0 }]
-          : [],
-      ),
+      findMany: vi
+        .fn()
+        .mockResolvedValue(
+          opts.menuTrigger
+            ? [
+                {
+                  id: "trg-menu",
+                  flowId: MENU_FLOW,
+                  kind: "KEYWORD",
+                  pattern: "menu",
+                  match: "EXACT",
+                  enabled: true,
+                  priority: 0,
+                },
+              ]
+            : [],
+        ),
       findFirst: vi.fn().mockResolvedValue(null),
     },
     unmatchedMessage: { upsert: vi.fn().mockResolvedValue({}) },
-    contactField: { findMany: vi.fn().mockResolvedValue([]), upsert: vi.fn().mockResolvedValue({}) },
+    contactField: {
+      findMany: vi.fn().mockResolvedValue([]),
+      upsert: vi.fn().mockResolvedValue({}),
+    },
   };
 
   return db;

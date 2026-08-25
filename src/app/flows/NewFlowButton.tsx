@@ -70,8 +70,7 @@ export function NewFlowButton() {
   };
 
   const needsPattern = objective === "comment" || objective === "keyword";
-  const canSubmit =
-    objective !== null && (!needsPattern || pattern.trim() !== "") && !saving;
+  const canSubmit = objective !== null && (!needsPattern || pattern.trim() !== "") && !saving;
 
   const submit = async () => {
     if (!objective) return;
@@ -164,16 +163,12 @@ export function NewFlowButton() {
               ))}
             </div>
 
-            {objective === "comment" && (
-              <MediaPicker value={mediaId} onChange={setMediaId} />
-            )}
+            {objective === "comment" && <MediaPicker value={mediaId} onChange={setMediaId} />}
 
             {needsPattern && (
               <div>
                 <label className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
-                  {objective === "comment"
-                    ? "Palavra no comentário"
-                    : "Palavra-chave no direct"}
+                  {objective === "comment" ? "Palavra no comentário" : "Palavra-chave no direct"}
                 </label>
                 <input
                   value={pattern}

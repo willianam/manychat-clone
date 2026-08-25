@@ -120,18 +120,24 @@ export type FlowButton = z.infer<typeof FlowButton>;
 
 const MessageData = z.object({
   kind: z.literal("message"),
-  text: z.string().min(1).refine(withinBytes(LIMITS.messageText), {
-    message: `O texto passa de ${LIMITS.messageText} bytes (acentos contam 2, emoji 4).`,
-  }),
+  text: z
+    .string()
+    .min(1)
+    .refine(withinBytes(LIMITS.messageText), {
+      message: `O texto passa de ${LIMITS.messageText} bytes (acentos contam 2, emoji 4).`,
+    }),
   /** With buttons the text goes through a button template, capped at 640. */
   buttons: z.array(FlowButton).max(LIMITS.buttons).optional(),
 });
 
 const QuestionData = z.object({
   kind: z.literal("question"),
-  text: z.string().min(1).refine(withinBytes(LIMITS.messageText), {
-    message: `O texto passa de ${LIMITS.messageText} bytes (acentos contam 2, emoji 4).`,
-  }),
+  text: z
+    .string()
+    .min(1)
+    .refine(withinBytes(LIMITS.messageText), {
+      message: `O texto passa de ${LIMITS.messageText} bytes (acentos contam 2, emoji 4).`,
+    }),
   /** Context key the reply is written to. */
   saveAs: z.string().regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/),
 });
@@ -145,9 +151,12 @@ const QuickReplyOption = z.object({
 
 const QuickReplyData = z.object({
   kind: z.literal("quickreply"),
-  text: z.string().min(1).refine(withinBytes(LIMITS.messageText), {
-    message: `O texto passa de ${LIMITS.messageText} bytes (acentos contam 2, emoji 4).`,
-  }),
+  text: z
+    .string()
+    .min(1)
+    .refine(withinBytes(LIMITS.messageText), {
+      message: `O texto passa de ${LIMITS.messageText} bytes (acentos contam 2, emoji 4).`,
+    }),
   saveAs: z.string().regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/),
   options: z.array(QuickReplyOption).min(1).max(LIMITS.quickReplies),
 });
@@ -183,14 +192,16 @@ const MediaSource = z
     message: "Envie um arquivo ou informe uma URL.",
   });
 
-const ImageData = z.object({
-  kind: z.literal("image"),
-  url: z.string().url().optional(),
-  attachmentId: z.string().min(1).optional(),
-  caption: z.string().max(LIMITS.messageText).optional(),
-}).refine((v) => Boolean(v.url) || Boolean(v.attachmentId), {
-  message: "Envie um arquivo ou informe uma URL.",
-});
+const ImageData = z
+  .object({
+    kind: z.literal("image"),
+    url: z.string().url().optional(),
+    attachmentId: z.string().min(1).optional(),
+    caption: z.string().max(LIMITS.messageText).optional(),
+  })
+  .refine((v) => Boolean(v.url) || Boolean(v.attachmentId), {
+    message: "Envie um arquivo ou informe uma URL.",
+  });
 
 /**
  * Video, audio and file share one shape: a public https URL.
@@ -204,32 +215,38 @@ const ImageData = z.object({
  * only an inbox preview here), Instagram sends the attachment alone, so a
  * caption would silently never ship.
  */
-const VideoData = z.object({
-  kind: z.literal("video"),
-  url: z.string().url().optional(),
-  attachmentId: z.string().min(1).optional(),
-}).refine((v) => Boolean(v.url) || Boolean(v.attachmentId), {
-  message: "Envie um arquivo ou informe uma URL.",
-});
+const VideoData = z
+  .object({
+    kind: z.literal("video"),
+    url: z.string().url().optional(),
+    attachmentId: z.string().min(1).optional(),
+  })
+  .refine((v) => Boolean(v.url) || Boolean(v.attachmentId), {
+    message: "Envie um arquivo ou informe uma URL.",
+  });
 
-const AudioData = z.object({
-  kind: z.literal("audio"),
-  url: z.string().url().optional(),
-  attachmentId: z.string().min(1).optional(),
-}).refine((v) => Boolean(v.url) || Boolean(v.attachmentId), {
-  message: "Envie um arquivo ou informe uma URL.",
-});
+const AudioData = z
+  .object({
+    kind: z.literal("audio"),
+    url: z.string().url().optional(),
+    attachmentId: z.string().min(1).optional(),
+  })
+  .refine((v) => Boolean(v.url) || Boolean(v.attachmentId), {
+    message: "Envie um arquivo ou informe uma URL.",
+  });
 
 /** Documents. Instagram accepts PDF only, so the schema says so. */
-const FileData = z.object({
-  kind: z.literal("file"),
-  url: z.string().url().optional(),
-  attachmentId: z.string().min(1).optional(),
-  /** Shown on the canvas so the block is identifiable without opening it. */
-  filename: z.string().max(120).optional(),
-}).refine((v) => Boolean(v.url) || Boolean(v.attachmentId), {
-  message: "Envie um arquivo ou informe uma URL.",
-});
+const FileData = z
+  .object({
+    kind: z.literal("file"),
+    url: z.string().url().optional(),
+    attachmentId: z.string().min(1).optional(),
+    /** Shown on the canvas so the block is identifiable without opening it. */
+    filename: z.string().max(120).optional(),
+  })
+  .refine((v) => Boolean(v.url) || Boolean(v.attachmentId), {
+    message: "Envie um arquivo ou informe uma URL.",
+  });
 
 /**
  * Album: up to ten images delivered as one message, via the `attachments`
@@ -267,7 +284,11 @@ const ConditionData = z.object({
  */
 const DelayData = z.object({
   kind: z.literal("delay"),
-  seconds: z.number().int().min(1).max(60 * 60 * 24 * 30),
+  seconds: z
+    .number()
+    .int()
+    .min(1)
+    .max(60 * 60 * 24 * 30),
   window: z
     .object({
       fromHour: z.number().int().min(0).max(23),
@@ -368,7 +389,9 @@ export type FlowGraph = z.infer<typeof FlowGraph>;
 export type FlowIssue = { level: "error" | "warning"; message: string };
 
 /** Every named output a node exposes, in canvas order. */
-export function outputsOf(node: z.infer<typeof FlowNode>): Array<{ handle: string; label: string }> {
+export function outputsOf(
+  node: z.infer<typeof FlowNode>,
+): Array<{ handle: string; label: string }> {
   const d = node.data;
   switch (d.kind) {
     case "condition":
@@ -415,7 +438,10 @@ export function validateGraph(graph: FlowGraph): FlowIssue[] {
       issues.push({ level: "error", message: `A ligação ${e.id} sai de um nó que não existe.` });
     }
     if (!ids.has(e.target)) {
-      issues.push({ level: "error", message: `A ligação ${e.id} aponta para um nó que não existe.` });
+      issues.push({
+        level: "error",
+        message: `A ligação ${e.id} aponta para um nó que não existe.`,
+      });
     }
   }
 
@@ -471,9 +497,7 @@ export function validateGraph(graph: FlowGraph): FlowIssue[] {
     }
 
     if (d.kind === "quickreply") {
-      const unlinked = d.options.filter(
-        (o) => !out.some((e) => e.sourceHandle === o.id),
-      );
+      const unlinked = d.options.filter((o) => !out.some((e) => e.sourceHandle === o.id));
       if (unlinked.length) {
         issues.push({
           level: "warning",

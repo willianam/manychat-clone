@@ -24,10 +24,10 @@ describe("parseBroadcastForm", () => {
   });
 
   it("interprets the same wall-clock time differently in another zone", () => {
-    const tokyo = parseBroadcastForm(
-      form({ text: "oi", scheduledAt: "2026-08-26T09:00" }),
-      { now: NOW, timeZone: "Asia/Tokyo" },
-    );
+    const tokyo = parseBroadcastForm(form({ text: "oi", scheduledAt: "2026-08-26T09:00" }), {
+      now: NOW,
+      timeZone: "Asia/Tokyo",
+    });
     expect(tokyo.scheduledAt).toEqual(new Date("2026-08-26T00:00:00Z"));
   });
 

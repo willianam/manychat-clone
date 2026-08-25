@@ -1,8 +1,15 @@
 import { describe, it, expect } from "vitest";
 import {
-  buildMessage, buildQuickReply, buildCarousel, buildImage,
-  buildMedia, buildAlbum,
-  postbackPayload, parsePostback, resumeAtFor, previewOf,
+  buildMessage,
+  buildQuickReply,
+  buildCarousel,
+  buildImage,
+  buildMedia,
+  buildAlbum,
+  postbackPayload,
+  parsePostback,
+  resumeAtFor,
+  previewOf,
 } from "../message-payload";
 import { LIMITS } from "../../lib/flow-schema";
 
@@ -188,10 +195,15 @@ describe("buildAlbum", () => {
 
 describe("previewOf", () => {
   it("summarises payloads that carry no text", () => {
-    expect(previewOf({
-      kind: "carousel",
-      cards: [{ id: "a", title: "Básico" }, { id: "b", title: "Pro" }],
-    })).toBe("[carrossel: Básico, Pro]");
+    expect(
+      previewOf({
+        kind: "carousel",
+        cards: [
+          { id: "a", title: "Básico" },
+          { id: "b", title: "Pro" },
+        ],
+      }),
+    ).toBe("[carrossel: Básico, Pro]");
     expect(previewOf({ kind: "image", url: "https://x/y.png" })).toBe("[imagem]");
     expect(previewOf({ kind: "video", url: "https://x/y.mp4" })).toBe("[vídeo]");
     expect(previewOf({ kind: "audio", url: "https://x/y.m4a" })).toBe("[áudio]");
@@ -265,7 +277,11 @@ describe("resumeAtFor", () => {
     const now = new Date("2026-08-17T06:00:00Z");
     const window = { fromHour: 8, toHour: 22 };
 
-    const saoPaulo = resumeAtFor({ kind: "delay", seconds: 3600, window }, now, "America/Sao_Paulo");
+    const saoPaulo = resumeAtFor(
+      { kind: "delay", seconds: 3600, window },
+      now,
+      "America/Sao_Paulo",
+    );
     expect(saoPaulo.toISOString()).toBe("2026-08-17T11:00:00.000Z");
 
     const tokyo = resumeAtFor({ kind: "delay", seconds: 3600, window }, now, "Asia/Tokyo");

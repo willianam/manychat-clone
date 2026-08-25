@@ -22,8 +22,7 @@ export function PreviewPhone({ graph, name }: { graph: FlowGraph; name: string }
 
   const items = useMemo(() => previewFrom(graph, choices), [graph, choices]);
 
-  const pick = (nodeId: string, handle: string) =>
-    setChoices((c) => ({ ...c, [nodeId]: handle }));
+  const pick = (nodeId: string, handle: string) => setChoices((c) => ({ ...c, [nodeId]: handle }));
 
   const reset = () => setChoices({});
 
@@ -87,15 +86,16 @@ function Item({
       return (
         <div className="flex gap-2 overflow-x-auto pb-1">
           {item.cards.map((c, i) => (
-            <div
-              key={i}
-              className="w-[168px] shrink-0 overflow-hidden rounded-xl border"
-            >
+            <div key={i} className="w-[168px] shrink-0 overflow-hidden rounded-xl border">
               <div
                 className="h-[92px] bg-neutral-100"
                 style={
                   c.imageUrl
-                    ? { backgroundImage: `url(${c.imageUrl})`, backgroundSize: "cover", backgroundPosition: "center" }
+                    ? {
+                        backgroundImage: `url(${c.imageUrl})`,
+                        backgroundSize: "cover",
+                        backgroundPosition: "center",
+                      }
                     : undefined
                 }
               />
@@ -185,7 +185,11 @@ function Media({ item }: { item: Extract<PreviewItem, { kind: "media" }> }) {
           <div
             key={i}
             className="h-[110px] rounded-xl bg-neutral-100"
-            style={{ backgroundImage: `url(${u})`, backgroundSize: "cover", backgroundPosition: "center" }}
+            style={{
+              backgroundImage: `url(${u})`,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+            }}
           />
         ))}
       </div>
@@ -196,9 +200,7 @@ function Media({ item }: { item: Extract<PreviewItem, { kind: "media" }> }) {
   return (
     <div className="flex items-center gap-2 rounded-2xl rounded-bl-sm bg-neutral-100 px-3 py-2.5">
       <span className="text-[18px]">{icon}</span>
-      <span className="truncate text-[12px] text-neutral-600">
-        {item.label}
-      </span>
+      <span className="truncate text-[12px] text-neutral-600">{item.label}</span>
     </div>
   );
 }
