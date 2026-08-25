@@ -3,7 +3,11 @@
 import { useMemo, useState } from "react";
 import { CalendarClock, Save, Send } from "lucide-react";
 import type { FlowGraph } from "../../lib/flow-schema";
-import { MESSAGE_TAGS, type MessageTag } from "../../lib/messaging-window";
+import {
+  MESSAGE_TAGS,
+  MESSAGE_TAG_LABELS,
+  type MessageTag,
+} from "../../lib/messaging-window";
 import { contentIssues, previewGraph, type ComposerBody } from "../../lib/broadcast-preview";
 import { PreviewPhone } from "../flows/[id]/preview/PreviewPhone";
 import { AudiencePicker } from "./AudiencePicker";
@@ -26,14 +30,10 @@ import { cn } from "@/lib/ui/cn";
 
 type Flow = { id: string; name: string; graph: FlowGraph | null };
 
-/** Why each tag exists, in the owner's words. Shown under the picker. */
+/** Why the tag exists, in the owner's words. Shown under the picker. */
 const TAG_HELP: Record<MessageTag, string> = {
   HUMAN_AGENT:
     "Estende a janela para 7 dias. Exige a permissão human_agent e uma pessoa de verdade respondendo; não use para promoção.",
-  ACCOUNT_UPDATE:
-    "Mudança na conta ou no pedido do contato (status, senha, entrega). A Meta bloqueia a conta que usar para marketing.",
-  POST_PURCHASE_UPDATE:
-    "Confirmação ou atualização de uma compra já feita. Mesma regra: nada promocional.",
 };
 
 const NO_TAG = "__none__";
@@ -186,7 +186,7 @@ export function Composer({
                   <SelectItem value={NO_TAG}>Sem tag (só dentro da janela de 24h)</SelectItem>
                   {MESSAGE_TAGS.map((t) => (
                     <SelectItem key={t} value={t}>
-                      {t}
+                      {MESSAGE_TAG_LABELS[t]}
                     </SelectItem>
                   ))}
                 </SelectContent>

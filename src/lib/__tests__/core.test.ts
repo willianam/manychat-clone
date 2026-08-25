@@ -1,6 +1,12 @@
 import { describe, it, expect } from "vitest";
 import crypto from "node:crypto";
-import { canSend, windowRemainingMs } from "../messaging-window";
+import {
+  canSend,
+  windowRemainingMs,
+  parseMessageTag,
+  MESSAGE_TAGS,
+  MESSAGE_TAG_LABELS,
+} from "../messaging-window";
 import { verifySignature, verifyChallenge } from "../verify-signature";
 import { validateGraph, findEntryNode, FlowGraph, byteLength } from "../flow-schema";
 import { truncateBytes } from "../../server/message-payload";
@@ -25,6 +31,21 @@ describe("messaging window", () => {
   it("extends to 7 days with HUMAN_AGENT", () => {
     expect(canSend(hoursAgo(100), { tag: "HUMAN_AGENT", now }).allowed).toBe(true);
     expect(canSend(hoursAgo(200), { tag: "HUMAN_AGENT", now }).allowed).toBe(false);
+  });
+
+  it("offers only the tag canSend actually honours", () => {
+    // ACCOUNT_UPDATE and POST_PURCHASE_UPDATE are Messenger tags. They were
+    // listed and offered in the composer while canSend ignored them, so a
+    // send outside the window failed telling the operator to pick a tag they
+    // had already picked.
+    expect(MESSAGE_TAGS).toEqual(["HUMAN_AGENT"]);
+    for (const t of MESSAGE_TAGS) {
+      expect(canSend(hoursAgo(100), { tag: t, now }).allowed).toBe(true);
+      expect(MESSAGE_TAG_LABELS[t]).toBeTruthy();
+    }
+    expect(parseMessageTag("ACCOUNT_UPDATE")).toBeUndefined();
+    expect(parseMessageTag("POST_PURCHASE_UPDATE")).toBeUndefined();
+    expect(parseMessageTag("HUMAN_AGENT")).toBe("HUMAN_AGENT");
   });
 
   it("reports remaining time, clamped at zero", () => {

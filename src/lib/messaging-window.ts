@@ -4,8 +4,8 @@
  * Inside 24h of the contact's last inbound message we may send freely.
  * Outside it, a standard message is rejected by the Graph API (error 10,
  * subcode 2534022). The only escapes are message tags — and for Instagram
- * the practical one is HUMAN_AGENT, which extends to 7 days but requires
- * the human_agent permission and a real person in the loop.
+ * the ONLY one is HUMAN_AGENT, which extends to 7 days but requires the
+ * human_agent permission and a real person in the loop.
  *
  * We enforce this before hitting the API so a broadcast doesn't burn
  * thousands of calls to collect thousands of identical errors.
@@ -14,12 +14,20 @@
 export const WINDOW_MS = 24 * 60 * 60 * 1000;
 export const HUMAN_AGENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
-export type MessageTag = "HUMAN_AGENT" | "ACCOUNT_UPDATE" | "POST_PURCHASE_UPDATE";
-export const MESSAGE_TAGS: readonly MessageTag[] = [
-  "HUMAN_AGENT",
-  "ACCOUNT_UPDATE",
-  "POST_PURCHASE_UPDATE",
-];
+/**
+ * HUMAN_AGENT is the only tag Instagram supports. ACCOUNT_UPDATE and
+ * POST_PURCHASE_UPDATE are Messenger tags: they used to be listed here and
+ * offered in the composer, but canSend never honoured them, so every
+ * recipient outside the 24h window failed with a message telling the
+ * operator to use a tag they had already chosen.
+ */
+export type MessageTag = "HUMAN_AGENT";
+export const MESSAGE_TAGS: readonly MessageTag[] = ["HUMAN_AGENT"];
+
+/** Human-readable name for the picker. */
+export const MESSAGE_TAG_LABELS: Record<MessageTag, string> = {
+  HUMAN_AGENT: "Atendimento humano (7 dias)",
+};
 
 /** A stored/posted tag string, or undefined when it is not one we know. */
 export function parseMessageTag(raw: string | null | undefined): MessageTag | undefined {
