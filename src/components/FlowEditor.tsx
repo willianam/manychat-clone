@@ -39,6 +39,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { StatusPill } from "@/components/ui/status-pill";
 import { setUnsaved } from "@/lib/ui/unsaved";
 import { FlowGraph, validateGraph, type FlowIssue, type FlowNodeData } from "../lib/flow-schema";
@@ -305,6 +306,8 @@ function FlowEditorInner({
   }, [dirty]);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [panel, setPanel] = useState(true);
+  // Below md the palette is a Sheet rather than a docked column.
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [funnelOpen, setFunnelOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const stats = metrics?.stats;
@@ -740,33 +743,36 @@ function FlowEditorInner({
   );
 
   return (
-    <div className="flex h-full">
-      {/* side panel — how a step gets added */}
+    <div className="relative flex h-full">
+      {/*
+        The palette. From md up it is a docked column; below md it is a Sheet
+        opened from the toolbar, because `hidden md:block` alone left a phone
+        with no way at all to add a block.
+      */}
       {panel && (
         <aside className="hidden w-64 shrink-0 overflow-y-auto border-r bg-card md:block">
           <div className="border-b px-4 py-3">
             <h2 className="text-sm font-semibold">Adicionar bloco</h2>
             <p className="mt-0.5 text-xs text-neutral-500">Clique ou arraste para o canvas</p>
           </div>
-          <div className="space-y-1 p-2">
-            {BLOCKS.map((b) => (
-              <button
-                key={b.kind}
-                draggable
-                onDragStart={(e) => {
-                  e.dataTransfer.setData(DRAG_TYPE, b.kind);
-                  e.dataTransfer.effectAllowed = "move";
-                }}
-                onClick={() => addNode(b.kind)}
-                className="w-full cursor-grab rounded-lg border border-transparent px-3 py-2 text-left transition hover:border-border hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
-              >
-                <div className={`text-[13px] font-semibold ${b.tone}`}>{b.label}</div>
-                <div className="text-[11px] leading-tight text-neutral-500">{b.hint}</div>
-              </button>
-            ))}
-          </div>
+          <BlockPalette onAdd={addNode} />
         </aside>
       )}
+
+      <Sheet open={paletteOpen} onOpenChange={setPaletteOpen}>
+        <SheetContent side="left" className="w-[280px] overflow-y-auto p-0 sm:max-w-[280px]">
+          <div className="border-b px-4 py-3">
+            <SheetTitle className="text-sm font-semibold">Adicionar bloco</SheetTitle>
+            <p className="mt-0.5 text-xs text-neutral-500">Toque para adicionar ao canvas</p>
+          </div>
+          <BlockPalette
+            onAdd={(kind) => {
+              addNode(kind);
+              setPaletteOpen(false);
+            }}
+          />
+        </SheetContent>
+      </Sheet>
 
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex items-center gap-2 border-b bg-card px-3 py-2">
@@ -778,6 +784,15 @@ function FlowEditorInner({
             className="hidden md:inline-flex"
           >
             {panel ? <PanelLeftClose aria-hidden /> : <PanelLeftOpen aria-hidden />}
+            Blocos
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPaletteOpen(true)}
+            className="md:hidden"
+          >
+            <PanelLeftOpen aria-hidden />
             Blocos
           </Button>
           <Button
@@ -1008,6 +1023,29 @@ function FlowEditorInner({
         pending={discarding}
         onConfirm={discard}
       />
+    </div>
+  );
+}
+
+/** The list of blocks, shared by the docked palette and the mobile Sheet. */
+function BlockPalette({ onAdd }: { onAdd: (kind: string) => void }) {
+  return (
+    <div className="space-y-1 p-2">
+      {BLOCKS.map((b) => (
+        <button
+          key={b.kind}
+          draggable
+          onDragStart={(e) => {
+            e.dataTransfer.setData(DRAG_TYPE, b.kind);
+            e.dataTransfer.effectAllowed = "move";
+          }}
+          onClick={() => onAdd(b.kind)}
+          className="w-full cursor-grab rounded-lg border border-transparent px-3 py-2 text-left transition hover:border-border hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+        >
+          <div className={`text-[13px] font-semibold ${b.tone}`}>{b.label}</div>
+          <div className="text-[11px] leading-tight text-neutral-500">{b.hint}</div>
+        </button>
+      ))}
     </div>
   );
 }

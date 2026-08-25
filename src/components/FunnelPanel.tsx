@@ -30,7 +30,9 @@ export function FunnelPanel({
   return (
     <aside
       aria-label="Funil do fluxo"
-      className="flex w-72 shrink-0 flex-col overflow-y-auto border-l bg-card"
+      // Overlays the canvas below md, docks from md up — same rule as the
+      // properties panel, so the two never squeeze the canvas on a phone.
+      className="absolute inset-y-0 right-0 z-20 flex w-full max-w-[min(18rem,100vw)] flex-col overflow-y-auto border-l bg-card shadow-xl md:static md:z-auto md:w-72 md:shrink-0 md:shadow-none"
       aria-busy={loading}
     >
       <div className="flex items-center gap-2 border-b px-4 py-3">

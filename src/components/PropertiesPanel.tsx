@@ -68,7 +68,9 @@ export function PropertiesPanel({
   const data = node.data as FlowNodeData;
 
   return (
-    <aside className="flex w-80 shrink-0 flex-col overflow-y-auto border-l bg-card">
+    // Below md this overlays the canvas instead of taking a fixed 320px out
+    // of it: on a phone a docked panel left the canvas too narrow to use.
+    <aside className="absolute inset-y-0 right-0 z-20 flex w-full max-w-[min(20rem,100vw)] flex-col overflow-y-auto border-l bg-card shadow-xl md:static md:z-auto md:w-80 md:shrink-0 md:shadow-none">
       <div className="flex items-center gap-2 border-b px-4 py-3">
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-sm font-semibold">{titleOf(data)}</h2>
