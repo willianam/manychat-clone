@@ -10,6 +10,19 @@ import {
   type FlowNodeData,
 } from "../lib/flow-schema";
 import { newButton, retypeButton, uid } from "../lib/flow-edit";
+import { ArrowDown, ArrowUp, Copy, Plus, Trash2, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import {
+  Select as UiSelect,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea as UiTextarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/ui/cn";
 
 /**
  * Properties panel.
@@ -43,27 +56,20 @@ export function PropertiesPanel({
   const data = node.data as FlowNodeData;
 
   return (
-    <aside className="flex w-80 shrink-0 flex-col overflow-y-auto border-l bg-white">
+    <aside className="flex w-80 shrink-0 flex-col overflow-y-auto border-l bg-card">
       <div className="flex items-center gap-2 border-b px-4 py-3">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <h2 className="truncate text-sm font-semibold">{titleOf(data)}</h2>
           <p className="truncate font-mono text-[10px] text-neutral-400">{node.id}</p>
         </div>
         {onDuplicate && (
-          <button
-            onClick={onDuplicate}
-            className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
-          >
-            Duplicar bloco
-          </button>
+          <Button variant="outline" size="icon" onClick={onDuplicate} aria-label="Duplicar bloco">
+            <Copy aria-hidden />
+          </Button>
         )}
-        <button
-          onClick={onClose}
-          aria-label="Fechar painel"
-          className="ml-auto rounded px-1.5 py-0.5 text-neutral-400 hover:bg-neutral-100"
-        >
-          ✕
-        </button>
+        <Button variant="ghost" size="icon" onClick={onClose} aria-label="Fechar painel">
+          <X aria-hidden />
+        </Button>
       </div>
 
       <div className="flex-1 space-y-4 p-4">
@@ -71,12 +77,15 @@ export function PropertiesPanel({
       </div>
 
       <div className="border-t p-4">
-        <button
+        <Button
+          variant="outline"
+          size="sm"
           onClick={onDelete}
-          className="w-full rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-600 transition hover:bg-rose-50"
+          className="w-full text-destructive hover:bg-rose-50 hover:text-destructive"
         >
+          <Trash2 aria-hidden />
           Excluir este bloco
-        </button>
+        </Button>
         <p className="mt-1.5 text-center text-[10px] text-neutral-400">
           As ligações deste bloco também são removidas.
         </p>
@@ -164,8 +173,7 @@ function Field({
   );
 }
 
-const INPUT =
-  "mt-1 w-full rounded-lg border px-2.5 py-1.5 text-[13px] outline-none focus:border-indigo-400";
+const INPUT = "mt-1 h-8 text-[13px]";
 
 function TextInput({
   value,
@@ -182,12 +190,12 @@ function TextInput({
 }) {
   return (
     <>
-      <input
+      <Input
         value={value}
         maxLength={max}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
-        className={`${INPUT} ${mono ? "font-mono" : ""}`}
+        className={cn(INPUT, mono && "font-mono")}
       />
       {max !== undefined && <Counter len={value.length} max={max} />}
     </>
@@ -207,12 +215,12 @@ function TextArea({
 }) {
   return (
     <>
-      <textarea
+      <UiTextarea
         value={value}
         rows={rows}
         maxLength={max}
         onChange={(e) => onChange(e.target.value)}
-        className={`${INPUT} resize-y leading-snug`}
+        className="mt-1 min-h-0 resize-y text-[13px] leading-snug"
       />
       <Counter len={value.length} max={max} />
     </>
@@ -243,13 +251,18 @@ function Select<T extends string>({
   options: Array<{ value: T; label: string }>;
 }) {
   return (
-    <select value={value} onChange={(e) => onChange(e.target.value as T)} className={INPUT}>
-      {options.map((o) => (
-        <option key={o.value} value={o.value}>
-          {o.label}
-        </option>
-      ))}
-    </select>
+    <UiSelect value={value} onValueChange={(v) => onChange(v as T)}>
+      <SelectTrigger className={INPUT}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((o) => (
+          <SelectItem key={o.value} value={o.value}>
+            {o.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </UiSelect>
   );
 }
 
@@ -267,13 +280,16 @@ function AddButton({
 }) {
   return (
     <div>
-      <button
+      <Button
+        variant="outline"
+        size="sm"
         onClick={onClick}
         disabled={disabled}
-        className="w-full rounded-lg border border-dashed px-3 py-1.5 text-[12px] font-medium text-neutral-600 transition hover:border-indigo-300 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-40"
+        className="w-full border-dashed text-[12px] text-neutral-600 hover:border-indigo-300 hover:text-primary"
       >
-        + {label}
-      </button>
+        <Plus aria-hidden />
+        {label}
+      </Button>
       {disabled && atLimit && (
         <p className="mt-1 text-center text-[10px] text-amber-600">{atLimit}</p>
       )}
@@ -299,25 +315,40 @@ function RowTools({
   canRemove: boolean;
   removeHint?: string;
 }) {
-  const btn =
-    "rounded px-1.5 py-0.5 text-[11px] text-neutral-400 transition hover:bg-neutral-100 disabled:opacity-25";
+  const btn = "h-6 w-6 text-neutral-400 [&_svg]:size-3";
   return (
     <div className="ml-auto flex items-center">
-      <button onClick={onUp} disabled={!canUp} className={btn} aria-label="Mover para cima">
-        ↑
-      </button>
-      <button onClick={onDown} disabled={!canDown} className={btn} aria-label="Mover para baixo">
-        ↓
-      </button>
-      <button
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={onUp}
+        disabled={!canUp}
+        className={btn}
+        aria-label="Mover para cima"
+      >
+        <ArrowUp aria-hidden />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={onDown}
+        disabled={!canDown}
+        className={btn}
+        aria-label="Mover para baixo"
+      >
+        <ArrowDown aria-hidden />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
         onClick={onRemove}
         disabled={!canRemove}
         title={!canRemove ? removeHint : undefined}
         className={`${btn} hover:text-rose-600`}
         aria-label="Remover"
       >
-        ✕
-      </button>
+        <X aria-hidden />
+      </Button>
     </div>
   );
 }
@@ -746,13 +777,15 @@ function UploadField({
             #{attachmentId.slice(-6)}
           </span>
         </span>
-        <button
+        <Button
           type="button"
+          variant="link"
+          size="sm"
           onClick={onClear}
-          className="text-[11px] font-medium text-emerald-700 underline"
+          className="h-auto p-0 text-[11px] text-emerald-700"
         >
           Trocar
-        </button>
+        </Button>
       </div>
     );
   }
@@ -760,14 +793,14 @@ function UploadField({
   return (
     <div>
       <label
-        className={`flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-neutral-300 px-3 py-3 text-[12px] font-medium ${
-          busy ? "text-neutral-400" : "text-indigo-600 hover:bg-indigo-50"
+        className={`flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-neutral-300 px-3 py-3 text-[12px] font-medium focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 ${
+          busy ? "text-neutral-400" : "text-primary hover:bg-indigo-50"
         }`}
       >
         {busy ? "Enviando…" : "Escolher arquivo do computador"}
         <input
           type="file"
-          className="hidden"
+          className="sr-only"
           disabled={busy}
           onChange={async (e) => {
             const file = e.target.files?.[0];
@@ -995,7 +1028,7 @@ function DelayProps({
   return (
     <>
       <Field label="Esperar (segundos)" hint={`Entre 1 segundo e 30 dias (${MAX}s).`}>
-        <input
+        <Input
           type="number"
           min={1}
           max={MAX}
@@ -1013,8 +1046,10 @@ function DelayProps({
         {DELAY_PRESETS.map((p) => (
           <button
             key={p.seconds}
+            type="button"
+            aria-pressed={data.seconds === p.seconds}
             onClick={() => onChange({ ...data, seconds: p.seconds })}
-            className={`rounded-full border px-2.5 py-0.5 text-[11px] transition ${
+            className={`rounded-full border px-2.5 py-0.5 text-[11px] transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
               data.seconds === p.seconds
                 ? "border-rose-300 bg-rose-50 text-rose-700"
                 : "text-neutral-500 hover:bg-neutral-50"
@@ -1026,13 +1061,12 @@ function DelayProps({
       </div>
 
       <label className="flex items-center gap-2 text-[12px]">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={!!data.window}
-          onChange={(e) =>
+          onCheckedChange={(checked) =>
             onChange({
               ...data,
-              window: e.target.checked ? { fromHour: 8, toHour: 22 } : undefined,
+              window: checked === true ? { fromHour: 8, toHour: 22 } : undefined,
             })
           }
         />
@@ -1073,13 +1107,18 @@ function DelayProps({
 
 function HourSelect({ value, onChange }: { value: number; onChange: (h: number) => void }) {
   return (
-    <select value={value} onChange={(e) => onChange(Number(e.target.value))} className={INPUT}>
-      {Array.from({ length: 24 }, (_, h) => (
-        <option key={h} value={h}>
-          {String(h).padStart(2, "0")}:00
-        </option>
-      ))}
-    </select>
+    <UiSelect value={String(value)} onValueChange={(v) => onChange(Number(v))}>
+      <SelectTrigger className={INPUT}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {Array.from({ length: 24 }, (_, h) => (
+          <SelectItem key={h} value={String(h)}>
+            {String(h).padStart(2, "0")}:00
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </UiSelect>
   );
 }
 
@@ -1248,11 +1287,12 @@ function RandomProps({
       {w.map((v, i) => (
         <div key={i} className="flex items-center gap-2">
           <span className="w-16 text-[11px] text-neutral-500">Saída {i + 1}</span>
-          <input
+          <Input
             type="number"
             min={1}
             max={100}
             value={v}
+            aria-label={`Peso da saída ${i + 1}`}
             onChange={(e) => {
               const n = Math.round(Number(e.target.value));
               if (!Number.isFinite(n)) return;
@@ -1273,26 +1313,32 @@ function RandomProps({
       </div>
 
       <div className="flex gap-2">
-        <button
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => onChange({ ...data, weights: balance(w.length) })}
-          className="flex-1 rounded-lg border px-2 py-1 text-[11px]"
+          className="flex-1 text-[11px]"
         >
           Equilibrar
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => onChange({ ...data, weights: balance(w.length + 1) })}
           disabled={w.length >= 4}
-          className="flex-1 rounded-lg border px-2 py-1 text-[11px] disabled:opacity-40"
+          className="flex-1 text-[11px]"
         >
           + Saída
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => onChange({ ...data, weights: balance(w.length - 1) })}
           disabled={w.length <= 2}
-          className="flex-1 rounded-lg border px-2 py-1 text-[11px] disabled:opacity-40"
+          className="flex-1 text-[11px]"
         >
           − Saída
-        </button>
+        </Button>
       </div>
     </>
   );

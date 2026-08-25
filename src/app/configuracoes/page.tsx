@@ -9,6 +9,13 @@ import {
 import { loadProfile, saveIceBreakers, saveMenu } from "./actions";
 import { tokenStatus } from "../../server/token-refresh";
 import { MenuRow } from "./MenuRow";
+import { FlowSelect } from "./FlowSelect";
+import { Callout } from "@/components/ui/callout";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/ui/page-header";
+import { SubmitButton } from "@/components/ui/submit-button";
 
 export const dynamic = "force-dynamic";
 
@@ -27,109 +34,107 @@ export default async function ConfiguracoesPage() {
   const liveFlows = flows.filter((f) => f.enabled);
 
   return (
-    <main className="mx-auto max-w-3xl px-6 py-8">
-      <div>
-        <h1 className="text-2xl font-semibold">Configurações</h1>
-        <p className="mt-0.5 text-sm text-neutral-500">
-          Perguntas iniciais e menu fixo. Publicado direto no seu Instagram.
-        </p>
-      </div>
+    <main className="mx-auto w-full max-w-3xl px-6 py-8">
+      <PageHeader
+        title="Configurações"
+        description="Perguntas iniciais e menu fixo. Publicado direto no seu Instagram."
+      />
 
       {token.needsAttention && (
-        <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <Callout tone="warning" className="mt-4">
           {token.lastError
             ? `A renovação automática do token do Instagram falhou: ${token.lastError}.`
             : `O token do Instagram expira em ${token.daysLeft} dia(s).`}{" "}
           Gere um token novo no painel da Meta e atualize IG_ACCESS_TOKEN; o valor novo passa a
           valer em até um minuto.
-        </p>
+        </Callout>
       )}
 
       {profile.syncError && (
-        <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+        <Callout tone="destructive" className="mt-4">
           Última publicação falhou: {profile.syncError}
-        </p>
+        </Callout>
       )}
       {profile.syncedAt && !profile.syncError && (
-        <p className="mt-4 text-xs text-neutral-500">
+        <p className="mt-4 text-xs text-muted-foreground">
           Publicado em {profile.syncedAt.toLocaleString("pt-BR")}.
         </p>
       )}
 
       {liveFlows.length === 0 && (
-        <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          Nenhum fluxo ativo. Ative um fluxo antes de publicar — o Instagram só aceita perguntas e
+        <Callout tone="warning" className="mt-4">
+          Nenhum fluxo ativo. Ative um fluxo antes de publicar: o Instagram só aceita perguntas e
           itens que abrem algo.
-        </p>
+        </Callout>
       )}
 
       {/* ---------------- Ice breakers ---------------- */}
-      <section className="mt-8 rounded-xl border bg-white p-5">
-        <h2 className="font-medium">Perguntas iniciais</h2>
-        <p className="mt-0.5 text-sm text-neutral-500">
-          Até {PROFILE_LIMITS.iceBreakers} perguntas que aparecem antes da primeira mensagem. Deixe
-          em branco para remover.
-        </p>
+      <Card className="mt-8">
+        <CardHeader>
+          <CardTitle className="text-base">Perguntas iniciais</CardTitle>
+          <CardDescription>
+            Até {PROFILE_LIMITS.iceBreakers} perguntas que aparecem antes da primeira mensagem.
+            Deixe em branco para remover.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form action={saveIceBreakers} className="space-y-3">
+            {Array.from({ length: PROFILE_LIMITS.iceBreakers }).map((_, i) => {
+              const row = iceBreakers[i];
+              return (
+                <div key={i} className="flex flex-wrap items-center gap-2">
+                  <span className="w-4 text-sm tabular-nums text-neutral-400" aria-hidden>
+                    {i + 1}
+                  </span>
+                  <Label htmlFor={`ice-q-${i}`} className="sr-only">
+                    Pergunta {i + 1}
+                  </Label>
+                  <Input
+                    id={`ice-q-${i}`}
+                    name="question"
+                    defaultValue={row?.question ?? ""}
+                    maxLength={PROFILE_LIMITS.iceBreakerQuestion}
+                    placeholder="Como funciona?"
+                    className="min-w-0 flex-1"
+                  />
+                  <Label htmlFor={`ice-flow-${i}`} className="sr-only">
+                    Fluxo da pergunta {i + 1}
+                  </Label>
+                  <FlowSelect
+                    id={`ice-flow-${i}`}
+                    name="iceFlowId"
+                    defaultValue={row?.flowId ?? ""}
+                    flows={liveFlows}
+                    className="w-52"
+                  />
+                </div>
+              );
+            })}
 
-        <form action={saveIceBreakers} className="mt-4 space-y-3">
-          {Array.from({ length: PROFILE_LIMITS.iceBreakers }).map((_, i) => {
-            const row = iceBreakers[i];
-            return (
-              <div key={i} className="flex flex-wrap items-center gap-2">
-                <span className="w-4 text-sm text-neutral-400 tabular-nums">{i + 1}</span>
-                <input
-                  name="question"
-                  defaultValue={row?.question ?? ""}
-                  maxLength={PROFILE_LIMITS.iceBreakerQuestion}
-                  placeholder="Como funciona?"
-                  className="min-w-0 flex-1 rounded-lg border px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
-                />
-                <select
-                  name="iceFlowId"
-                  defaultValue={row?.flowId ?? ""}
-                  className="w-52 rounded-lg border bg-white px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
-                >
-                  <option value="">— sem fluxo —</option>
-                  {liveFlows.map((f) => (
-                    <option key={f.id} value={f.id}>
-                      {f.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            );
-          })}
-
-          <button
-            type="submit"
-            className="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white transition hover:bg-indigo-700"
-          >
-            Publicar perguntas
-          </button>
-        </form>
-      </section>
+            <SubmitButton pendingLabel="Publicando…">Publicar perguntas</SubmitButton>
+          </form>
+        </CardContent>
+      </Card>
 
       {/* ---------------- Persistent menu ---------------- */}
-      <section className="mt-6 rounded-xl border bg-white p-5">
-        <h2 className="font-medium">Menu fixo</h2>
-        <p className="mt-0.5 text-sm text-neutral-500">
-          Até {PROFILE_LIMITS.menuItems} itens sempre visíveis na conversa. Cada item abre um fluxo
-          ou um link externo.
-        </p>
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle className="text-base">Menu fixo</CardTitle>
+          <CardDescription>
+            Até {PROFILE_LIMITS.menuItems} itens sempre visíveis na conversa. Cada item abre um
+            fluxo ou um link externo.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form action={saveMenu} className="space-y-3">
+            {Array.from({ length: PROFILE_LIMITS.menuItems }).map((_, i) => (
+              <MenuRow key={i} index={i} item={menuItems[i]} flows={liveFlows} />
+            ))}
 
-        <form action={saveMenu} className="mt-4 space-y-3">
-          {Array.from({ length: PROFILE_LIMITS.menuItems }).map((_, i) => (
-            <MenuRow key={i} index={i} item={menuItems[i]} flows={liveFlows} />
-          ))}
-
-          <button
-            type="submit"
-            className="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white transition hover:bg-indigo-700"
-          >
-            Publicar menu
-          </button>
-        </form>
-      </section>
+            <SubmitButton pendingLabel="Publicando…">Publicar menu</SubmitButton>
+          </form>
+        </CardContent>
+      </Card>
     </main>
   );
 }

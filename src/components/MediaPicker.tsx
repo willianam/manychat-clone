@@ -1,9 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Asterisk, HelpCircle, Loader2, RefreshCw } from "lucide-react";
 import type { IgMedia } from "../lib/ig-media";
 import { mediaLabel } from "../lib/ig-media";
 import { loadMedia } from "../app/gatilhos/actions";
+import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
+import { cn } from "@/lib/ui/cn";
 
 /**
  * Choose which publication a comment trigger watches.
@@ -21,6 +25,10 @@ import { loadMedia } from "../app/gatilhos/actions";
 
 /** Module-scoped so remounting the picker does not re-hit the server action. */
 let sessionCache: IgMedia[] | null = null;
+
+const OPTION =
+  "flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
+const ACTIVE = "bg-emerald-50 ring-1 ring-emerald-300";
 
 export function MediaPicker({
   value,
@@ -74,53 +82,60 @@ export function MediaPicker({
   return (
     <div>
       <div className="flex items-center justify-between">
-        <label className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+        <p className="text-sm font-medium leading-none" id="media-picker-label">
           Publicação
-        </label>
-        <button
+        </p>
+        <Button
           type="button"
+          variant="ghost"
+          size="sm"
           onClick={refresh}
           disabled={loading}
-          className="text-[11px] text-indigo-600 hover:underline disabled:opacity-40"
+          className="h-7 text-xs text-primary"
         >
+          {loading ? <Loader2 className="animate-spin" aria-hidden /> : <RefreshCw aria-hidden />}
           {loading ? "Carregando…" : "Atualizar"}
-        </button>
+        </Button>
       </div>
 
       {error && (
-        <p className="mt-1 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-800">
+        <Callout tone="warning" className="mt-1 px-2 py-1.5 text-[11px]">
           {error} Você ainda pode usar &quot;qualquer publicação&quot;.
-        </p>
+        </Callout>
       )}
 
-      <div className="mt-1.5 max-h-56 space-y-1 overflow-y-auto rounded-lg border p-1">
+      <div
+        role="radiogroup"
+        aria-labelledby="media-picker-label"
+        className="mt-1.5 max-h-56 space-y-1 overflow-y-auto rounded-lg border p-1"
+      >
         <button
           type="button"
+          role="radio"
+          aria-checked={value === null}
           onClick={() => onChange(null)}
-          className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition ${
-            value === null ? "bg-emerald-50 ring-1 ring-emerald-300" : "hover:bg-neutral-50"
-          }`}
+          className={cn(OPTION, value === null ? ACTIVE : "hover:bg-accent")}
         >
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-neutral-100 text-base">
-            ∗
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-muted text-muted-foreground">
+            <Asterisk className="h-4 w-4" aria-hidden />
           </span>
           <span className="min-w-0">
             <span className="block text-[12px] font-medium">Qualquer publicação</span>
-            <span className="block text-[11px] text-neutral-500">
+            <span className="block text-[11px] text-muted-foreground">
               Vale para todos os posts e Reels
             </span>
           </span>
         </button>
 
         {value !== null && !known && !loading && (
-          <div className="flex items-center gap-2 rounded-md bg-emerald-50 px-2 py-2 ring-1 ring-emerald-300">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-neutral-200 text-[10px] text-neutral-500">
-              ?
+          <div className={cn(OPTION, ACTIVE)}>
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-neutral-200 text-muted-foreground">
+              <HelpCircle className="h-4 w-4" aria-hidden />
             </span>
             <span className="min-w-0">
               <span className="block text-[12px] font-medium">Publicação selecionada</span>
-              <span className="block truncate text-[11px] text-neutral-500">
-                id {value} — não está na lista atual
+              <span className="block truncate text-[11px] text-muted-foreground">
+                id {value}, não está na lista atual
               </span>
             </span>
           </div>
@@ -130,15 +145,15 @@ export function MediaPicker({
           <button
             key={m.id}
             type="button"
+            role="radio"
+            aria-checked={value === m.id}
             onClick={() => onChange(m.id)}
-            className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left transition ${
-              value === m.id ? "bg-emerald-50 ring-1 ring-emerald-300" : "hover:bg-neutral-50"
-            }`}
+            className={cn(OPTION, value === m.id ? ACTIVE : "hover:bg-accent")}
           >
             <Thumb media={m} />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[12px] font-medium">{mediaLabel(m)}</span>
-              <span className="block text-[11px] text-neutral-500">
+              <span className="block text-[11px] text-muted-foreground">
                 {typeLabel(m)}
                 {m.timestamp ? ` · ${shortDate(m.timestamp)}` : ""}
               </span>
@@ -147,7 +162,7 @@ export function MediaPicker({
         ))}
 
         {!loading && media.length === 0 && !error && (
-          <p className="px-2 py-3 text-center text-[11px] text-neutral-500">
+          <p className="px-2 py-3 text-center text-[11px] text-muted-foreground">
             Nenhuma publicação encontrada na conta.
           </p>
         )}
@@ -159,7 +174,7 @@ export function MediaPicker({
 function Thumb({ media }: { media: IgMedia }) {
   if (!media.thumbnailUrl) {
     return (
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-neutral-100 text-[9px] text-neutral-400">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-muted text-[9px] text-muted-foreground">
         sem capa
       </span>
     );

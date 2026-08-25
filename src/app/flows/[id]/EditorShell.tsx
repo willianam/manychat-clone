@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { FlowEditor } from "../../../components/FlowEditor";
 import { TriggerDialog } from "../../../components/TriggerDialog";
 import type { FlowGraph } from "../../../lib/flow-schema";
@@ -46,18 +47,25 @@ export function EditorShell({
         onAddTrigger={() => setDialog({ mode: "new" })}
         onEditTrigger={(trigger) => setDialog({ mode: "edit", trigger })}
         onSave={async (graph) => {
-          await saveFlow(flowId, graph);
+          try {
+            await saveFlow(flowId, graph);
+            toast.success("Fluxo salvo.");
+          } catch (err) {
+            toast.error("Não foi possível salvar.", {
+              description: err instanceof Error ? err.message : undefined,
+            });
+            throw err;
+          }
         }}
       />
 
-      {dialog.mode !== "closed" && (
-        <TriggerDialog
-          flowId={flowId}
-          existing={dialog.mode === "edit" ? dialog.trigger : undefined}
-          onClose={() => setDialog({ mode: "closed" })}
-          onSaved={() => router.refresh()}
-        />
-      )}
+      <TriggerDialog
+        open={dialog.mode !== "closed"}
+        flowId={flowId}
+        existing={dialog.mode === "edit" ? dialog.trigger : undefined}
+        onClose={() => setDialog({ mode: "closed" })}
+        onSaved={() => router.refresh()}
+      />
     </>
   );
 }

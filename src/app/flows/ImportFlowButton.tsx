@@ -1,8 +1,11 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useRef, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { Loader2, Upload } from "lucide-react";
+import { toast } from "sonner";
 import { importFlow } from "./actions";
+import { Button } from "@/components/ui/button";
 
 /**
  * "Importar" — reads a .json off disk and hands the text to the server action.
@@ -14,61 +17,54 @@ import { importFlow } from "./actions";
  */
 export function ImportFlowButton() {
   const input = useRef<HTMLInputElement>(null);
-  const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const router = useRouter();
 
   const onPick = async (file: File | undefined) => {
     if (!file) return;
-    setError(null);
 
     const text = await file.text();
     start(async () => {
-      const res = await importFlow(text);
-      if (res.ok) {
-        router.push(`/flows/${res.id}`);
-      } else {
-        setError(res.error);
+      try {
+        const res = await importFlow(text);
+        if (res.ok) {
+          toast.success("Fluxo importado.");
+          router.push(`/flows/${res.id}`);
+        } else {
+          toast.error("Arquivo recusado", { description: res.error });
+        }
+      } catch (err) {
+        toast.error("Não foi possível importar.", {
+          description: err instanceof Error ? err.message : undefined,
+        });
       }
     });
   };
 
   return (
-    <div className="relative">
+    <>
       <input
         ref={input}
         type="file"
         accept="application/json,.json"
         className="hidden"
+        aria-hidden
+        tabIndex={-1}
         onChange={(e) => {
           void onPick(e.target.files?.[0]);
           // Reset so picking the same file twice still fires a change event.
           e.target.value = "";
         }}
       />
-      <button
+      <Button
         type="button"
+        variant="outline"
         disabled={pending}
         onClick={() => input.current?.click()}
-        className="whitespace-nowrap rounded-lg border px-4 py-1.5 text-sm font-medium transition hover:bg-neutral-50 disabled:opacity-50"
       >
+        {pending ? <Loader2 className="animate-spin" aria-hidden /> : <Upload aria-hidden />}
         {pending ? "Importando…" : "Importar"}
-      </button>
-
-      {error && (
-        <div
-          role="alert"
-          className="absolute right-0 top-full z-10 mt-1 w-72 rounded-lg border border-rose-200 bg-rose-50 p-2.5 text-xs text-rose-700 shadow-sm"
-        >
-          {error}
-          <button
-            onClick={() => setError(null)}
-            className="mt-1.5 block text-[11px] font-medium underline"
-          >
-            fechar
-          </button>
-        </div>
-      )}
-    </div>
+      </Button>
+    </>
   );
 }

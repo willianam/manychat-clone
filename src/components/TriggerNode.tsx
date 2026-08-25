@@ -1,6 +1,7 @@
 "use client";
 
 import { Handle, Position, type NodeProps } from "reactflow";
+import { Plus } from "lucide-react";
 import { describeTrigger } from "../lib/trigger-rules";
 import type { TriggerView } from "../app/gatilhos/actions";
 
@@ -58,7 +59,7 @@ export function TriggerNode({ data }: NodeProps<TriggerNodeData>) {
             key={t.id}
             type="button"
             onClick={() => onEdit(t)}
-            className="nodrag w-full rounded-lg border border-neutral-200 px-2 py-1.5 text-left transition hover:border-emerald-300 hover:bg-emerald-50"
+            className="nodrag w-full rounded-lg border border-neutral-200 px-2 py-1.5 text-left transition hover:border-emerald-300 hover:bg-emerald-50 focus-visible:ring-2 focus-visible:ring-ring"
           >
             <div className="flex items-center gap-1.5">
               <span
@@ -80,9 +81,10 @@ export function TriggerNode({ data }: NodeProps<TriggerNodeData>) {
         <button
           type="button"
           onClick={onAdd}
-          className="nodrag w-full rounded-lg border border-dashed border-emerald-300 px-2 py-1.5 text-[12px] font-medium text-emerald-700 transition hover:bg-emerald-50"
+          className="nodrag flex w-full items-center justify-center gap-1 rounded-lg border border-dashed border-emerald-300 px-2 py-1.5 text-[12px] font-medium text-emerald-700 transition hover:bg-emerald-50 focus-visible:ring-2 focus-visible:ring-ring"
         >
-          + Novo Gatilho
+          <Plus className="h-3 w-3" aria-hidden />
+          Novo gatilho
         </button>
       </div>
 

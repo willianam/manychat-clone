@@ -1,7 +1,9 @@
 "use client";
 
+import { Download } from "lucide-react";
 import type { FlowGraph } from "../../../lib/flow-schema";
 import { exportFilename, serializeFlow } from "../../../lib/flow-io";
+import { Button } from "@/components/ui/button";
 
 /**
  * "Exportar" — downloads the flow as JSON.
@@ -27,13 +29,15 @@ export function ExportFlowButton({ name, graph }: { name: string; graph: FlowGra
   };
 
   return (
-    <button
+    <Button
       type="button"
+      variant="outline"
+      size="sm"
       onClick={download}
       title="Baixa o fluxo salvo como arquivo .json"
-      className="rounded-lg border px-3 py-1 text-xs font-medium transition hover:bg-neutral-50"
     >
-      Exportar
-    </button>
+      <Download aria-hidden />
+      <span className="hidden sm:inline">Exportar</span>
+    </Button>
   );
 }

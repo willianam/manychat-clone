@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import {
   KIND_HINT,
   KIND_LABEL,
@@ -18,6 +20,27 @@ import {
   updateTrigger,
   type TriggerView,
 } from "../app/gatilhos/actions";
+import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { cn } from "@/lib/ui/cn";
 
 /**
  * Create or edit one trigger.
@@ -42,13 +65,8 @@ const OFFERED: TriggerKindName[] = [
   "DEFAULT",
 ];
 
-export function TriggerDialog({
-  flowId,
-  flows,
-  existing,
-  onClose,
-  onSaved,
-}: {
+type Props = {
+  open: boolean;
   /** Flow the new trigger belongs to. Ignored when `flows` is given. */
   flowId?: string;
   /** When present, the dialog also lets the trigger be re-pointed. */
@@ -56,7 +74,20 @@ export function TriggerDialog({
   existing?: TriggerView;
   onClose: () => void;
   onSaved: () => void;
-}) {
+};
+
+export function TriggerDialog({ open, onClose, ...rest }: Props) {
+  return (
+    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+        {/* Remounted per opening so the form starts from `existing`, not the last edit. */}
+        {open && <TriggerForm key={rest.existing?.id ?? "new"} onClose={onClose} {...rest} />}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function TriggerForm({ flowId, flows, existing, onClose, onSaved }: Omit<Props, "open">) {
   const [kind, setKind] = useState<TriggerKindName>(existing?.kind ?? "COMMENT");
   const [pattern, setPattern] = useState(existing?.pattern ?? "");
   const [match, setMatch] = useState<MatchModeName>(existing?.match ?? "CONTAINS");
@@ -87,12 +118,16 @@ export function TriggerDialog({
 
       if (!result.ok) {
         setError(result.error);
+        toast.error(result.error);
         return;
       }
+      toast.success(existing ? "Gatilho salvo." : "Gatilho criado.");
       onSaved();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Não foi possível salvar.");
+      const message = err instanceof Error ? err.message : "Não foi possível salvar.";
+      setError(message);
+      toast.error(message);
     } finally {
       setSaving(false);
     }
@@ -106,164 +141,153 @@ export function TriggerDialog({
       const result = await deleteTrigger(existing.id);
       if (!result.ok) {
         setError(result.error);
+        toast.error(result.error);
         return;
       }
+      toast.success("Gatilho excluído.");
       onSaved();
       onClose();
     } finally {
       setSaving(false);
+      setConfirmingDelete(false);
     }
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 p-4"
-      onClick={onClose}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border bg-white shadow-xl"
-      >
-        <div className="flex items-center justify-between border-b px-4 py-3">
-          <h2 className="text-sm font-semibold">{existing ? "Editar gatilho" : "Novo gatilho"}</h2>
-          <button
-            onClick={onClose}
-            className="rounded px-2 text-lg leading-none text-neutral-400 hover:text-neutral-700"
-            aria-label="Fechar"
-          >
-            ×
-          </button>
-        </div>
+    <>
+      <DialogHeader>
+        <DialogTitle>{existing ? "Editar gatilho" : "Novo gatilho"}</DialogTitle>
+        <DialogDescription>
+          Escolha o que acontece no Instagram para o fluxo começar.
+        </DialogDescription>
+      </DialogHeader>
 
-        <div className="space-y-4 p-4">
-          <div>
-            <label className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
-              Quando isto acontecer
-            </label>
-            <div className="mt-1.5 space-y-1">
-              {OFFERED.map((k) => (
+      <div className="space-y-4">
+        <div>
+          <p className="text-sm font-medium leading-none" id="trigger-kind-label">
+            Quando isto acontecer
+          </p>
+          <div className="mt-2 space-y-1" role="radiogroup" aria-labelledby="trigger-kind-label">
+            {OFFERED.map((k) => {
+              const active = kind === k;
+              return (
                 <button
                   key={k}
                   type="button"
+                  role="radio"
+                  aria-checked={active}
                   onClick={() => setKind(k)}
-                  className={`w-full rounded-lg border px-3 py-2 text-left transition ${
-                    kind === k
-                      ? "border-emerald-400 bg-emerald-50"
-                      : "border-neutral-200 hover:bg-neutral-50"
-                  }`}
+                  className={cn(
+                    "w-full rounded-lg border px-3 py-2 text-left transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                    active ? "border-emerald-400 bg-emerald-50" : "border-border hover:bg-accent",
+                  )}
                 >
                   <div className="text-[12px] font-semibold">{KIND_LABEL[k]}</div>
-                  <div className="text-[11px] leading-tight text-neutral-500">{KIND_HINT[k]}</div>
+                  <div className="text-[11px] leading-tight text-muted-foreground">
+                    {KIND_HINT[k]}
+                  </div>
                 </button>
-              ))}
-            </div>
+              );
+            })}
           </div>
+        </div>
 
-          {allowsMedia(kind) && <MediaPicker value={mediaId} onChange={setMediaId} />}
+        {allowsMedia(kind) && <MediaPicker value={mediaId} onChange={setMediaId} />}
 
-          {allowsPattern(kind) && (
-            <div>
-              <label className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
-                {needsPattern ? "Palavra que dispara" : "Palavra que dispara (opcional)"}
-              </label>
-              <div className="mt-1.5 flex gap-2">
-                <input
-                  value={pattern}
-                  onChange={(e) => setPattern(e.target.value)}
-                  maxLength={200}
-                  placeholder={kind === "COMMENT" ? "quero" : "preço"}
-                  className="min-w-0 flex-1 rounded-lg border px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
-                />
-                <select
-                  value={match}
-                  onChange={(e) => setMatch(e.target.value as MatchModeName)}
-                  className="rounded-lg border px-2 py-1.5 text-xs outline-none focus:border-indigo-400"
-                >
+        {allowsPattern(kind) && (
+          <div className="space-y-1.5">
+            <Label htmlFor="trigger-pattern">
+              {needsPattern ? "Palavra que dispara" : "Palavra que dispara (opcional)"}
+            </Label>
+            <div className="flex gap-2">
+              <Input
+                id="trigger-pattern"
+                value={pattern}
+                onChange={(e) => setPattern(e.target.value)}
+                maxLength={200}
+                placeholder={kind === "COMMENT" ? "quero" : "preço"}
+                className="min-w-0 flex-1"
+              />
+              <Label htmlFor="trigger-match" className="sr-only">
+                Modo de comparação
+              </Label>
+              <Select value={match} onValueChange={(v) => setMatch(v as MatchModeName)}>
+                <SelectTrigger id="trigger-match" className="w-36 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
                   {(["CONTAINS", "EXACT", "REGEX"] as MatchModeName[]).map((m) => (
-                    <option key={m} value={m}>
+                    <SelectItem key={m} value={m}>
                       {MATCH_LABEL[m]}
-                    </option>
+                    </SelectItem>
                   ))}
-                </select>
-              </div>
-              <p className="mt-1 text-[11px] text-neutral-500">
-                {match === "REGEX"
-                  ? "A expressão é testada no texto original, com acentos."
-                  : "Acentos, emoji e pontuação são ignorados na comparação."}
-                {!needsPattern && " Deixe vazio para valer para qualquer texto."}
-              </p>
+                </SelectContent>
+              </Select>
             </div>
-          )}
-
-          {flows && (
-            <div>
-              <label className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
-                Fluxo que roda
-              </label>
-              <select
-                value={targetFlow}
-                onChange={(e) => setTargetFlow(e.target.value)}
-                className="mt-1.5 w-full rounded-lg border px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
-              >
-                <option value="">Escolha um fluxo…</option>
-                {flows.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {error && (
-            <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-700">
-              {error}
+            <p className="text-[11px] text-muted-foreground">
+              {match === "REGEX"
+                ? "A expressão é testada no texto original, com acentos."
+                : "Acentos, emoji e pontuação são ignorados na comparação."}
+              {!needsPattern && " Deixe vazio para valer para qualquer texto."}
             </p>
-          )}
-        </div>
+          </div>
+        )}
 
-        <div className="flex items-center gap-2 border-t px-4 py-3">
-          {existing &&
-            (confirmingDelete ? (
-              <div className="flex items-center gap-1.5">
-                <span className="text-[11px] text-rose-600">Excluir?</span>
-                <button
-                  onClick={remove}
-                  className="rounded-lg bg-rose-600 px-2.5 py-1 text-xs font-medium text-white"
-                >
-                  Sim
-                </button>
-                <button
-                  onClick={() => setConfirmingDelete(false)}
-                  className="text-xs text-neutral-500"
-                >
-                  Não
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setConfirmingDelete(true)}
-                className="rounded-lg border border-rose-200 px-2.5 py-1.5 text-xs text-rose-600 transition hover:bg-rose-50"
-              >
-                Excluir
-              </button>
-            ))}
-          <div className="ml-auto" />
-          <button
-            onClick={onClose}
-            className="rounded-lg border px-3 py-1.5 text-xs text-neutral-600 transition hover:bg-neutral-50"
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={submit}
-            disabled={!canSubmit}
-            className="rounded-lg bg-emerald-600 px-4 py-1.5 text-xs font-medium text-white transition hover:bg-emerald-700 disabled:opacity-40"
-          >
-            {saving ? "Salvando…" : existing ? "Salvar" : "Criar gatilho"}
-          </button>
-        </div>
+        {flows && (
+          <div className="space-y-1.5">
+            <Label htmlFor="trigger-flow">Fluxo que roda</Label>
+            <Select value={targetFlow} onValueChange={setTargetFlow}>
+              <SelectTrigger id="trigger-flow">
+                <SelectValue placeholder="Escolha um fluxo…" />
+              </SelectTrigger>
+              <SelectContent>
+                {flows.map((f) => (
+                  <SelectItem key={f.id} value={f.id}>
+                    {f.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        {error && <Callout tone="destructive">{error}</Callout>}
       </div>
-    </div>
+
+      <DialogFooter className="sm:justify-between">
+        {existing ? (
+          <Button
+            variant="outline"
+            className="text-destructive hover:bg-rose-50 hover:text-destructive"
+            onClick={() => setConfirmingDelete(true)}
+            disabled={saving}
+          >
+            <Trash2 aria-hidden />
+            Excluir
+          </Button>
+        ) : (
+          <span />
+        )}
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button onClick={submit} disabled={!canSubmit}>
+            {saving ? "Salvando…" : existing ? "Salvar" : "Criar gatilho"}
+          </Button>
+        </div>
+      </DialogFooter>
+
+      <ConfirmDialog
+        open={confirmingDelete}
+        onOpenChange={setConfirmingDelete}
+        title="Excluir este gatilho?"
+        description="O fluxo deixa de ser iniciado por ele. Isso não pode ser desfeito."
+        confirmLabel="Excluir"
+        destructive
+        pending={saving}
+        onConfirm={remove}
+      />
+    </>
   );
 }

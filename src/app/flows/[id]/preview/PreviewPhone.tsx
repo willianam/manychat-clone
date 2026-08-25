@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { FileText, Music, Play, RotateCcw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import type { FlowGraph } from "../../../../lib/flow-schema";
 import { previewFrom, type PreviewChoice, type PreviewItem } from "../../../../lib/flow-preview";
 
@@ -45,13 +47,15 @@ export function PreviewPhone({ graph, name }: { graph: FlowGraph; name: string }
         </div>
       </div>
 
-      <button
+      <Button
+        variant="outline"
+        size="sm"
         onClick={reset}
         disabled={Object.keys(choices).length === 0}
-        className="rounded-lg border px-3 py-1 text-xs font-medium transition hover:bg-neutral-50 disabled:opacity-40"
       >
+        <RotateCcw aria-hidden />
         Recomeçar
-      </button>
+      </Button>
     </div>
   );
 }
@@ -196,10 +200,10 @@ function Media({ item }: { item: Extract<PreviewItem, { kind: "media" }> }) {
     );
   }
 
-  const icon = item.media === "video" ? "▶" : item.media === "audio" ? "♪" : "▤";
+  const Icon = item.media === "video" ? Play : item.media === "audio" ? Music : FileText;
   return (
     <div className="flex items-center gap-2 rounded-2xl rounded-bl-sm bg-neutral-100 px-3 py-2.5">
-      <span className="text-[18px]">{icon}</span>
+      <Icon className="h-4 w-4 text-neutral-500" aria-hidden />
       <span className="truncate text-[12px] text-neutral-600">{item.label}</span>
     </div>
   );
@@ -259,7 +263,7 @@ function ChoiceButton({
             ? "Esta saída não está ligada a nada"
             : undefined
       }
-      className={`${base} transition ${
+      className={`${base} transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
         inert
           ? "cursor-not-allowed border-neutral-200 text-neutral-400"
           : "border-indigo-300 text-indigo-600 hover:bg-indigo-50"
