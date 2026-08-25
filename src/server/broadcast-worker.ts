@@ -217,7 +217,7 @@ export async function sweepStaleSessions(db: PrismaClient, now = new Date()): Pr
       status: "WAITING_INPUT",
       updatedAt: { lt: new Date(now.getTime() - STALE_SESSION_MS) },
     },
-    data: { status: "ABANDONED" },
+    data: { status: "ABANDONED", abandonedAt: now },
   });
   return count;
 }

@@ -238,7 +238,12 @@ async function advance(
     if (d.kind === "end") {
       await db.flowSession.update({
         where: { id: session.id },
-        data: { status: "COMPLETED", currentNodeId: null, context: asJson(ctx) },
+        data: {
+          status: "COMPLETED",
+          completedAt: new Date(),
+          currentNodeId: null,
+          context: asJson(ctx),
+        },
       });
       return { status: "completed" };
     }
@@ -419,7 +424,12 @@ async function advance(
   // Fell off the end of the graph, or hit the step cap.
   await db.flowSession.update({
     where: { id: session.id },
-    data: { status: "COMPLETED", currentNodeId: null, context: asJson(ctx) },
+    data: {
+      status: "COMPLETED",
+      completedAt: new Date(),
+      currentNodeId: null,
+      context: asJson(ctx),
+    },
   });
   return { status: "completed" };
 }

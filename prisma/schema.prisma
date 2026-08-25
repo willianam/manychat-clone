@@ -246,6 +246,11 @@ model FlowSession {
   /// Set when a node is waiting on a delay; the worker picks it up after this.
   resumeAt      DateTime?
   startedAt     DateTime      @default(now())
+  /// Set when the run reached an end node or fell off the graph.
+  completedAt   DateTime?
+  /// Set when the run was cut short: opt-out, escape word, menu tap, or the
+  /// 24h stale sweep.
+  abandonedAt   DateTime?
   updatedAt     DateTime      @updatedAt
 
   flow    Flow    @relation(fields: [flowId], references: [id], onDelete: Cascade)
@@ -253,6 +258,7 @@ model FlowSession {
 
   @@unique([contactId, flowId, status])
   @@index([status, resumeAt])
+  @@index([flowId, startedAt])
 }
 
 enum BroadcastStatus {

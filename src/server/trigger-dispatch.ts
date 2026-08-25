@@ -119,7 +119,7 @@ async function handleGlobalKeyword(
 async function abandonSessions(db: PrismaClient, contactId: string): Promise<void> {
   await db.flowSession.updateMany({
     where: { contactId, status: { in: ["ACTIVE", "WAITING_INPUT"] } },
-    data: { status: "ABANDONED" },
+    data: { status: "ABANDONED", abandonedAt: new Date() },
   });
 }
 
@@ -314,7 +314,7 @@ export async function handleProfilePostback(
   // intent to switch, so abandon what was running.
   await db.flowSession.updateMany({
     where: { contactId, status: { in: ["ACTIVE", "WAITING_INPUT"] } },
-    data: { status: "ABANDONED" },
+    data: { status: "ABANDONED", abandonedAt: new Date() },
   });
 
   await startFlow(db, flowId, contactId);
