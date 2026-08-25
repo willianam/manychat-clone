@@ -3,6 +3,7 @@ import { listMedia } from "../../server/ig-media-cache";
 import { mediaLabel } from "../../lib/ig-media";
 import { TriggerList, type TriggerRowData } from "./TriggerList";
 import type { TriggerView } from "./actions";
+import { PageHeader } from "@/components/ui/page-header";
 
 export const dynamic = "force-dynamic";
 
@@ -57,19 +58,15 @@ export default async function TriggersPage() {
   const live = rows.filter((r) => r.trigger.enabled && r.trigger.flowEnabled).length;
 
   return (
-    <main className="mx-auto max-w-4xl px-6 py-8">
-      <div className="flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">Gatilhos</h1>
-          <p className="mt-0.5 text-sm text-neutral-500">
-            {rows.length} {rows.length === 1 ? "gatilho" : "gatilhos"} · {live} realmente no ar
-          </p>
-        </div>
-      </div>
+    <main className="mx-auto w-full max-w-4xl px-6 py-8">
+      <PageHeader
+        title="Gatilhos"
+        description={`${rows.length} ${rows.length === 1 ? "gatilho" : "gatilhos"} · ${live} realmente no ar`}
+      />
 
       <TriggerList rows={rows} flows={flows} />
 
-      <p className="mt-6 text-xs text-neutral-400">
+      <p className="mt-6 text-xs text-muted-foreground">
         Um gatilho só dispara se ele estiver ativo <em>e</em> o fluxo de destino também estiver.
         Para comentários, um gatilho preso a uma publicação específica ganha do que vale para
         qualquer publicação.
