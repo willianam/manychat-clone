@@ -1,4 +1,5 @@
 import type { PrismaClient, Prisma } from "@prisma/client";
+import { touchLastMessage } from "./inbox";
 
 /**
  * Inbound attachment capture.
@@ -187,6 +188,8 @@ export async function recordInboundMessage(
   } else {
     await db.message.create({ data });
   }
+
+  await touchLastMessage(db, args.contactId, now);
 
   return captured;
 }
