@@ -75,7 +75,7 @@ export function Notes({ contactId, notes }: { contactId: string; notes: NoteDto[
               size="icon"
               variant="ghost"
               className="h-7 w-7 text-muted-foreground"
-              aria-label="Apagar nota"
+              aria-label="Excluir nota"
               disabled={pending}
               onClick={() => setConfirming(n)}
             >
@@ -88,9 +88,9 @@ export function Notes({ contactId, notes }: { contactId: string; notes: NoteDto[
       <ConfirmDialog
         open={confirming !== null}
         onOpenChange={(o) => !o && setConfirming(null)}
-        title="Apagar esta nota?"
+        title="Excluir esta nota?"
         description="Ela some daqui e da linha do tempo. Isso não pode ser desfeito."
-        confirmLabel="Apagar"
+        confirmLabel="Excluir"
         destructive
         pending={pending}
         onConfirm={() => {

@@ -67,7 +67,7 @@ export function SegmentRow({ segment }: { segment: SegmentRowData }) {
               onClick={() => setConfirming(true)}
             >
               <Trash2 aria-hidden />
-              Apagar
+              Excluir
             </Button>
           </div>
         </div>
@@ -76,9 +76,9 @@ export function SegmentRow({ segment }: { segment: SegmentRowData }) {
       <ConfirmDialog
         open={confirming}
         onOpenChange={setConfirming}
-        title={`Apagar o segmento "${segment.name}"?`}
+        title={`Excluir o segmento "${segment.name}"?`}
         description="Os contatos não mudam; só a definição some. Isso não pode ser desfeito."
-        confirmLabel="Apagar"
+        confirmLabel="Excluir"
         destructive
         pending={pending}
         onConfirm={() =>
