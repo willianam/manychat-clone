@@ -114,7 +114,7 @@ describe("importContactsCsv", () => {
 
     const report = await importContactsCsv(db, csv);
 
-    expect(report).toEqual({ updated: 3, skipped: ["999"] });
+    expect(report).toMatchObject({ total: 4, updated: 3, skipped: ["999"], unknownColumns: [] });
     expect(contacts[0]!.name).toBe("Ana Silva");
     // tags: vip kept (no event), lead added
     expect(raw.contactTag.create).toHaveBeenCalledTimes(1);
@@ -142,5 +142,35 @@ describe("importContactsCsv", () => {
     await importContactsCsv(b.db, "igScopedId,tags\n111,");
     expect(b.raw.contactTag.create).not.toHaveBeenCalled();
     expect(b.raw.contactTag.deleteMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("importContactsCsv dry run", () => {
+  it("matches every row and reports counts without writing", async () => {
+    const { db, raw } = fakeDb();
+    const csv = [
+      "igScopedId,username,name,tags,subscribed,field:cidade,extra",
+      "111,ana,Ana Maria,vip|novo,false,Recife,x",
+      "999,,Ninguém,,,,",
+      ",bruno,,,,,",
+    ].join("\n");
+    const report = await importContactsCsv(db, csv, { dryRun: true });
+    expect(report).toEqual({
+      total: 3,
+      updated: 1,
+      skipped: ["999", "bruno"],
+      unknownColumns: ["extra"],
+    });
+    expect(raw.contact.update).not.toHaveBeenCalled();
+    expect(raw.contactTag.create).not.toHaveBeenCalled();
+    expect(raw.contactTag.deleteMany).not.toHaveBeenCalled();
+    expect(raw.contactField.upsert).not.toHaveBeenCalled();
+    expect(raw.contactEvent.create).not.toHaveBeenCalled();
+    expect(raw.flowSession.updateMany).not.toHaveBeenCalled();
+
+    const applied = await importContactsCsv(db, csv);
+    expect(applied.updated).toBe(1);
+    expect(raw.contact.update).toHaveBeenCalled();
+    expect(raw.contactField.upsert).toHaveBeenCalled();
   });
 });

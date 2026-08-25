@@ -53,6 +53,34 @@ export async function renameCustomField(
   return db.customField.update({ where: { id }, data: { label: clean } });
 }
 
+/**
+ * Edit label, type and default together. Changing the type does not rewrite
+ * values already stored: they were saved as typed, and the readers
+ * (conditions, segments) already treat an unparseable value as text.
+ */
+export async function updateCustomField(
+  db: PrismaClient,
+  id: string,
+  input: { label: string; type: FieldValueType; defaultValue: string | null },
+): Promise<CustomField> {
+  const label = input.label.trim();
+  if (!label) throw new Error("O nome do campo não pode ficar vazio.");
+  return db.customField.update({
+    where: { id },
+    data: { label, type: toFieldType(input.type), defaultValue: input.defaultValue || null },
+  });
+}
+
+/** How many contacts hold a non-empty value, per key. */
+export async function contactCountsByField(db: PrismaClient): Promise<Map<string, number>> {
+  const rows = await db.contactField.groupBy({
+    by: ["key"],
+    where: { value: { not: "" } },
+    _count: { _all: true },
+  });
+  return new Map(rows.map((r) => [r.key, r._count._all]));
+}
+
 /** Flows whose graph writes this key. */
 export async function flowsUsingField(
   db: PrismaClient,

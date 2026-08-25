@@ -45,6 +45,6 @@ describe("SidebarNav", () => {
     const active = screen.getByRole("link", { name: "Fluxos" });
     expect(active.getAttribute("aria-current")).toBe("page");
     expect(screen.getByRole("link", { name: "Início" }).getAttribute("aria-current")).toBeNull();
-    expect(screen.getAllByRole("link")).toHaveLength(10);
+    expect(screen.getAllByRole("link")).toHaveLength(11);
   });
 });
