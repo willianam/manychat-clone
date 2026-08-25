@@ -18,6 +18,7 @@ import "reactflow/dist/style.css";
 import {
   AlertTriangle,
   Check,
+  LayoutGrid,
   Loader2,
   PanelLeftClose,
   PanelLeftOpen,
@@ -37,6 +38,7 @@ import {
 } from "../lib/flow-edit";
 import { clipSelection, parseClip, pasteClip, serializeClip } from "../lib/flow-clipboard";
 import { emptyHistory, record, redo, undo } from "../lib/flow-history";
+import { layoutGraph } from "../lib/flow-layout";
 import type { FlowStats } from "../server/flow-metrics";
 import { nodeTypes } from "./nodes";
 import { PropertiesPanel } from "./PropertiesPanel";
@@ -232,7 +234,7 @@ function FlowEditorInner({
   onEditTrigger,
   onSave,
 }: FlowEditorProps) {
-  const { screenToFlowPosition } = useReactFlow();
+  const { screenToFlowPosition, fitView } = useReactFlow();
   const [nodes, setNodes, onNodesChange] = useNodesState(initial.nodes as Node[]);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initial.edges as Edge[]);
   const [saving, setSaving] = useState(false);
@@ -491,6 +493,17 @@ function FlowEditorInner({
     setSavedAt(null);
   }, [clean, setNodes, setEdges, snap]);
 
+  /** "Organizar": dagre positions, everything else untouched. */
+  const organize = useCallback(() => {
+    snap();
+    const laid = layoutGraph(clean as FlowGraph);
+    const at = new Map(laid.nodes.map((n) => [n.id, n.position]));
+    setNodes((ns) => ns.map((n) => ({ ...n, position: at.get(n.id) ?? n.position })));
+    setSavedAt(null);
+    // Positions land on the next frame; fit the view once they have.
+    window.requestAnimationFrame(() => fitView({ padding: 0.2, duration: 300 }));
+  }, [clean, setNodes, snap, fitView]);
+
   /**
    * Keyboard. React Flow ships its own delete key handling, but it does not
    * know about our selection state or the "don't delete while typing" rule,
@@ -656,6 +669,15 @@ function FlowEditorInner({
             title="Refazer (⌘⇧Z)"
           >
             <Redo2 aria-hidden />
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={organize}
+            title="Reposiciona os blocos de cima para baixo"
+          >
+            <LayoutGrid aria-hidden />
+            Organizar
           </Button>
           <span className="text-xs text-neutral-500">
             {nodes.length} {nodes.length === 1 ? "passo" : "passos"}
