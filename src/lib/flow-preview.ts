@@ -265,6 +265,17 @@ export function previewFrom(
       continue;
     }
 
+    if (d.kind === "request") {
+      const choicesHere: PreviewChoice[] = [
+        { handle: "success", label: "sucesso", target: targetOf(graph, id, "success") },
+        { handle: "error", label: "erro", target: targetOf(graph, id, "error") },
+      ];
+      items.push({ kind: "fork", nodeId: id, label: `${d.method} ${d.url}`, choices: choicesHere });
+      current = followChoice(choicesHere, picked);
+      if (current === null) break;
+      continue;
+    }
+
     if (d.kind === "goto") {
       if ("flowId" in d.target) {
         items.push({ kind: "note", nodeId: id, text: `Vai para outro fluxo (${d.target.flowId})` });

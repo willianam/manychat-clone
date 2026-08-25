@@ -22,6 +22,7 @@ import { z } from "zod";
  *   tag       — legacy: kept so existing flows keep running; action supersedes it
  *   goto      — jump to another node in this flow, or hand the contact to another flow
  *   goal      — record a conversion when passed through, then continue
+ *   request   — call an external HTTP API, map the JSON response into contact fields
  *   end       — terminate the session
  *
  * The numeric caps below are Instagram's, not ours — see LIMITS. Enforcing
@@ -97,6 +98,7 @@ export const NodeKind = z.enum([
   "tag",
   "goto",
   "goal",
+  "request",
   "end",
 ]);
 export type NodeKind = z.infer<typeof NodeKind>;
@@ -422,6 +424,34 @@ const GoalData = z.object({
   name: z.string().trim().min(1).max(80),
 });
 
+/**
+ * External request. URL, headers and body are templates: `{{campo}}` reads
+ * the session/contact context, `{{secret.NOME}}` reads env FLOW_SECRET_NOME
+ * so a token never sits in the flow document. `mapping` copies parts of the
+ * JSON reply ("data.items[0].price") into contact fields. Leaves by
+ * "success" on a 2xx, "error" otherwise — including timeout and blocked URL.
+ */
+const RequestData = z.object({
+  kind: z.literal("request"),
+  method: z.enum(["GET", "POST"]),
+  url: z.string().min(1).max(2000),
+  headers: z
+    .array(z.object({ name: z.string().min(1).max(100), value: z.string().max(2000) }))
+    .max(20)
+    .optional(),
+  /** JSON text with `{{}}` templates, sent on POST. */
+  body: z.string().max(10_000).optional(),
+  mapping: z
+    .array(
+      z.object({
+        path: z.string().min(1).max(200),
+        field: z.string().regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/),
+      }),
+    )
+    .max(20)
+    .optional(),
+});
+
 const EndData = z.object({ kind: z.literal("end") });
 
 // A refined member can't live in a discriminatedUnion, and media nodes
@@ -443,6 +473,7 @@ export const FlowNodeData = z.union([
   TagData,
   GotoData,
   GoalData,
+  RequestData,
   EndData,
 ]);
 export type FlowNodeData = z.infer<typeof FlowNodeData>;
@@ -526,6 +557,11 @@ export function outputsOf(
         ];
       }
       return [{ handle: "", label: "" }];
+    case "request":
+      return [
+        { handle: "success", label: "sucesso" },
+        { handle: "error", label: "erro" },
+      ];
     case "goto":
     case "end":
       return [];
@@ -602,6 +638,23 @@ export function validateGraph(graph: FlowGraph): FlowIssue[] {
           message: `A saída "${extra === "replied" ? "respondeu" : "tempo esgotado"}" do atraso "${n.id}" não está ligada; segue pelo caminho normal.`,
         });
       }
+    }
+
+    if (d.kind === "request") {
+      const handles = new Set(out.map((e) => e.sourceHandle));
+      if (!handles.has("success")) {
+        issues.push({
+          level: "error",
+          message: `A requisição "${n.id}" precisa da saída "sucesso" ligada.`,
+        });
+      }
+      if (!handles.has("error")) {
+        issues.push({
+          level: "warning",
+          message: `A saída "erro" da requisição "${n.id}" não está ligada; uma falha encerra a conversa.`,
+        });
+      }
+      continue;
     }
 
     if (d.kind === "goto") {

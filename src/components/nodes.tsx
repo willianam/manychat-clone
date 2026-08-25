@@ -737,6 +737,42 @@ export function GoalNode({ data }: NodeProps<WithStats>) {
   );
 }
 
+export function RequestNode({ data }: NodeProps<WithStats>) {
+  const d = data as Extract<FlowNodeData, { kind: "request" }>;
+  return (
+    <div className={`${SHELL} w-[248px]`}>
+      <Handle type="target" position={T} className={`${HANDLE} !top-[-8px] !bg-neutral-400`} />
+      <Head
+        tone="bg-orange-50 text-orange-800 border-b border-orange-100"
+        label="Requisição externa"
+      />
+      <div className="p-2.5">
+        <div className="truncate rounded border px-2 py-1 font-mono text-[11px]">
+          {d.method} {d.url}
+        </div>
+        <div className="mt-2 flex justify-between text-[11px] font-semibold">
+          <span className="text-emerald-600">sucesso</span>
+          <span className="text-rose-600">erro</span>
+        </div>
+      </div>
+      <Handle
+        type="source"
+        position={B}
+        id="success"
+        style={{ left: "25%" }}
+        className={`${HANDLE} !bottom-[-8px] !bg-emerald-500`}
+      />
+      <Handle
+        type="source"
+        position={B}
+        id="error"
+        style={{ left: "75%" }}
+        className={`${HANDLE} !bottom-[-8px] !bg-rose-500`}
+      />
+    </div>
+  );
+}
+
 /** Legacy tag node — superseded by Ações, kept so old flows still render. */
 export function TagNode({ data }: NodeProps<WithStats>) {
   const d = data as Extract<FlowNodeData, { kind: "tag" }>;
@@ -793,5 +829,6 @@ export const nodeTypes = {
   tag: TagNode,
   goto: GotoNode,
   goal: GoalNode,
+  request: RequestNode,
   end: EndNode,
 };

@@ -126,6 +126,13 @@ function Body({ data, onChange }: { data: FlowNodeData; onChange: Update }) {
           <TextInput value={data.name} onChange={(name) => onChange({ ...data, name })} />
         </Field>
       );
+    case "request":
+      return (
+        <p className="text-xs text-neutral-500">
+          {data.method} {data.url}. A edição de cabeçalhos, corpo e mapeamento chega com o painel
+          completo.
+        </p>
+      );
     case "end":
       return (
         <p className="text-xs text-neutral-500">
@@ -1328,6 +1335,7 @@ function titleOf(data: FlowNodeData): string {
     tag: "Tag (antigo)",
     goto: "Ir para",
     goal: "Meta",
+    request: "Requisição externa",
     end: "Fim",
   };
   return names[data.kind];

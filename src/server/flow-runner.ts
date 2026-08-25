@@ -2,6 +2,7 @@ import type { PrismaClient, FlowSession, Prisma } from "@prisma/client";
 import { FlowGraph, findEntryNode, type FlowNodeData } from "../lib/flow-schema";
 import { coerceFieldValue, compareValues } from "../lib/field-values";
 import { validateInput, defaultValidationMessage } from "../lib/input-validation";
+import { runRequest, getPath, asFieldValue, type RenderMode } from "./external-request";
 import { sendMessage, sendSenderActionToContact } from "./instagram";
 import {
   buildMessage,
@@ -375,6 +376,31 @@ async function advance(
       continue;
     }
 
+    if (d.kind === "request") {
+      const render = (text: string, mode: RenderMode) => interpolate(text, escaped(ctx, mode));
+      const outcome = await runRequest(d, render);
+      if (outcome.ok) {
+        for (const m of d.mapping ?? []) {
+          const value = asFieldValue(getPath(outcome.json, m.path));
+          if (value === null) continue;
+          ctx[m.field] = value;
+          await db.contactField.upsert({
+            where: { contactId_key: { contactId: session.contactId, key: m.field } },
+            create: { contactId: session.contactId, key: m.field, value },
+            update: { value },
+          });
+        }
+      } else {
+        console.warn(`[runner] request ${node.id} failed: ${outcome.reason}`);
+      }
+      current = nextOf(graph, node.id, outcome.ok ? "success" : "error");
+      await db.flowSession.update({
+        where: { id: session.id },
+        data: { currentNodeId: current, context: asJson(ctx) },
+      });
+      continue;
+    }
+
     if (d.kind === "goto") {
       if ("nodeId" in d.target) {
         // Same flow: just move. MAX_STEPS still bounds a loop built from gotos.
@@ -684,6 +710,18 @@ async function applyOps(
       .delete({ where: { contactId_key: { contactId, key: op.key } } })
       .catch(() => {});
   }
+}
+
+/** The context with every value escaped for a URL or a JSON string body. */
+function escaped(ctx: Ctx, mode: RenderMode): Ctx {
+  if (mode === "raw") return ctx;
+  const out: Ctx = {};
+  for (const [k, v] of Object.entries(ctx)) {
+    if (v === undefined || v === null) continue;
+    const s = String(v);
+    out[k] = mode === "url" ? encodeURIComponent(s) : JSON.stringify(s).slice(1, -1);
+  }
+  return out;
 }
 
 /**
