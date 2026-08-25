@@ -28,7 +28,7 @@ export type FlowFunnel = {
   /** Graph order, so the UI can draw the funnel top to bottom. */
   nodes: Array<{ nodeId: string; kind: string; reached: number }>;
   /** Goal hits for this flow, or null when no goal source exists yet. */
-  goals: number | null;
+  goals: number;
 };
 
 type ReachedRow = { nodeId: string | null; sessions: number };
@@ -90,14 +90,11 @@ export async function flowFunnel(
   };
 }
 
-/** Same extension point as rollup.ts: counts FlowGoalHit when the model exists. */
+/** FlowGoalHit rows for the flow in the range (see the goal node in flow-runner.ts). */
 async function goalCount(
   db: PrismaClient,
   flowId: string,
   at: { gte: Date; lte: Date },
-): Promise<number | null> {
-  const model = (db as unknown as Record<string, unknown>)["flowGoalHit"] as
-    { count: (args: unknown) => Promise<number> } | undefined;
-  if (!model?.count) return null;
-  return model.count({ where: { flowId, at } });
+): Promise<number> {
+  return db.flowGoalHit.count({ where: { flowId, at } });
 }

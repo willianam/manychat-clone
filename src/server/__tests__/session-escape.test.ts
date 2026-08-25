@@ -145,6 +145,7 @@ describe("sweepStaleSessions", () => {
     expect(db.flowSession.updateMany).toHaveBeenCalledWith({
       where: {
         status: "WAITING_INPUT",
+        resumeAt: null,
         updatedAt: { lt: new Date(now.getTime() - STALE_SESSION_MS) },
       },
       data: { status: "ABANDONED", abandonedAt: expect.any(Date) },

@@ -10,7 +10,7 @@
  *
  *  1. **Shape by kind.** Only KEYWORD and COMMENT read a pattern; STORY_REPLY
  *     may have one (a keyword inside a story reply) but does not need one;
- *     STORY_MENTION, REF and DEFAULT have no text to match against at all.
+ *     STORY_MENTION, REF, DEFAULT and WELCOME have no text to match against.
  *     Only COMMENT can be narrowed to a single post.
  *
  *  2. **Duplicates are decided on the normalized form.** Matching folds
@@ -23,7 +23,7 @@
 import { normalizeText } from "./text-normalize";
 
 export type TriggerKindName =
-  "KEYWORD" | "COMMENT" | "STORY_REPLY" | "STORY_MENTION" | "REF" | "DEFAULT";
+  "KEYWORD" | "COMMENT" | "STORY_REPLY" | "STORY_MENTION" | "REF" | "DEFAULT" | "WELCOME";
 
 export type MatchModeName = "EXACT" | "CONTAINS" | "REGEX";
 
@@ -34,6 +34,7 @@ export const TRIGGER_KINDS: TriggerKindName[] = [
   "STORY_MENTION",
   "REF",
   "DEFAULT",
+  "WELCOME",
 ];
 
 /** How each kind is described in the interface (pt-BR). */
@@ -44,6 +45,7 @@ export const KIND_LABEL: Record<TriggerKindName, string> = {
   STORY_MENTION: "Menção no story",
   REF: "Link rastreável (ig.me)",
   DEFAULT: "Qualquer outra mensagem",
+  WELCOME: "Primeira mensagem (boas-vindas)",
 };
 
 /** One line of explanation under the kind, for the picker. */
@@ -54,6 +56,7 @@ export const KIND_HINT: Record<TriggerKindName, string> = {
   STORY_MENTION: "Alguém marca você no story dele",
   REF: "Alguém abre o direct por um link com ?ref=",
   DEFAULT: "Nada casou — este é o fluxo de fallback",
+  WELCOME: "Alguém novo manda a primeira mensagem e nenhuma palavra-chave casa",
 };
 
 export const MATCH_LABEL: Record<MatchModeName, string> = {
@@ -179,7 +182,7 @@ export function normalizeDraft(input: {
  * distinct triggers, and "promo" on any post is distinct from both (the
  * dispatcher deliberately lets a post-specific trigger beat the catch-all).
  *
- * Patternless kinds (STORY_MENTION, DEFAULT) collide on kind alone: the
+ * Patternless kinds (STORY_MENTION, DEFAULT, WELCOME) collide on kind alone: the
  * dispatcher picks exactly one of them by priority, so a second is inert.
  */
 export function findConflict<

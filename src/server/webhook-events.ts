@@ -176,6 +176,13 @@ export async function processMessage(
   const igsid = event.sender?.id;
   if (!msg || !igsid) return;
 
+  // Known before the upsert creates the row: the WELCOME trigger fires
+  // only for a person we have never heard from.
+  const isNewContact = !(await db.contact.findUnique({
+    where: { igScopedId: igsid },
+    select: { id: true },
+  }));
+
   const profile = await fetchProfile(igsid);
 
   const contact = await db.contact.upsert({
@@ -197,7 +204,12 @@ export async function processMessage(
   // the keyword path too would start a second, competing flow.
   if (refHandled) return;
 
-  if (msg.text) await handleInboundMessage(db, contact.id, msg.text);
+  // A quick-reply tap arrives as a message that also carries the chip's
+  // text. processPostback owns it; feeding the text through the free-text
+  // path would answer a waiting question with "Pular".
+  if (msg.quick_reply?.payload) return;
+
+  if (msg.text) await handleInboundMessage(db, contact.id, msg.text, { isNewContact });
 }
 
 /** A button or quick-reply tap. */

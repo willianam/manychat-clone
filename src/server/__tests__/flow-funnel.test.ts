@@ -31,6 +31,7 @@ function fakeDb() {
       ),
       groupBy: vi.fn().mockResolvedValue([{ currentNodeId: "q1", _count: { _all: 3 } }]),
     },
+    flowGoalHit: { count: vi.fn().mockResolvedValue(0) },
     $queryRaw: vi.fn().mockResolvedValue([
       { nodeId: "m1", sessions: 10 },
       { nodeId: "q1", sessions: 7 },
@@ -51,7 +52,7 @@ describe("flowFunnel", () => {
       completed: 4,
       abandoned: 3,
       inProgress: 3,
-      goals: null,
+      goals: 0,
     });
     expect(f!.nodes).toEqual([
       { nodeId: "m1", kind: "message", reached: 10 },
@@ -79,11 +80,9 @@ describe("flowFunnel", () => {
     expect(raw.values).toEqual(expect.arrayContaining(["f1", from, to]));
   });
 
-  it("counts goals once a FlowGoalHit model exists", async () => {
+  it("counts goal hits for the flow in the range", async () => {
     const db = fakeDb();
-    (db as unknown as Record<string, unknown>).flowGoalHit = {
-      count: vi.fn().mockResolvedValue(2),
-    };
+    vi.mocked(db.flowGoalHit.count).mockResolvedValue(2);
     expect((await flowFunnel(db, "f1", from, to))!.goals).toBe(2);
   });
 

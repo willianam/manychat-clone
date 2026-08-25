@@ -20,6 +20,9 @@ import { z } from "zod";
  *   action    — add/remove tags and set fields without sending anything
  *   random    — split traffic between outputs, for A/B comparison
  *   tag       — legacy: kept so existing flows keep running; action supersedes it
+ *   goto      — jump to another node in this flow, or hand the contact to another flow
+ *   goal      — record a conversion when passed through, then continue
+ *   request   — call an external HTTP API, map the JSON response into contact fields
  *   end       — terminate the session
  *
  * The numeric caps below are Instagram's, not ours — see LIMITS. Enforcing
@@ -93,6 +96,9 @@ export const NodeKind = z.enum([
   "action",
   "random",
   "tag",
+  "goto",
+  "goal",
+  "request",
   "end",
 ]);
 export type NodeKind = z.infer<typeof NodeKind>;
@@ -130,6 +136,22 @@ const MessageData = z.object({
   buttons: z.array(FlowButton).max(LIMITS.buttons).optional(),
 });
 
+/** What a question accepts. `option` means "one of `options`", by title or value. */
+export const InputType = z.enum(["text", "number", "email", "phone", "date", "option"]);
+export type InputType = z.infer<typeof InputType>;
+
+/**
+ * Question. Every validation field is optional so a question saved before
+ * they existed still parses as the free-text question it was.
+ *
+ *   inputType          what the reply must look like; `text` accepts anything
+ *   validationMessage  sent instead of the question when the reply fails
+ *   maxAttempts        invalid replies tolerated before giving up (default 3)
+ *   allowSkip          adds a "Pular" quick reply; skipping stores nothing
+ *   onInvalid          `retry` re-asks until maxAttempts, then leaves by the
+ *                      `invalid` handle (or the default path when unwired);
+ *                      `branch` leaves by `invalid` on the first failure
+ */
 const QuestionData = z.object({
   kind: z.literal("question"),
   text: z
@@ -140,6 +162,18 @@ const QuestionData = z.object({
     }),
   /** Context key the reply is written to. */
   saveAs: z.string().regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/),
+  inputType: InputType.optional(),
+  /** Accepted answers when inputType is `option`. */
+  options: z.array(z.string().min(1)).max(LIMITS.quickReplies).optional(),
+  validationMessage: z
+    .string()
+    .refine(withinBytes(LIMITS.messageText), {
+      message: `O texto passa de ${LIMITS.messageText} bytes (acentos contam 2, emoji 4).`,
+    })
+    .optional(),
+  maxAttempts: z.number().int().min(1).max(10).optional(),
+  allowSkip: z.boolean().optional(),
+  onInvalid: z.enum(["retry", "branch"]).optional(),
 });
 
 const QuickReplyOption = z.object({
@@ -267,35 +301,97 @@ export const ConditionOp = z.enum([
   "before",
   "after",
   "hasTag",
+  "notHasTag",
+  /** Numbers or dates; value is "min,max", both inclusive. */
+  "between",
+  "startsWith",
+  "isEmpty",
+  /** A date field within the last N days (value = N), today included. */
+  "inLastDays",
+  /** The contact's subscription flag; key is ignored. */
+  "subscribed",
 ]);
+export type ConditionOp = z.infer<typeof ConditionOp>;
 
+/** One test. `key` is a context key, a tag name for the tag ops, or unused. */
+export const ConditionRule = z.object({
+  key: z.string(),
+  op: ConditionOp,
+  value: z.string().optional(),
+});
+export type ConditionRule = z.infer<typeof ConditionRule>;
+
+/**
+ * Condition. A single rule lives on `key`/`op`/`value`, as it always has.
+ * `rules` with a `combinator` makes it compound; when present they replace
+ * the single rule, which is kept only so old graphs and the current editor
+ * keep working.
+ */
 const ConditionData = z.object({
   kind: z.literal("condition"),
   /** Context key, or tag name when op is hasTag. */
   key: z.string().min(1),
   op: ConditionOp,
   value: z.string().optional(),
+  rules: z.array(ConditionRule).min(1).max(10).optional(),
+  combinator: z.enum(["and", "or"]).optional(),
 });
 
+/** The rules a condition actually tests: `rules` when set, else the single one. */
+export function rulesOf(d: {
+  key: string;
+  op: ConditionOp;
+  value?: string;
+  rules?: ConditionRule[];
+}): ConditionRule[] {
+  return d.rules?.length ? d.rules : [{ key: d.key, op: d.op, value: d.value }];
+}
+
 /**
- * Delay. `window` restricts *when* the flow may resume — a 20h delay set at
- * 3am would otherwise wake the conversation at 11pm. Hours are 0–23 in the
- * account's timezone.
+ * Delay. Three modes:
+ *
+ *   fixed      wait `seconds`; `window` restricts *when* the flow may resume
+ *              (a 20h delay set at 3am would otherwise wake the conversation
+ *              at 11pm — hours are 0–23 in the account's timezone). With
+ *              `cancelOnReply` a message from the contact cuts the wait short
+ *              and leaves by the "replied" handle.
+ *   untilReply pause until the contact sends anything; an optional
+ *              `timeoutSeconds` leaves by the "timeout" handle instead.
+ *   untilDate  resume at `untilDate` ("YYYY-MM-DDTHH:mm", account timezone);
+ *              a date already past continues immediately.
+ *
+ * `mode` is optional so every delay saved before it existed is a fixed one.
  */
-const DelayData = z.object({
-  kind: z.literal("delay"),
-  seconds: z
-    .number()
-    .int()
-    .min(1)
-    .max(60 * 60 * 24 * 30),
-  window: z
-    .object({
-      fromHour: z.number().int().min(0).max(23),
-      toHour: z.number().int().min(0).max(23),
-    })
-    .optional(),
-});
+const DelaySeconds = z
+  .number()
+  .int()
+  .min(1)
+  .max(60 * 60 * 24 * 30);
+
+const DelayData = z
+  .object({
+    kind: z.literal("delay"),
+    mode: z.enum(["fixed", "untilReply", "untilDate"]).optional(),
+    seconds: DelaySeconds.optional(),
+    window: z
+      .object({
+        fromHour: z.number().int().min(0).max(23),
+        toHour: z.number().int().min(0).max(23),
+      })
+      .optional(),
+    cancelOnReply: z.boolean().optional(),
+    timeoutSeconds: DelaySeconds.optional(),
+    untilDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/)
+      .optional(),
+  })
+  .refine((v) => (v.mode ?? "fixed") !== "fixed" || v.seconds !== undefined, {
+    message: "Informe quantos segundos esperar.",
+  })
+  .refine((v) => v.mode !== "untilDate" || Boolean(v.untilDate), {
+    message: "Informe a data e a hora para continuar.",
+  });
 
 /** Field writes are typed, so conditions can compare numbers and dates. */
 export const FieldOp = z.discriminatedUnion("op", [
@@ -326,13 +422,70 @@ const RandomData = z.object({
   kind: z.literal("random"),
   /** Percentages per branch; must sum to 100. Handles are "0", "1", … */
   weights: z.array(z.number().int().min(1).max(100)).min(2).max(4),
+  /** Optional name per arm ("Versão A"), parallel to `weights`, for reports. */
+  labels: z.array(z.string().max(40)).max(4).optional(),
 });
+
+/** The display name of a randomizer arm: its label, or "Saída N". */
+export function armLabel(d: { labels?: string[] }, i: number): string {
+  return d.labels?.[i]?.trim() || `Saída ${i + 1}`;
+}
 
 /** Superseded by `action`, kept so flows built before it keep running. */
 const TagData = z.object({
   kind: z.literal("tag"),
   action: z.enum(["add", "remove"]),
   tagName: z.string().min(1),
+});
+
+/**
+ * Go To. A node target jumps inside this flow; a flow target completes the
+ * current session and starts the other flow from its entry node. Either way
+ * the goto has no outputs of its own.
+ */
+export const GotoTarget = z.union([
+  z.object({ nodeId: z.string().min(1) }),
+  z.object({ flowId: z.string().min(1) }),
+]);
+export type GotoTarget = z.infer<typeof GotoTarget>;
+
+const GotoData = z.object({
+  kind: z.literal("goto"),
+  target: GotoTarget,
+});
+
+/** Goal: a named conversion point. Passing through records a FlowGoalHit. */
+const GoalData = z.object({
+  kind: z.literal("goal"),
+  name: z.string().trim().min(1).max(80),
+});
+
+/**
+ * External request. URL, headers and body are templates: `{{campo}}` reads
+ * the session/contact context, `{{secret.NOME}}` reads env FLOW_SECRET_NOME
+ * so a token never sits in the flow document. `mapping` copies parts of the
+ * JSON reply ("data.items[0].price") into contact fields. Leaves by
+ * "success" on a 2xx, "error" otherwise — including timeout and blocked URL.
+ */
+const RequestData = z.object({
+  kind: z.literal("request"),
+  method: z.enum(["GET", "POST"]),
+  url: z.string().min(1).max(2000),
+  headers: z
+    .array(z.object({ name: z.string().min(1).max(100), value: z.string().max(2000) }))
+    .max(20)
+    .optional(),
+  /** JSON text with `{{}}` templates, sent on POST. */
+  body: z.string().max(10_000).optional(),
+  mapping: z
+    .array(
+      z.object({
+        path: z.string().min(1).max(200),
+        field: z.string().regex(/^[a-zA-Z_][a-zA-Z0-9_]*$/),
+      }),
+    )
+    .max(20)
+    .optional(),
 });
 
 const EndData = z.object({ kind: z.literal("end") });
@@ -354,6 +507,9 @@ export const FlowNodeData = z.union([
   ActionData,
   RandomData,
   TagData,
+  GotoData,
+  GoalData,
+  RequestData,
   EndData,
 ]);
 export type FlowNodeData = z.infer<typeof FlowNodeData>;
@@ -400,7 +556,10 @@ export function outputsOf(
         { handle: "false", label: "não" },
       ];
     case "random":
-      return d.weights.map((w, i) => ({ handle: String(i), label: `${w}%` }));
+      return d.weights.map((w, i) => ({
+        handle: String(i),
+        label: d.labels?.[i]?.trim() ? `${armLabel(d, i)} · ${w}%` : `${w}%`,
+      }));
     case "quickreply":
       return d.options.map((o) => ({ handle: o.id, label: o.title }));
     case "message":
@@ -413,6 +572,33 @@ export function outputsOf(
           .filter((b) => b.type === "postback")
           .map((b) => ({ handle: b.id, label: `${c.title}: ${b.title}` })),
       );
+    case "question":
+      return d.onInvalid === "branch"
+        ? [
+            { handle: "next", label: "resposta" },
+            { handle: "invalid", label: "inválida" },
+          ]
+        : [{ handle: "", label: "" }];
+    case "delay":
+      if ((d.mode ?? "fixed") === "fixed" && d.cancelOnReply) {
+        return [
+          { handle: "next", label: "depois" },
+          { handle: "replied", label: "respondeu" },
+        ];
+      }
+      if (d.mode === "untilReply" && d.timeoutSeconds) {
+        return [
+          { handle: "next", label: "respondeu" },
+          { handle: "timeout", label: "tempo esgotado" },
+        ];
+      }
+      return [{ handle: "", label: "" }];
+    case "request":
+      return [
+        { handle: "success", label: "sucesso" },
+        { handle: "error", label: "erro" },
+      ];
+    case "goto":
     case "end":
       return [];
     default:
@@ -475,6 +661,48 @@ export function validateGraph(graph: FlowGraph): FlowIssue[] {
       continue;
     }
 
+    if (d.kind === "delay") {
+      const extra =
+        (d.mode ?? "fixed") === "fixed" && d.cancelOnReply
+          ? "replied"
+          : d.mode === "untilReply" && d.timeoutSeconds
+            ? "timeout"
+            : null;
+      if (extra && !out.some((e) => e.sourceHandle === extra)) {
+        issues.push({
+          level: "warning",
+          message: `A saída "${extra === "replied" ? "respondeu" : "tempo esgotado"}" do atraso "${n.id}" não está ligada; segue pelo caminho normal.`,
+        });
+      }
+    }
+
+    if (d.kind === "request") {
+      const handles = new Set(out.map((e) => e.sourceHandle));
+      if (!handles.has("success")) {
+        issues.push({
+          level: "error",
+          message: `A requisição "${n.id}" precisa da saída "sucesso" ligada.`,
+        });
+      }
+      if (!handles.has("error")) {
+        issues.push({
+          level: "warning",
+          message: `A saída "erro" da requisição "${n.id}" não está ligada; uma falha encerra a conversa.`,
+        });
+      }
+      continue;
+    }
+
+    if (d.kind === "goto") {
+      if ("nodeId" in d.target && !ids.has(d.target.nodeId)) {
+        issues.push({
+          level: "error",
+          message: `O salto "${n.id}" aponta para um passo que não existe (${d.target.nodeId}).`,
+        });
+      }
+      continue;
+    }
+
     if (d.kind === "random") {
       const sum = d.weights.reduce((a, b) => a + b, 0);
       if (sum !== 100) {
@@ -492,6 +720,21 @@ export function validateGraph(graph: FlowGraph): FlowIssue[] {
         issues.push({
           level: "error",
           message: `Com botões, o texto cabe ${LIMITS.buttonTemplateText} bytes — este tem ${bytes} (acentos contam 2, emoji 4).`,
+        });
+      }
+    }
+
+    if (d.kind === "question") {
+      if (d.inputType === "option" && !d.options?.length) {
+        issues.push({
+          level: "error",
+          message: `A pergunta "${n.id}" pede uma opção mas não lista nenhuma.`,
+        });
+      }
+      if (d.onInvalid === "branch" && !out.some((e) => e.sourceHandle === "invalid")) {
+        issues.push({
+          level: "error",
+          message: `A pergunta "${n.id}" desvia respostas inválidas, mas a saída "inválida" não está ligada.`,
         });
       }
     }

@@ -1,4 +1,4 @@
-import { FlowGraph, findEntryNode, type FlowNodeData } from "./flow-schema";
+import { FlowGraph, findEntryNode, armLabel, rulesOf, type FlowNodeData } from "./flow-schema";
 
 /**
  * Flow preview: the graph rendered as the conversation it produces.
@@ -207,7 +207,9 @@ export function previewFrom(
       items.push({
         kind: "fork",
         nodeId: id,
-        label: `Se ${d.key} ${d.op}${d.value ? ` ${d.value}` : ""}`,
+        label: `Se ${rulesOf(d)
+          .map((r) => `${r.key} ${r.op}${r.value ? ` ${r.value}` : ""}`.trim())
+          .join(d.combinator === "or" ? " ou " : " e ")}`,
         choices: choicesHere,
       });
       current = followChoice(choicesHere, picked);
@@ -218,7 +220,7 @@ export function previewFrom(
     if (d.kind === "random") {
       const choicesHere = d.weights.map<PreviewChoice>((w, i) => ({
         handle: String(i),
-        label: `Saída ${i + 1} · ${w}%`,
+        label: `${armLabel(d, i)} · ${w}%`,
         target: targetOf(graph, id, String(i)),
       }));
       items.push({ kind: "fork", nodeId: id, label: "Randomizador", choices: choicesHere });
@@ -230,7 +232,13 @@ export function previewFrom(
     // Silent nodes: shown as a margin note so the reviewer knows time passes
     // or state changes here, without it looking like a message.
     if (d.kind === "delay") {
-      items.push({ kind: "note", nodeId: id, text: `Espera ${humanize(d.seconds)}` });
+      const text =
+        d.mode === "untilReply"
+          ? `Espera a resposta${d.timeoutSeconds ? ` (até ${humanize(d.timeoutSeconds)})` : ""}`
+          : d.mode === "untilDate"
+            ? `Espera até ${d.untilDate?.replace("T", " ")}`
+            : `Espera ${humanize(d.seconds ?? 0)}`;
+      items.push({ kind: "note", nodeId: id, text });
       current = targetOf(graph, id);
       if (!current) {
         items.push({ kind: "dangling", nodeId: id });
@@ -242,6 +250,42 @@ export function previewFrom(
     if (d.kind === "action") {
       items.push({ kind: "note", nodeId: id, text: describeOps(d.ops) });
       current = targetOf(graph, id);
+      if (!current) {
+        items.push({ kind: "dangling", nodeId: id });
+        break;
+      }
+      continue;
+    }
+
+    if (d.kind === "goal") {
+      items.push({ kind: "note", nodeId: id, text: `Meta "${d.name}" atingida` });
+      current = targetOf(graph, id);
+      if (!current) {
+        items.push({ kind: "dangling", nodeId: id });
+        break;
+      }
+      continue;
+    }
+
+    if (d.kind === "request") {
+      const choicesHere: PreviewChoice[] = [
+        { handle: "success", label: "sucesso", target: targetOf(graph, id, "success") },
+        { handle: "error", label: "erro", target: targetOf(graph, id, "error") },
+      ];
+      items.push({ kind: "fork", nodeId: id, label: `${d.method} ${d.url}`, choices: choicesHere });
+      current = followChoice(choicesHere, picked);
+      if (current === null) break;
+      continue;
+    }
+
+    if (d.kind === "goto") {
+      if ("flowId" in d.target) {
+        items.push({ kind: "note", nodeId: id, text: `Vai para outro fluxo (${d.target.flowId})` });
+        break;
+      }
+      items.push({ kind: "note", nodeId: id, text: `Volta para o passo "${d.target.nodeId}"` });
+      const to = d.target.nodeId;
+      current = graph.nodes.some((n) => n.id === to) ? to : null;
       if (!current) {
         items.push({ kind: "dangling", nodeId: id });
         break;

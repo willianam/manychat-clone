@@ -273,6 +273,8 @@ enum TriggerKind {
   STORY_MENTION
   REF
   DEFAULT
+  /// First contact: a brand-new DM that matched no keyword. Patternless.
+  WELCOME
 }
 
 enum MatchMode {
@@ -332,6 +334,36 @@ model FlowSession {
   @@unique([contactId, flowId, status])
   @@index([status, resumeAt])
   @@index([flowId, startedAt])
+}
+
+/// A contact passed through a goal node. One row per pass; the funnel
+/// reads these by flow and node. Plain ids, no FKs: a deleted session or
+/// contact must not erase the conversion it produced.
+model FlowGoalHit {
+  id        String   @id @default(cuid())
+  sessionId String
+  flowId    String
+  nodeId    String
+  contactId String
+  at        DateTime @default(now())
+
+  @@index([flowId, nodeId])
+  @@index([sessionId])
+}
+
+/// Which arm of a randomizer a session was sent down. One row per
+/// (session, node); joined with FlowGoalHit by sessionId for A/B rates.
+model AbAssignment {
+  id        String   @id @default(cuid())
+  sessionId String
+  flowId    String
+  nodeId    String
+  /// The edge handle taken: "0", "1", …
+  handle    String
+  at        DateTime @default(now())
+
+  @@unique([sessionId, nodeId])
+  @@index([flowId, nodeId])
 }
 
 enum BroadcastStatus {

@@ -24,7 +24,7 @@ export const METRICS = {
   triggerFires: "trigger_fires",
   broadcastsSent: "broadcasts_sent",
   optOuts: "opt_outs",
-  /** key = flowId. Only written when a goal source exists — see goalHits. */
+  /** key = flowId. */
   goals: "goals",
 } as const;
 
@@ -107,24 +107,16 @@ export async function rollupRecent(db: PrismaClient, now = new Date()): Promise<
   return [yesterday, today];
 }
 
-/**
- * Extension point for flow goals.
- *
- * The goal feature (a "goal" node writing `FlowGoalHit {flowId, sessionId,
- * contactId, at}`) belongs to another wave. When that model exists on the
- * Prisma client this counts hits per flow; until then it returns nothing,
- * and no `goals` rows are written. Nothing else here needs to change when
- * the model lands.
- */
+/** Goal hits per flow in the range, from the rows the goal node writes. */
 async function goalHits(
   db: PrismaClient,
   at: { gte: Date; lt: Date },
 ): Promise<Array<{ flowId: string; count: number }>> {
-  const model = (db as unknown as Record<string, unknown>)["flowGoalHit"] as
-    | { groupBy: (args: unknown) => Promise<Array<{ flowId: string; _count: { _all: number } }>> }
-    | undefined;
-  if (!model?.groupBy) return [];
-  const rows = await model.groupBy({ by: ["flowId"], where: { at }, _count: { _all: true } });
+  const rows = await db.flowGoalHit.groupBy({
+    by: ["flowId"],
+    where: { at },
+    _count: { _all: true },
+  });
   return rows.map((r) => ({ flowId: r.flowId, count: r._count._all }));
 }
 

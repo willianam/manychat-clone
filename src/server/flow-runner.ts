@@ -1,12 +1,22 @@
 import type { PrismaClient, FlowSession, Prisma } from "@prisma/client";
-import { FlowGraph, findEntryNode, type FlowNodeData } from "../lib/flow-schema";
-import { coerceFieldValue, compareValues } from "../lib/field-values";
-import { sendText, sendMessage, sendSenderActionToContact, type SendMeta } from "./instagram";
+import {
+  FlowGraph,
+  findEntryNode,
+  rulesOf,
+  type FlowNodeData,
+  type ConditionRule,
+} from "../lib/flow-schema";
+import { coerceFieldValue, compareValues, parseDate, parseNumber } from "../lib/field-values";
+import { validateInput, defaultValidationMessage } from "../lib/input-validation";
+import { runRequest, getPath, asFieldValue, type RenderMode } from "./external-request";
+import { sendMessage, sendSenderActionToContact, type SendMeta } from "./instagram";
 import { saveContactField } from "./contact-fields";
 import { addTagToContact, removeTagFromContact, setContactSubscribed } from "./contact-events";
 import {
   buildMessage,
+  buildQuestion,
   buildQuickReply,
+  SKIP_HANDLE,
   buildCarousel,
   buildImage,
   buildMedia,
@@ -30,6 +40,8 @@ const asJson = (ctx: Ctx) => ctx as Prisma.InputJsonValue;
  */
 
 const MAX_STEPS = 50; // cycle guard — a graph loop would otherwise spin forever
+/** Go To jumps one inbound message may trigger; two flows pointing at each other stop here. */
+const MAX_HOPS = 5;
 
 /** Node kinds that put a message on the wire, and so deserve a typing bubble. */
 const SENDS_MESSAGE: ReadonlySet<FlowNodeData["kind"]> = new Set([
@@ -52,6 +64,12 @@ const SENDS_MESSAGE: ReadonlySet<FlowNodeData["kind"]> = new Set([
  */
 const SEEN_KEY = "_markSeenSent";
 
+/** Reserved: invalid-answer counts per question node, `{ [nodeId]: n }`. */
+const ATTEMPTS_KEY = "_attempts";
+/** Reserved: randomizer arm chosen per node, `{ [nodeId]: handle }`. */
+const AB_KEY = "_ab";
+const DEFAULT_MAX_ATTEMPTS = 3;
+
 export type StepResult = { status: "waiting" | "completed" | "delayed"; nodeId?: string };
 
 /** Attribution stored on every message a node sends — see flow-metrics.ts. */
@@ -59,10 +77,17 @@ function metaFor(session: FlowSession, nodeId: string): SendMeta {
   return { flowId: session.flowId, nodeId, sessionId: session.id };
 }
 
+/**
+ * `hops` counts Go To Flow jumps already taken while answering this message.
+ * `takeover` is set by a Go To Flow: a session already running in the target
+ * flow is abandoned rather than blocking the jump — the author said "go
+ * there", and a stale session from last week must not veto that.
+ */
 export async function startFlow(
   db: PrismaClient,
   flowId: string,
   contactId: string,
+  opts: { hops?: number; takeover?: boolean } = {},
 ): Promise<StepResult | null> {
   const flow = await db.flow.findUnique({ where: { id: flowId } });
   if (!flow || !flow.enabled) return null;
@@ -84,13 +109,19 @@ export async function startFlow(
   const existing = await db.flowSession.findFirst({
     where: { contactId, flowId, status: { in: ["ACTIVE", "WAITING_INPUT"] } },
   });
-  if (existing) return { status: "waiting", nodeId: existing.currentNodeId ?? undefined };
+  if (existing) {
+    if (!opts.takeover) return { status: "waiting", nodeId: existing.currentNodeId ?? undefined };
+    await db.flowSession.updateMany({
+      where: { contactId, flowId, status: { in: ["ACTIVE", "WAITING_INPUT"] } },
+      data: { status: "ABANDONED" },
+    });
+  }
 
   const session = await db.flowSession.create({
     data: { flowId, contactId, currentNodeId: entry, status: "ACTIVE", context: {} },
   });
 
-  return advance(db, session, graph);
+  return advance(db, session, graph, { hops: opts.hops });
 }
 
 /**
@@ -104,17 +135,75 @@ export async function resumeWithInput(
   const flow = await db.flow.findUniqueOrThrow({ where: { id: session.flowId } });
   const graph = FlowGraph.parse(flow.graph);
 
-  const node = graph.nodes.find((n) => n.id === session.currentNodeId);
-  if (node?.data.kind === "question") {
-    const ctx: Ctx = { ...(session.context as Ctx), [node.data.saveAs]: input };
-    await saveContactField(db, session.contactId, node.data.saveAs, input);
+  // A delay waiting on the contact: the message is the wake-up, not an answer.
+  const delayExit = delayReplyExit(graph, session);
+  if (delayExit !== undefined) {
     session = await db.flowSession.update({
       where: { id: session.id },
-      data: { context: asJson(ctx), status: "ACTIVE", currentNodeId: nextOf(graph, node.id) },
+      data: { status: "ACTIVE", currentNodeId: delayExit, resumeAt: null },
     });
+    return advance(db, session, graph, { inbound: true });
+  }
+
+  const node = graph.nodes.find((n) => n.id === session.currentNodeId);
+  if (node?.data.kind === "question") {
+    const q = node.data;
+    const ctx: Ctx = { ...(session.context as Ctx) };
+    const checked = validateInput(q.inputType, input, q.options);
+
+    if (!checked.ok) {
+      const attempts = (ctx[ATTEMPTS_KEY] as Record<string, number> | undefined) ?? {};
+      const n = (attempts[node.id] ?? 0) + 1;
+      ctx[ATTEMPTS_KEY] = { ...attempts, [node.id]: n };
+      const exhausted = n >= (q.maxAttempts ?? DEFAULT_MAX_ATTEMPTS);
+
+      if (q.onInvalid === "branch" || exhausted) {
+        // Leave by the "invalid" handle; an unwired one falls back to the
+        // default path, so a flow never strands a person over a typo.
+        const next = nextOf(graph, node.id, "invalid") ?? nextOf(graph, node.id);
+        session = await db.flowSession.update({
+          where: { id: session.id },
+          data: { context: asJson(ctx), status: "ACTIVE", currentNodeId: next },
+        });
+        return advance(db, session, graph, { inbound: true });
+      }
+
+      // Re-ask: the validation message stands in for the question text.
+      await sendSenderActionToContact(db, session.contactId, "mark_seen");
+      const text = interpolate(q.validationMessage || defaultValidationMessage(q.inputType), ctx);
+      await sendMessage(db, session.contactId, buildQuestion(node.id, { ...q, text }), {
+        preview: text,
+        meta: metaFor(session, node.id),
+      });
+      await db.flowSession.update({
+        where: { id: session.id },
+        data: { context: asJson(ctx), status: "WAITING_INPUT", currentNodeId: node.id },
+      });
+      return { status: "waiting", nodeId: node.id };
+    }
+
+    session = await storeAnswer(db, session, graph, node.id, q.saveAs, checked.value, ctx);
   }
 
   return advance(db, session, graph, { inbound: true });
+}
+
+/** Write a validated answer to the session and the contact, and step past the question. */
+async function storeAnswer(
+  db: PrismaClient,
+  session: FlowSession,
+  graph: FlowGraph,
+  nodeId: string,
+  saveAs: string,
+  value: string,
+  ctx: Ctx,
+): Promise<FlowSession> {
+  ctx[saveAs] = value;
+  await saveContactField(db, session.contactId, saveAs, value);
+  return db.flowSession.update({
+    where: { id: session.id },
+    data: { context: asJson(ctx), status: "ACTIVE", currentNodeId: nextOf(graph, nodeId) },
+  });
 }
 
 /**
@@ -139,6 +228,22 @@ export async function resumeWithPostback(
   if (!node) return null;
 
   const ctx: Ctx = { ...(session.context as Ctx) };
+
+  // A question's chips: "Pular" stores nothing and walks on; an option chip
+  // is the answer, validated like a typed one.
+  if (node.data.kind === "question") {
+    if (parsed.handle === SKIP_HANDLE && node.data.allowSkip) {
+      const updated = await db.flowSession.update({
+        where: { id: session.id },
+        data: { status: "ACTIVE", context: asJson(ctx), currentNodeId: nextOf(graph, node.id) },
+      });
+      return advance(db, updated, graph, { inbound: true });
+    }
+    if (parsed.handle.startsWith("opt:")) {
+      return resumeWithInput(db, session, parsed.handle.slice(4));
+    }
+    return null;
+  }
 
   // A quick reply doubles as a question: record what was chosen.
   if (node.data.kind === "quickreply") {
@@ -172,7 +277,23 @@ export async function resumeWithPostback(
  */
 export async function resumeDelayed(db: PrismaClient, session: FlowSession): Promise<StepResult> {
   const flow = await db.flow.findUniqueOrThrow({ where: { id: session.flowId } });
-  return advance(db, session, FlowGraph.parse(flow.graph));
+  return advance(db, session, FlowGraph.parse(flow.graph), { timer: true });
+}
+
+/**
+ * Where a delay node parked on itself continues when the contact writes.
+ *
+ * Returns null when the session is not parked on such a delay.
+ */
+function delayReplyExit(graph: FlowGraph, session: FlowSession): string | null | undefined {
+  const node = graph.nodes.find((n) => n.id === session.currentNodeId);
+  if (node?.data.kind !== "delay") return undefined;
+  const d = node.data;
+  if (d.mode === "untilReply") return nextOf(graph, node.id);
+  if ((d.mode ?? "fixed") === "fixed" && d.cancelOnReply) {
+    return nextOf(graph, node.id, "replied") ?? nextOf(graph, node.id);
+  }
+  return undefined;
 }
 
 /**
@@ -185,9 +306,12 @@ async function advance(
   db: PrismaClient,
   session: FlowSession,
   graph: FlowGraph,
-  opts: { inbound?: boolean } = {},
+  opts: { inbound?: boolean; hops?: number; timer?: boolean } = {},
 ): Promise<StepResult> {
   let current = session.currentNodeId;
+  // A delay that parked on itself (waiting on the contact, or a cancellable
+  // wait) and is now woken by the worker: leave by its timeout path.
+  const wokenOn = opts.timer ? current : null;
   // Stored contact fields are readable by {{name}} alongside session answers,
   // so a flow can greet by a name captured weeks ago in a different flow.
   // Session context wins on conflict — see loadContactFields.
@@ -240,6 +364,84 @@ async function advance(
         },
       });
       return { status: "completed" };
+    }
+
+    if (d.kind === "goal") {
+      // Best-effort: a conversion that fails to record must not stop the
+      // conversation that produced it.
+      await db.flowGoalHit
+        .create({
+          data: {
+            sessionId: session.id,
+            flowId: session.flowId,
+            nodeId: node.id,
+            contactId: session.contactId,
+          },
+        })
+        .catch((err) => console.warn("[runner] goal hit not recorded:", err));
+      current = nextOf(graph, node.id);
+      await db.flowSession.update({
+        where: { id: session.id },
+        data: { currentNodeId: current, context: asJson(ctx) },
+      });
+      continue;
+    }
+
+    if (d.kind === "request") {
+      const render = (text: string, mode: RenderMode) => interpolate(text, escaped(ctx, mode));
+      const outcome = await runRequest(d, render);
+      if (outcome.ok) {
+        for (const m of d.mapping ?? []) {
+          const value = asFieldValue(getPath(outcome.json, m.path));
+          if (value === null) continue;
+          ctx[m.field] = value;
+          await saveContactField(db, session.contactId, m.field, value);
+        }
+      } else {
+        console.warn(`[runner] request ${node.id} failed: ${outcome.reason}`);
+      }
+      current = nextOf(graph, node.id, outcome.ok ? "success" : "error");
+      await db.flowSession.update({
+        where: { id: session.id },
+        data: { currentNodeId: current, context: asJson(ctx) },
+      });
+      continue;
+    }
+
+    if (d.kind === "goto") {
+      if ("nodeId" in d.target) {
+        // Same flow: just move. MAX_STEPS still bounds a loop built from gotos.
+        const to = d.target.nodeId;
+        current = graph.nodes.some((n) => n.id === to) ? to : null;
+        await db.flowSession.update({
+          where: { id: session.id },
+          data: { currentNodeId: current, context: asJson(ctx) },
+        });
+        continue;
+      }
+
+      // Another flow: this session is done, the other one starts fresh. The
+      // hop cap stops two flows that point at each other; on overflow the
+      // contact is left where they are rather than spun forever.
+      await db.flowSession.update({
+        where: { id: session.id },
+        data: {
+          status: "COMPLETED",
+          completedAt: new Date(),
+          currentNodeId: null,
+          context: asJson(ctx),
+        },
+      });
+      const hops = (opts.hops ?? 0) + 1;
+      if (hops > MAX_HOPS) {
+        console.warn(`[runner] goto hop limit reached at ${session.flowId}/${node.id}`);
+        return { status: "completed" };
+      }
+      const result = await startFlow(db, d.target.flowId, session.contactId, {
+        hops,
+        takeover: true,
+      });
+      return result ?? { status: "completed" };
     }
 
     if (d.kind === "message") {
@@ -355,13 +557,30 @@ async function advance(
           break;
         }
       }
-      current = nextOf(graph, node.id, String(chosen));
-      await db.flowSession.update({ where: { id: session.id }, data: { currentNodeId: current } });
+      const handle = String(chosen);
+      // Remember the arm on the session and in its own table, so abStats can
+      // join arms to goals without parsing every session's context.
+      ctx[AB_KEY] = {
+        ...((ctx[AB_KEY] as Record<string, string> | undefined) ?? {}),
+        [node.id]: handle,
+      };
+      await db.abAssignment
+        .create({
+          data: { sessionId: session.id, flowId: session.flowId, nodeId: node.id, handle },
+        })
+        .catch((err) => console.warn("[runner] A/B assignment not recorded:", err));
+      current = nextOf(graph, node.id, handle);
+      await db.flowSession.update({
+        where: { id: session.id },
+        data: { currentNodeId: current, context: asJson(ctx) },
+      });
       continue;
     }
 
     if (d.kind === "question") {
-      await sendText(db, session.contactId, interpolate(d.text, ctx), {
+      const withText = { ...d, text: interpolate(d.text, ctx) };
+      await sendMessage(db, session.contactId, buildQuestion(node.id, withText), {
+        preview: withText.text,
         meta: metaFor(session, node.id),
       });
       await db.flowSession.update({
@@ -372,7 +591,44 @@ async function advance(
     }
 
     if (d.kind === "delay") {
+      const mode = d.mode ?? "fixed";
+
+      if (wokenOn === node.id && step === 0) {
+        const handle = mode === "untilReply" ? "timeout" : undefined;
+        current = (handle && nextOf(graph, node.id, handle)) || nextOf(graph, node.id);
+        await db.flowSession.update({
+          where: { id: session.id },
+          data: { status: "ACTIVE", currentNodeId: current, context: asJson(ctx) },
+        });
+        continue;
+      }
+
       const resumeAt = resumeAtFor(d);
+
+      if (mode === "untilReply" || (mode === "fixed" && d.cancelOnReply)) {
+        // Park on this node, so the next message from the contact is routed
+        // here (WAITING_INPUT) and the worker can still fire the timeout.
+        await db.flowSession.update({
+          where: { id: session.id },
+          data: {
+            status: "WAITING_INPUT",
+            currentNodeId: node.id,
+            resumeAt: mode === "untilReply" && !d.timeoutSeconds ? null : resumeAt,
+            context: asJson(ctx),
+          },
+        });
+        return { status: "delayed", nodeId: node.id };
+      }
+
+      if (mode === "untilDate" && resumeAt.getTime() <= Date.now()) {
+        current = nextOf(graph, node.id);
+        await db.flowSession.update({
+          where: { id: session.id },
+          data: { currentNodeId: current, context: asJson(ctx) },
+        });
+        continue;
+      }
+
       await db.flowSession.update({
         where: { id: session.id },
         data: {
@@ -454,6 +710,18 @@ async function applyOps(
   }
 }
 
+/** The context with every value escaped for a URL or a JSON string body. */
+function escaped(ctx: Ctx, mode: RenderMode): Ctx {
+  if (mode === "raw") return ctx;
+  const out: Ctx = {};
+  for (const [k, v] of Object.entries(ctx)) {
+    if (v === undefined || v === null) continue;
+    const s = String(v);
+    out[k] = mode === "url" ? encodeURIComponent(s) : JSON.stringify(s).slice(1, -1);
+  }
+  return out;
+}
+
 /**
  * Stable 0–1 from a string. Used so a randomizer keeps sending the same
  * contact down the same arm even if the node is re-entered.
@@ -490,31 +758,84 @@ async function evaluate(
   d: Extract<FlowNodeData, { kind: "condition" }>,
   ctx: Ctx,
 ): Promise<boolean> {
-  if (d.op === "hasTag") {
+  const rules = rulesOf(d);
+  const all = (d.combinator ?? "and") === "and";
+  for (const rule of rules) {
+    const pass = await evaluateRule(db, contactId, rule, ctx);
+    if (all && !pass) return false;
+    if (!all && pass) return true;
+  }
+  return all;
+}
+
+async function evaluateRule(
+  db: PrismaClient,
+  contactId: string,
+  rule: ConditionRule,
+  ctx: Ctx,
+): Promise<boolean> {
+  if (rule.op === "hasTag" || rule.op === "notHasTag") {
     const hit = await db.contactTag.findFirst({
-      where: { contactId, tag: { name: d.key } },
+      where: { contactId, tag: { name: rule.key } },
     });
-    return Boolean(hit);
+    return rule.op === "hasTag" ? Boolean(hit) : !hit;
   }
 
-  const raw = ctx[d.key];
-  switch (d.op) {
+  if (rule.op === "subscribed") {
+    const contact = await db.contact.findUnique({
+      where: { id: contactId },
+      select: { subscribed: true },
+    });
+    return contact?.subscribed ?? false;
+  }
+
+  const raw = ctx[rule.key];
+  const text = raw === undefined || raw === null ? "" : String(raw);
+  const value = String(rule.value ?? "");
+
+  switch (rule.op) {
     case "exists":
-      return raw !== undefined && raw !== null && raw !== "";
+      return text !== "";
+    case "isEmpty":
+      return text.trim() === "";
     case "equals":
-      return String(raw ?? "").toLowerCase() === String(d.value ?? "").toLowerCase();
+      return text.toLowerCase() === value.toLowerCase();
     case "contains":
-      return String(raw ?? "")
-        .toLowerCase()
-        .includes(String(d.value ?? "").toLowerCase());
+      return text.toLowerCase().includes(value.toLowerCase());
+    case "startsWith":
+      return value !== "" && text.toLowerCase().startsWith(value.toLowerCase());
     case "gt":
     case "lt":
     case "before":
     case "after":
-      return compareValues(d.op, raw, d.value);
+      return compareValues(rule.op, raw, rule.value);
+    case "between":
+      return isBetween(text, value);
+    case "inLastDays": {
+      const t = parseDate(text);
+      const days = parseNumber(value);
+      if (t === null || days === null || days < 0) return false;
+      const now = Date.now();
+      return t <= now && t >= now - (days + 1) * 86_400_000;
+    }
     default:
       return false;
   }
+}
+
+/** "min,max" inclusive, as numbers when both parse, otherwise as dates. */
+function isBetween(text: string, range: string): boolean {
+  const [lo, hi] = range.split(",").map((s) => s.trim());
+  if (lo === undefined || hi === undefined) return false;
+  const n = parseNumber(text);
+  const nLo = parseNumber(lo);
+  const nHi = parseNumber(hi);
+  if (n !== null && nLo !== null && nHi !== null) return n >= nLo && n <= nHi;
+  const t = parseDate(text);
+  const tLo = parseDate(lo);
+  const tHi = parseDate(hi);
+  if (t !== null && tLo !== null && tHi !== null) return t >= tLo && t <= tHi;
+  return false;
 }
 
 /**

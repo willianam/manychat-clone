@@ -31,6 +31,7 @@ function fakeDb() {
         { triggerId: "t2", _count: { _all: 1 } },
       ]),
     },
+    flowGoalHit: { groupBy: vi.fn().mockResolvedValue([]) },
     dailyStat: { upsert, findMany: vi.fn().mockResolvedValue([]) },
   } as unknown as PrismaClient;
   return { db, upsert };
@@ -70,7 +71,7 @@ describe("rollupDay", () => {
         { metric: METRICS.triggerFires, key: "t2", value: 1 },
       ]),
     );
-    // No goal source on this client: no goals rows.
+    // No goal hits in the range: no goals rows.
     expect(rows.some((r) => r.metric === METRICS.goals)).toBe(false);
 
     const first = upsert.mock.calls[0][0];
@@ -89,11 +90,11 @@ describe("rollupDay", () => {
     expect(where.createdAt.lt.toISOString()).toBe("2026-08-26T03:00:00.000Z");
   });
 
-  it("counts goals when a FlowGoalHit model is present on the client", async () => {
+  it("counts goal hits per flow", async () => {
     const { db } = fakeDb();
-    (db as unknown as Record<string, unknown>).flowGoalHit = {
-      groupBy: vi.fn().mockResolvedValue([{ flowId: "f1", _count: { _all: 3 } }]),
-    };
+    vi.mocked(db.flowGoalHit.groupBy).mockResolvedValue([
+      { flowId: "f1", _count: { _all: 3 } },
+    ] as never);
     const rows = await rollupDay(db, "2026-08-25");
     expect(rows).toContainEqual({ metric: METRICS.goals, key: "f1", value: 3 });
   });

@@ -1,6 +1,12 @@
 import type { FlowButton, FlowNodeData, LIMITS as L } from "../lib/flow-schema";
 import { LIMITS, byteLength } from "../lib/flow-schema";
-import { accountTimeZone, wallClockIn, wallClockToDate, type WallClock } from "../lib/timezone";
+import {
+  accountTimeZone,
+  parseLocalDateTime,
+  wallClockIn,
+  wallClockToDate,
+  type WallClock,
+} from "../lib/timezone";
 
 /**
  * Translates flow nodes into Instagram message payloads.
@@ -80,6 +86,35 @@ export function buildQuickReply(
       content_type: "text",
       title: truncateBytes(o.title, LIMITS.quickReplyTitle),
       payload: postbackPayload(nodeId, o.id),
+    })),
+  };
+}
+
+/** The quick-reply handle a "Pular" tap on a question carries. */
+export const SKIP_HANDLE = "skip";
+
+/**
+ * A question: plain text, plus a "Pular" quick reply when the author allows
+ * skipping and one chip per accepted answer when the input type is `option`.
+ * Instagram caps quick replies at 13, so the skip chip takes the last slot.
+ */
+export function buildQuestion(
+  nodeId: string,
+  d: Extract<FlowNodeData, { kind: "question" }>,
+): Record<string, unknown> {
+  const chips: Array<{ title: string; payload: string }> = [];
+  if (d.inputType === "option") {
+    for (const o of d.options ?? [])
+      chips.push({ title: o, payload: postbackPayload(nodeId, `opt:${o}`) });
+  }
+  if (d.allowSkip) chips.push({ title: "Pular", payload: postbackPayload(nodeId, SKIP_HANDLE) });
+  if (!chips.length) return { text: d.text };
+  return {
+    text: d.text,
+    quick_replies: chips.slice(0, LIMITS.quickReplies).map((c) => ({
+      content_type: "text",
+      title: truncateBytes(c.title, LIMITS.quickReplyTitle),
+      payload: c.payload,
     })),
   };
 }
@@ -205,7 +240,17 @@ export function resumeAtFor(
   now: Date = new Date(),
   timeZone: string = accountTimeZone(),
 ): Date {
-  const at = new Date(now.getTime() + d.seconds * 1000);
+  if (d.mode === "untilDate") {
+    // An unparseable or past date resumes now: waiting forever on a typo is
+    // the worse failure.
+    const at = parseLocalDateTime(d.untilDate ?? "", timeZone);
+    return at && at.getTime() > now.getTime() ? at : now;
+  }
+  if (d.mode === "untilReply") {
+    return new Date(now.getTime() + (d.timeoutSeconds ?? 0) * 1000);
+  }
+
+  const at = new Date(now.getTime() + (d.seconds ?? 0) * 1000);
   if (!d.window) return at;
 
   const { fromHour, toHour } = d.window;

@@ -399,10 +399,14 @@ async function deliver(
 /**
  * Resumes sessions parked on a delay node. Run on an interval (cron, or a
  * setInterval in dev — see docker/worker.ts).
+ *
+ * WAITING_INPUT is included because a delay that also listens for a reply
+ * (untilReply with a timeout, or a cancellable fixed wait) parks the session
+ * as waiting; its `resumeAt` is the timeout.
  */
 export async function tickDelayedSessions(db: PrismaClient): Promise<number> {
   const due = await db.flowSession.findMany({
-    where: { status: "ACTIVE", resumeAt: { lte: new Date() } },
+    where: { status: { in: ["ACTIVE", "WAITING_INPUT"] }, resumeAt: { lte: new Date() } },
     take: 100,
   });
 
@@ -435,6 +439,8 @@ export async function sweepStaleSessions(db: PrismaClient, now = new Date()): Pr
   const { count } = await db.flowSession.updateMany({
     where: {
       status: "WAITING_INPUT",
+      // A waiting session with a resumeAt is a delay with its own deadline.
+      resumeAt: null,
       updatedAt: { lt: new Date(now.getTime() - STALE_SESSION_MS) },
     },
     data: { status: "ABANDONED", abandonedAt: now },
