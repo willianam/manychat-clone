@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   duplicateNode,
+  insertPosition,
   inlineLimitOf,
   inlineTextOf,
   pruneOrphanEdges,
@@ -149,9 +150,7 @@ describe("inline text", () => {
 
   it("has no inline text for structural kinds", () => {
     expect(inlineTextOf({ kind: "end" })).toBeNull();
-    expect(
-      inlineTextOf({ kind: "condition", key: "nome", op: "exists" }),
-    ).toBeNull();
+    expect(inlineTextOf({ kind: "condition", key: "nome", op: "exists" })).toBeNull();
   });
 
   it("caps a message with buttons at the button-template limit", () => {
@@ -239,9 +238,12 @@ describe("duplicateNode", () => {
   const graph = FlowGraph.parse({
     nodes: [
       {
-        id: "m1", type: "message", position: { x: 100, y: 200 },
+        id: "m1",
+        type: "message",
+        position: { x: 100, y: 200 },
         data: {
-          kind: "message", text: "Escolha:",
+          kind: "message",
+          text: "Escolha:",
           buttons: [
             { type: "postback", id: "b1", title: "Sim" },
             { type: "url", id: "b2", title: "Site", url: "https://x.com" },
@@ -283,28 +285,60 @@ describe("duplicateNode", () => {
   it("re-emite ids de card e de opção também", () => {
     const g = FlowGraph.parse({
       nodes: [
-        { id: "c1", type: "carousel", position: { x: 0, y: 0 },
-          data: { kind: "carousel", cards: [
-            { id: "card1", title: "A", buttons: [{ type: "postback", id: "cb1", title: "Ok" }] },
-          ] } },
-        { id: "q1", type: "quickreply", position: { x: 0, y: 1 },
-          data: { kind: "quickreply", text: "?", saveAs: "k",
-                  options: [{ id: "o1", title: "Um" }] } },
+        {
+          id: "c1",
+          type: "carousel",
+          position: { x: 0, y: 0 },
+          data: {
+            kind: "carousel",
+            cards: [
+              { id: "card1", title: "A", buttons: [{ type: "postback", id: "cb1", title: "Ok" }] },
+            ],
+          },
+        },
+        {
+          id: "q1",
+          type: "quickreply",
+          position: { x: 0, y: 1 },
+          data: {
+            kind: "quickreply",
+            text: "?",
+            saveAs: "k",
+            options: [{ id: "o1", title: "Um" }],
+          },
+        },
       ],
       edges: [],
     });
 
-    const card = duplicateNode(g, "c1").nodes[2]!
-      .data as { cards: Array<{ id: string; buttons: Array<{ id: string }> }> };
+    const card = duplicateNode(g, "c1").nodes[2]!.data as {
+      cards: Array<{ id: string; buttons: Array<{ id: string }> }>;
+    };
     expect(card.cards[0]!.id).not.toBe("card1");
     expect(card.cards[0]!.buttons[0]!.id).not.toBe("cb1");
 
-    const qr = duplicateNode(g, "q1").nodes[2]!
-      .data as { options: Array<{ id: string }> };
+    const qr = duplicateNode(g, "q1").nodes[2]!.data as { options: Array<{ id: string }> };
     expect(qr.options[0]!.id).not.toBe("o1");
   });
 
   it("devolve o grafo intacto quando o nó não existe", () => {
     expect(duplicateNode(graph, "fantasma")).toEqual(graph);
+  });
+});
+
+describe("insertPosition", () => {
+  const nodes = [
+    { id: "a", position: { x: 10, y: 20 } },
+    { id: "b", position: { x: 300, y: 400 } },
+  ];
+
+  it("lands below the selected node", () => {
+    expect(insertPosition(nodes, "a")).toEqual({ x: 10, y: 200 });
+  });
+
+  it("falls back to the last node, then to the canvas origin", () => {
+    expect(insertPosition(nodes, null)).toEqual({ x: 300, y: 580 });
+    expect(insertPosition(nodes, "missing")).toEqual({ x: 300, y: 580 });
+    expect(insertPosition([], null)).toEqual({ x: 240, y: 80 });
   });
 });

@@ -21,10 +21,7 @@ export function verifySignature(
 ): boolean {
   if (!header?.startsWith("sha256=")) return false;
 
-  const expected = crypto
-    .createHmac("sha256", appSecret)
-    .update(rawBody, "utf8")
-    .digest();
+  const expected = crypto.createHmac("sha256", appSecret).update(rawBody, "utf8").digest();
 
   let received: Buffer;
   try {
@@ -44,10 +41,7 @@ export function verifySignature(
  * Echo back hub.challenge only when the verify token matches the one you
  * typed into the App Dashboard.
  */
-export function verifyChallenge(
-  params: URLSearchParams,
-  verifyToken: string,
-): string | null {
+export function verifyChallenge(params: URLSearchParams, verifyToken: string): string | null {
   const mode = params.get("hub.mode");
   const token = params.get("hub.verify_token");
   const challenge = params.get("hub.challenge");

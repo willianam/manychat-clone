@@ -1,20 +1,39 @@
 import type { PrismaClient, Trigger } from "@prisma/client";
 import { startFlow, resumeWithInput, resumeWithPostback } from "./flow-runner";
-import { sendPrivateReply } from "./instagram";
+import { sendPrivateReply, sendText } from "./instagram";
+import { setContactSubscribed } from "./contact-events";
 import { normalizeText, containsWord, normalizeForGrouping } from "../lib/text-normalize";
+import {
+  classifyGlobalKeyword,
+  OPT_OUT_CONFIRMATION,
+  OPT_IN_CONFIRMATION,
+} from "../lib/global-keywords";
 
 /**
  * Decides what an inbound event should do.
  *
- * Order matters: a contact already parked on a question owns the message.
- * Only when nobody is waiting do we test triggers, so answering "yes" to a
+ * Order matters. Global keywords come first: "parar" must work even while a
+ * question is waiting, or a contact could be trapped in a flow they want out
+ * of. Then a contact already parked on a question owns the message. Only
+ * when nobody is waiting do we test triggers, so answering "yes" to a
  * question can't accidentally fire the "yes" keyword flow.
+ */
+/**
+ * `isNewContact` marks the first message ever from this person. When no
+ * keyword matches it, the WELCOME trigger answers before the DEFAULT one:
+ * a stranger saying "oi" gets the welcome, a known contact the fallback.
+ * Instagram has no Get Started button or greeting text, so this is the only
+ * welcome hook the platform offers.
  */
 export async function handleInboundMessage(
   db: PrismaClient,
   contactId: string,
   text: string,
+  opts: { isNewContact?: boolean } = {},
 ): Promise<void> {
+  if (await handleGlobalKeyword(db, contactId, text)) return;
+  if (!(await automationAllowed(db, contactId))) return;
+
   const waiting = await db.flowSession.findFirst({
     where: { contactId, status: "WAITING_INPUT" },
     orderBy: { updatedAt: "desc" },
@@ -27,6 +46,7 @@ export async function handleInboundMessage(
 
   const trigger = await matchKeyword(db, text);
   if (trigger) {
+    await recordTriggerFire(db, trigger.id, contactId);
     await startFlow(db, trigger.flowId, contactId);
     return;
   }
@@ -36,11 +56,110 @@ export async function handleInboundMessage(
   // keyword for. A DEFAULT trigger firing does not make the miss less real.
   await recordUnmatched(db, contactId, text);
 
+  if (opts.isNewContact) {
+    const welcome = await db.trigger.findFirst({
+      where: { kind: "WELCOME", enabled: true, flow: { enabled: true } },
+      orderBy: { priority: "desc" },
+    });
+    if (welcome) {
+      await recordTriggerFire(db, welcome.id, contactId);
+      await startFlow(db, welcome.flowId, contactId);
+      return;
+    }
+  }
+
   const fallback = await db.trigger.findFirst({
     where: { kind: "DEFAULT", enabled: true, flow: { enabled: true } },
     orderBy: { priority: "desc" },
   });
-  if (fallback) await startFlow(db, fallback.flowId, contactId);
+  if (fallback) {
+    await recordTriggerFire(db, fallback.id, contactId);
+    await startFlow(db, fallback.flowId, contactId);
+  }
+}
+
+/**
+ * One row per trigger fire, the raw material for the "disparos por gatilho"
+ * daily stat (server/rollup.ts). Recorded before startFlow so a fire whose
+ * flow refused to start (opted out, already running) still counts as the
+ * trigger having matched. Never throws: analytics must not cost the reply.
+ */
+async function recordTriggerFire(
+  db: PrismaClient,
+  triggerId: string,
+  contactId: string,
+): Promise<void> {
+  try {
+    await db.triggerFire.create({ data: { triggerId, contactId } });
+  } catch {
+    // Best-effort.
+  }
+}
+
+/**
+ * Global keywords, before anything else gets a say.
+ *
+ * Returns true when the message was fully handled here. Opt-out and opt-in
+ * are; an escape word ("menu", "recomeçar") is not — it abandons the
+ * contact's sessions and returns false so the message goes on to trigger
+ * matching, where the owner may well have a "menu" keyword flow. Without
+ * this a flow parked on a question keeps the contact forever: every word
+ * they type is taken as the answer.
+ *
+ * Opting out abandons the sessions for the same reason. The confirmation is
+ * best-effort: the contact just wrote, so the window is open, but a send
+ * failure must not undo the opt-out itself.
+ */
+async function handleGlobalKeyword(
+  db: PrismaClient,
+  contactId: string,
+  text: string,
+): Promise<boolean> {
+  const command = classifyGlobalKeyword(text);
+  if (!command) return false;
+
+  if (command === "escape") {
+    await abandonSessions(db, contactId);
+    return false;
+  }
+
+  const subscribed = command === "opt_in";
+  // Also abandons open sessions on opt-out and records the timeline event.
+  await setContactSubscribed(db, contactId, subscribed, "keyword");
+
+  await sendText(db, contactId, subscribed ? OPT_IN_CONFIRMATION : OPT_OUT_CONFIRMATION).catch(
+    (err) => console.warn("[dispatch] opt-out confirmation failed:", err),
+  );
+  return true;
+}
+
+async function abandonSessions(db: PrismaClient, contactId: string): Promise<void> {
+  await db.flowSession.updateMany({
+    where: { contactId, status: { in: ["ACTIVE", "WAITING_INPUT"] } },
+    data: { status: "ABANDONED", abandonedAt: new Date() },
+  });
+}
+
+/**
+ * The single gate every automated path goes through.
+ *
+ * An opted-out contact gets nothing automated: no session resume, no
+ * trigger, and no entry in the unmatched list — their messages are not
+ * keyword gaps, they are a person who asked to be left alone.
+ *
+ * A contact paused from the inbox is the same from the engine's point of
+ * view, for a different reason: a human is talking to them, and a flow
+ * answering in the middle of that conversation would be worse than silence.
+ * The message itself is still recorded (the webhook did that before calling
+ * here) and global keywords were already honoured by the caller.
+ */
+async function automationAllowed(db: PrismaClient, contactId: string): Promise<boolean> {
+  const contact = await db.contact.findUnique({
+    where: { id: contactId },
+    select: { subscribed: true, automationPaused: true },
+  });
+  if (!contact) return false;
+  return contact.subscribed && !contact.automationPaused;
 }
 
 /**
@@ -53,11 +172,7 @@ export async function handleInboundMessage(
  *
  * Never throws: a failure to record analytics must not stop us replying.
  */
-async function recordUnmatched(
-  db: PrismaClient,
-  contactId: string,
-  text: string,
-): Promise<void> {
+async function recordUnmatched(db: PrismaClient, contactId: string, text: string): Promise<void> {
   const normalized = normalizeForGrouping(text);
   if (!normalized) return; // a sticker or a bare emoji has no keyword to suggest
 
@@ -93,6 +208,7 @@ export async function handlePostback(
   contactId: string,
   payload: string,
 ): Promise<void> {
+  if (!(await automationAllowed(db, contactId))) return;
   const waiting = await db.flowSession.findFirst({
     where: { contactId, status: "WAITING_INPUT" },
     orderBy: { updatedAt: "desc" },
@@ -129,6 +245,8 @@ export async function handleComment(
     update: { username: args.username, lastInboundAt: new Date() },
   });
 
+  if (!(await automationAllowed(db, contact.id))) return;
+  await recordTriggerFire(db, trigger.id, contact.id);
   await startFlow(db, trigger.flowId, contact.id);
 }
 
@@ -146,6 +264,10 @@ export async function handleStoryReply(
   contactId: string,
   text: string,
 ): Promise<void> {
+  // Global keywords, opt-out and the inbox pause apply exactly as to a plain DM.
+  if (await handleGlobalKeyword(db, contactId, text)) return;
+  if (!(await automationAllowed(db, contactId))) return;
+
   // A session parked on a question owns the reply, same as any message.
   const waiting = await db.flowSession.findFirst({
     where: { contactId, status: "WAITING_INPUT" },
@@ -158,6 +280,7 @@ export async function handleStoryReply(
 
   const trigger = await matchByKind(db, "STORY_REPLY", text);
   if (trigger) {
+    await recordTriggerFire(db, trigger.id, contactId);
     await startFlow(db, trigger.flowId, contactId);
     return;
   }
@@ -172,15 +295,14 @@ export async function handleStoryReply(
  * Patternless by nature: whichever enabled STORY_MENTION trigger has the
  * highest priority wins.
  */
-export async function handleStoryMention(
-  db: PrismaClient,
-  contactId: string,
-): Promise<void> {
+export async function handleStoryMention(db: PrismaClient, contactId: string): Promise<void> {
+  if (!(await automationAllowed(db, contactId))) return;
   const trigger = await db.trigger.findFirst({
     where: { kind: "STORY_MENTION", enabled: true, flow: { enabled: true } },
     orderBy: { priority: "desc" },
   });
   if (!trigger) return;
+  await recordTriggerFire(db, trigger.id, contactId);
   await startFlow(db, trigger.flowId, contactId);
 }
 
@@ -199,6 +321,7 @@ export async function handleRefLink(
 ): Promise<boolean> {
   const link = await db.refLink.findUnique({ where: { code } });
   if (!link || !link.enabled) return false;
+  if (!(await automationAllowed(db, contactId))) return false;
 
   const result = await startFlow(db, link.flowId, contactId);
   return result !== null;
@@ -216,12 +339,13 @@ export async function handleProfilePostback(
   contactId: string,
   flowId: string,
 ): Promise<void> {
+  if (!(await automationAllowed(db, contactId))) return;
   // Starting a flow while another is mid-question would leave the old
   // session orphaned and waiting forever. An explicit menu tap is a clear
   // intent to switch, so abandon what was running.
   await db.flowSession.updateMany({
     where: { contactId, status: { in: ["ACTIVE", "WAITING_INPUT"] } },
-    data: { status: "ABANDONED" },
+    data: { status: "ABANDONED", abandonedAt: new Date() },
   });
 
   await startFlow(db, flowId, contactId);
@@ -277,10 +401,7 @@ async function matchComment(
  * literal message, and silently folding accents out from under it would
  * break patterns that match accents deliberately.
  */
-export function matches(
-  trigger: Pick<Trigger, "pattern" | "match">,
-  text: string,
-): boolean {
+export function matches(trigger: Pick<Trigger, "pattern" | "match">, text: string): boolean {
   if (!trigger.pattern) return false;
 
   if (trigger.match === "REGEX") {

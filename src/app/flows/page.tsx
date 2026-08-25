@@ -1,8 +1,12 @@
+import { Workflow } from "lucide-react";
 import { db } from "../../server/db";
 import { FlowGraph, validateGraph } from "../../lib/flow-schema";
 import { FlowRow } from "./FlowRow";
 import { NewFlowButton } from "./NewFlowButton";
 import { ImportFlowButton } from "./ImportFlowButton";
+import { EmptyState } from "@/components/ui/empty-state";
+import { PageHeader } from "@/components/ui/page-header";
+import { triggerKindLabel } from "@/lib/ui/labels";
 
 export const dynamic = "force-dynamic";
 
@@ -25,39 +29,37 @@ export default async function FlowsPage() {
       name: f.name,
       enabled: f.enabled,
       broken,
+      hasDraft: f.draftGraph !== null,
       steps: parsed.success ? parsed.data.nodes.length : 0,
       updatedAt: f.updatedAt.toISOString(),
       triggers: f.triggers.map((t) =>
-        t.pattern ? `${t.kind.toLowerCase()}: "${t.pattern}"` : t.kind.toLowerCase(),
+        t.pattern ? `${triggerKindLabel(t.kind)}: "${t.pattern}"` : triggerKindLabel(t.kind),
       ),
     };
   });
 
   return (
-    <main className="mx-auto max-w-4xl px-6 py-8">
-      <div className="flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">Fluxos</h1>
-          <p className="mt-0.5 text-sm text-neutral-500">
-            {flows.length} {flows.length === 1 ? "fluxo" : "fluxos"} ·{" "}
-            {flows.filter((f) => f.enabled).length} ativo(s)
-          </p>
-        </div>
-
-        <div className="flex items-start gap-2">
-          <ImportFlowButton />
-          <NewFlowButton />
-        </div>
-      </div>
+    <main className="mx-auto w-full max-w-4xl px-6 py-8">
+      <PageHeader
+        title="Fluxos"
+        description={`${flows.length} ${flows.length === 1 ? "fluxo" : "fluxos"} · ${
+          flows.filter((f) => f.enabled).length
+        } ativo(s)`}
+        actions={
+          <>
+            <ImportFlowButton />
+            <NewFlowButton />
+          </>
+        }
+      />
 
       {rows.length === 0 ? (
-        <div className="mt-8 rounded-xl border border-dashed p-10 text-center">
-          <p className="font-medium">Nenhum fluxo ainda.</p>
-          <p className="mt-1 text-sm text-neutral-500">
-            Crie o primeiro acima escolhendo o que deve iniciá-lo — comentário,
-            resposta a story ou palavra-chave. O gatilho nasce junto com o fluxo.
-          </p>
-        </div>
+        <EmptyState
+          className="mt-8"
+          icon={Workflow}
+          title="Nenhum fluxo ainda."
+          description="Crie o primeiro acima escolhendo o que deve iniciá-lo: comentário, resposta a story ou palavra-chave. O gatilho nasce junto com o fluxo."
+        />
       ) : (
         <ul className="mt-6 space-y-2">
           {rows.map((f) => (
@@ -66,9 +68,9 @@ export default async function FlowsPage() {
         </ul>
       )}
 
-      <p className="mt-6 text-xs text-neutral-400">
-        Um fluxo ativo responde no Instagram assim que um gatilho casa. Fluxos
-        com erro não podem ser ativados.
+      <p className="mt-6 text-xs text-muted-foreground">
+        Um fluxo ativo responde no Instagram assim que um gatilho casa. Fluxos com erro não podem
+        ser ativados.
       </p>
     </main>
   );

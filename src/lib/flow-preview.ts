@@ -1,4 +1,4 @@
-import { FlowGraph, findEntryNode, type FlowNodeData } from "./flow-schema";
+import { FlowGraph, findEntryNode, armLabel, rulesOf, type FlowNodeData } from "./flow-schema";
 
 /**
  * Flow preview: the graph rendered as the conversation it produces.
@@ -30,7 +30,13 @@ export type PreviewItem =
   | { kind: "bubble"; nodeId: string; text: string; buttons: PreviewChoice[] }
   | { kind: "quickreply"; nodeId: string; text: string; options: PreviewChoice[] }
   | { kind: "carousel"; nodeId: string; cards: PreviewCard[] }
-  | { kind: "media"; nodeId: string; media: "image" | "video" | "audio" | "file" | "album"; urls: string[]; label: string }
+  | {
+      kind: "media";
+      nodeId: string;
+      media: "image" | "video" | "audio" | "file" | "album";
+      urls: string[];
+      label: string;
+    }
   | { kind: "input"; nodeId: string; saveAs: string }
   | { kind: "note"; nodeId: string; text: string }
   | { kind: "fork"; nodeId: string; label: string; choices: PreviewChoice[] }
@@ -97,7 +103,10 @@ export function previewFrom(
         continue;
       }
       current = targetOf(graph, id);
-      if (!current) { items.push({ kind: "dangling", nodeId: id }); break; }
+      if (!current) {
+        items.push({ kind: "dangling", nodeId: id });
+        break;
+      }
       continue;
     }
 
@@ -117,7 +126,10 @@ export function previewFrom(
       items.push({ kind: "bubble", nodeId: id, text: d.text, buttons: [] });
       items.push({ kind: "input", nodeId: id, saveAs: d.saveAs });
       current = targetOf(graph, id);
-      if (!current) { items.push({ kind: "dangling", nodeId: id }); break; }
+      if (!current) {
+        items.push({ kind: "dangling", nodeId: id });
+        break;
+      }
       continue;
     }
 
@@ -141,7 +153,10 @@ export function previewFrom(
         continue;
       }
       current = targetOf(graph, id);
-      if (!current) { items.push({ kind: "dangling", nodeId: id }); break; }
+      if (!current) {
+        items.push({ kind: "dangling", nodeId: id });
+        break;
+      }
       continue;
     }
 
@@ -153,15 +168,18 @@ export function previewFrom(
         urls: d.url ? [d.url] : [],
         label:
           d.kind === "image"
-            ? d.caption ?? "Imagem"
+            ? (d.caption ?? "Imagem")
             : d.kind === "file"
-              ? d.filename ?? "Documento PDF"
+              ? (d.filename ?? "Documento PDF")
               : d.kind === "video"
                 ? "Vídeo"
                 : "Áudio",
       });
       current = targetOf(graph, id);
-      if (!current) { items.push({ kind: "dangling", nodeId: id }); break; }
+      if (!current) {
+        items.push({ kind: "dangling", nodeId: id });
+        break;
+      }
       continue;
     }
 
@@ -174,7 +192,10 @@ export function previewFrom(
         label: `${d.urls.length} ${d.urls.length === 1 ? "imagem" : "imagens"}`,
       });
       current = targetOf(graph, id);
-      if (!current) { items.push({ kind: "dangling", nodeId: id }); break; }
+      if (!current) {
+        items.push({ kind: "dangling", nodeId: id });
+        break;
+      }
       continue;
     }
 
@@ -186,7 +207,9 @@ export function previewFrom(
       items.push({
         kind: "fork",
         nodeId: id,
-        label: `Se ${d.key} ${d.op}${d.value ? ` ${d.value}` : ""}`,
+        label: `Se ${rulesOf(d)
+          .map((r) => `${r.key} ${r.op}${r.value ? ` ${r.value}` : ""}`.trim())
+          .join(d.combinator === "or" ? " ou " : " e ")}`,
         choices: choicesHere,
       });
       current = followChoice(choicesHere, picked);
@@ -197,7 +220,7 @@ export function previewFrom(
     if (d.kind === "random") {
       const choicesHere = d.weights.map<PreviewChoice>((w, i) => ({
         handle: String(i),
-        label: `Saída ${i + 1} · ${w}%`,
+        label: `${armLabel(d, i)} · ${w}%`,
         target: targetOf(graph, id, String(i)),
       }));
       items.push({ kind: "fork", nodeId: id, label: "Randomizador", choices: choicesHere });
@@ -209,16 +232,64 @@ export function previewFrom(
     // Silent nodes: shown as a margin note so the reviewer knows time passes
     // or state changes here, without it looking like a message.
     if (d.kind === "delay") {
-      items.push({ kind: "note", nodeId: id, text: `Espera ${humanize(d.seconds)}` });
+      const text =
+        d.mode === "untilReply"
+          ? `Espera a resposta${d.timeoutSeconds ? ` (até ${humanize(d.timeoutSeconds)})` : ""}`
+          : d.mode === "untilDate"
+            ? `Espera até ${d.untilDate?.replace("T", " ")}`
+            : `Espera ${humanize(d.seconds ?? 0)}`;
+      items.push({ kind: "note", nodeId: id, text });
       current = targetOf(graph, id);
-      if (!current) { items.push({ kind: "dangling", nodeId: id }); break; }
+      if (!current) {
+        items.push({ kind: "dangling", nodeId: id });
+        break;
+      }
       continue;
     }
 
     if (d.kind === "action") {
       items.push({ kind: "note", nodeId: id, text: describeOps(d.ops) });
       current = targetOf(graph, id);
-      if (!current) { items.push({ kind: "dangling", nodeId: id }); break; }
+      if (!current) {
+        items.push({ kind: "dangling", nodeId: id });
+        break;
+      }
+      continue;
+    }
+
+    if (d.kind === "goal") {
+      items.push({ kind: "note", nodeId: id, text: `Meta "${d.name}" atingida` });
+      current = targetOf(graph, id);
+      if (!current) {
+        items.push({ kind: "dangling", nodeId: id });
+        break;
+      }
+      continue;
+    }
+
+    if (d.kind === "request") {
+      const choicesHere: PreviewChoice[] = [
+        { handle: "success", label: "sucesso", target: targetOf(graph, id, "success") },
+        { handle: "error", label: "erro", target: targetOf(graph, id, "error") },
+      ];
+      items.push({ kind: "fork", nodeId: id, label: `${d.method} ${d.url}`, choices: choicesHere });
+      current = followChoice(choicesHere, picked);
+      if (current === null) break;
+      continue;
+    }
+
+    if (d.kind === "goto") {
+      if ("flowId" in d.target) {
+        items.push({ kind: "note", nodeId: id, text: `Vai para outro fluxo (${d.target.flowId})` });
+        break;
+      }
+      items.push({ kind: "note", nodeId: id, text: `Volta para o passo "${d.target.nodeId}"` });
+      const to = d.target.nodeId;
+      current = graph.nodes.some((n) => n.id === to) ? to : null;
+      if (!current) {
+        items.push({ kind: "dangling", nodeId: id });
+        break;
+      }
       continue;
     }
 
@@ -229,7 +300,10 @@ export function previewFrom(
         text: `${d.action === "add" ? "Marca" : "Remove"} a tag "${d.tagName}"`,
       });
       current = targetOf(graph, id);
-      if (!current) { items.push({ kind: "dangling", nodeId: id }); break; }
+      if (!current) {
+        items.push({ kind: "dangling", nodeId: id });
+        break;
+      }
       continue;
     }
 
@@ -264,7 +338,8 @@ function describeOps(ops: Extract<FlowNodeData, { kind: "action" }>["ops"]): str
       if (o.op === "addTag") return `+ tag ${o.tagName}`;
       if (o.op === "removeTag") return `− tag ${o.tagName}`;
       if (o.op === "setField") return `${o.key} = ${o.value}`;
-      return `limpa ${o.key}`;
+      if (o.op === "unsetField") return `limpa ${o.key}`;
+      return o.op === "unsubscribe" ? "cancela inscrição" : "reativa inscrição";
     })
     .join(" · ");
 }

@@ -2,6 +2,17 @@
 
 import { useState } from "react";
 import { PROFILE_LIMITS, type MenuItemInput } from "../../lib/messenger-profile";
+import { FlowSelect } from "./FlowSelect";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { cn } from "@/lib/ui/cn";
 
 /**
  * One persistent-menu slot.
@@ -24,49 +35,58 @@ export function MenuRow({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="w-4 text-sm text-neutral-400 tabular-nums">{index + 1}</span>
+      <span className="w-4 text-sm tabular-nums text-neutral-400" aria-hidden>
+        {index + 1}
+      </span>
 
-      <input
+      <Label htmlFor={`menu-title-${index}`} className="sr-only">
+        Título do item {index + 1}
+      </Label>
+      <Input
+        id={`menu-title-${index}`}
         name="menuTitle"
         defaultValue={item?.title ?? ""}
         maxLength={PROFILE_LIMITS.menuTitle}
         placeholder="Falar com atendente"
-        className="min-w-0 flex-1 rounded-lg border px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
+        className="min-w-0 flex-1"
       />
 
-      <select
-        name="menuType"
-        value={type}
-        onChange={(e) => setType(e.target.value as "postback" | "web_url")}
-        className="w-28 rounded-lg border bg-white px-2 py-1.5 text-sm outline-none focus:border-indigo-400"
-      >
-        <option value="postback">Fluxo</option>
-        <option value="web_url">Link</option>
-      </select>
+      <Label htmlFor={`menu-type-${index}`} className="sr-only">
+        Tipo do item {index + 1}
+      </Label>
+      <Select name="menuType" value={type} onValueChange={(v) => setType(v as typeof type)}>
+        <SelectTrigger id={`menu-type-${index}`} className="w-28">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="postback">Fluxo</SelectItem>
+          <SelectItem value="web_url">Link</SelectItem>
+        </SelectContent>
+      </Select>
 
-      <select
-        name="menuFlowId"
-        defaultValue={item?.type === "postback" ? item.flowId : ""}
-        className={`w-52 rounded-lg border bg-white px-3 py-1.5 text-sm outline-none focus:border-indigo-400 ${
-          type === "postback" ? "" : "hidden"
-        }`}
-      >
-        <option value="">— sem fluxo —</option>
-        {flows.map((f) => (
-          <option key={f.id} value={f.id}>
-            {f.name}
-          </option>
-        ))}
-      </select>
+      <div className={cn(type === "postback" ? "contents" : "hidden")}>
+        <Label htmlFor={`menu-flow-${index}`} className="sr-only">
+          Fluxo do item {index + 1}
+        </Label>
+        <FlowSelect
+          id={`menu-flow-${index}`}
+          name="menuFlowId"
+          defaultValue={item?.type === "postback" ? item.flowId : ""}
+          flows={flows}
+          className="w-52"
+        />
+      </div>
 
-      <input
+      <Label htmlFor={`menu-url-${index}`} className="sr-only">
+        Link do item {index + 1}
+      </Label>
+      <Input
+        id={`menu-url-${index}`}
         name="menuUrl"
         type="url"
         defaultValue={item?.type === "web_url" ? item.url : ""}
         placeholder="https://..."
-        className={`w-52 rounded-lg border px-3 py-1.5 text-sm outline-none focus:border-indigo-400 ${
-          type === "web_url" ? "" : "hidden"
-        }`}
+        className={cn("w-52", type === "web_url" ? "" : "hidden")}
       />
     </div>
   );

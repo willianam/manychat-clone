@@ -16,6 +16,8 @@
  */
 
 import { MEDIA_FIELDS, parseMediaList, type IgMedia } from "../lib/ig-media";
+import { db } from "./db";
+import { getAccessToken } from "./token-refresh";
 
 const GRAPH_VERSION = process.env.GRAPH_API_VERSION ?? "v26.0";
 const BASE = `https://graph.instagram.com/${GRAPH_VERSION}`;
@@ -50,9 +52,7 @@ export type MediaListResult = {
  * On failure a stale cached list is returned rather than an empty one: an
  * old list of the owner's real posts is more useful than nothing.
  */
-export async function listMedia(
-  opts: { refresh?: boolean } = {},
-): Promise<MediaListResult> {
+export async function listMedia(opts: { refresh?: boolean } = {}): Promise<MediaListResult> {
   const now = Date.now();
 
   if (!opts.refresh && cache && now - cache.at < TTL_MS) {
@@ -86,7 +86,7 @@ export function invalidateMediaCache(): void {
 }
 
 async function fetchMedia(): Promise<IgMedia[]> {
-  const token = process.env.IG_ACCESS_TOKEN;
+  const token = await getAccessToken(db).catch(() => null);
   if (!token) throw new Error("MISSING_TOKEN");
 
   const url = `${BASE}/${SELF}/media?fields=${MEDIA_FIELDS}&limit=${LIMIT}`;

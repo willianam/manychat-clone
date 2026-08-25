@@ -68,7 +68,9 @@ async function main() {
   const graph = {
     nodes: [
       {
-        id: "n1", type: "message", position: { x: 0, y: 0 },
+        id: "n1",
+        type: "message",
+        position: { x: 0, y: 0 },
         data: {
           kind: "message",
           text: "Oi! Que bom te ver por aqui 👋\n\nO que você quer ver primeiro?",
@@ -79,22 +81,38 @@ async function main() {
         },
       },
       {
-        id: "n2", type: "carousel", position: { x: -260, y: 260 },
+        id: "n2",
+        type: "carousel",
+        position: { x: -260, y: 260 },
         data: {
           kind: "carousel",
           expanded: true,
           cards: [
-            { id: "c1", title: "Básico", subtitle: "R$ 97/mês",
-              buttons: [{ type: "postback", id: "b-c1", title: "Quero este" }] },
-            { id: "c2", title: "Pro", subtitle: "R$ 197/mês",
-              buttons: [{ type: "postback", id: "b-c2", title: "Quero este" }] },
-            { id: "c3", title: "Premium", subtitle: "R$ 397/mês",
-              buttons: [{ type: "postback", id: "b-c3", title: "Quero este" }] },
+            {
+              id: "c1",
+              title: "Básico",
+              subtitle: "R$ 97/mês",
+              buttons: [{ type: "postback", id: "b-c1", title: "Quero este" }],
+            },
+            {
+              id: "c2",
+              title: "Pro",
+              subtitle: "R$ 197/mês",
+              buttons: [{ type: "postback", id: "b-c2", title: "Quero este" }],
+            },
+            {
+              id: "c3",
+              title: "Premium",
+              subtitle: "R$ 397/mês",
+              buttons: [{ type: "postback", id: "b-c3", title: "Quero este" }],
+            },
           ],
         },
       },
       {
-        id: "n3", type: "quickreply", position: { x: 280, y: 260 },
+        id: "n3",
+        type: "quickreply",
+        position: { x: 280, y: 260 },
         data: {
           kind: "quickreply",
           text: "Sobre o que é sua dúvida?",
@@ -107,7 +125,9 @@ async function main() {
         },
       },
       {
-        id: "n4", type: "action", position: { x: -260, y: 560 },
+        id: "n4",
+        type: "action",
+        position: { x: -260, y: 560 },
         data: {
           kind: "action",
           ops: [
@@ -117,15 +137,21 @@ async function main() {
         },
       },
       {
-        id: "n5", type: "delay", position: { x: -260, y: 720 },
+        id: "n5",
+        type: "delay",
+        position: { x: -260, y: 720 },
         data: { kind: "delay", seconds: 3600, window: { fromHour: 8, toHour: 22 } },
       },
       {
-        id: "n6", type: "message", position: { x: -260, y: 860 },
+        id: "n6",
+        type: "message",
+        position: { x: -260, y: 860 },
         data: { kind: "message", text: "Ficou alguma dúvida sobre o plano?" },
       },
       {
-        id: "n7", type: "message", position: { x: 280, y: 560 },
+        id: "n7",
+        type: "message",
+        position: { x: 280, y: 560 },
         data: { kind: "message", text: "Boa! Já te respondo sobre {{assunto}}." },
       },
       { id: "n8", type: "end", position: { x: 0, y: 1020 }, data: { kind: "end" } },

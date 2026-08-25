@@ -19,14 +19,16 @@ import {
  * between them is invisible until real DMs stop being answered.
  */
 
-const row = (over: Partial<{
-  id: string;
-  kind: string;
-  pattern: string | null;
-  match: string;
-  mediaId: string | null;
-  flow: { name: string };
-}> = {}) => ({
+const row = (
+  over: Partial<{
+    id: string;
+    kind: string;
+    pattern: string | null;
+    match: string;
+    mediaId: string | null;
+    flow: { name: string };
+  }> = {},
+) => ({
   id: "t1",
   kind: "KEYWORD",
   pattern: "preco",
@@ -188,9 +190,7 @@ describe("a saved pattern still fires through the dispatcher", () => {
       const out = normalizeDraft({ kind: "KEYWORD", pattern: typed });
       expect(out.ok).toBe(true);
       if (!out.ok) return;
-      expect(matches({ pattern: out.draft.pattern, match: out.draft.match }, incoming)).toBe(
-        true,
-      );
+      expect(matches({ pattern: out.draft.pattern, match: out.draft.match }, incoming)).toBe(true);
     });
   }
 

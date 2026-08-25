@@ -35,6 +35,17 @@ export type MessagingEvent = {
   };
   postback?: { mid?: string; title?: string; payload?: string; referral?: Referral };
   referral?: Referral;
+  /**
+   * Read receipt. Instagram (`messaging_seen` field) sends `read.mid` — the
+   * last message the user saw; Messenger (`message_reads`) sends
+   * `read.watermark` — a timestamp, everything at or before it was read.
+   */
+  read?: { mid?: string; watermark?: number };
+  /**
+   * Delivery receipt (`message_deliveries`): `delivery.mids` when present,
+   * `delivery.watermark` always.
+   */
+  delivery?: { mids?: string[]; watermark?: number };
 };
 
 export type Referral = {
@@ -42,6 +53,58 @@ export type Referral = {
   source?: string;
   type?: string;
 };
+
+/** The user read our messages. At least one of `mid` / `watermark` is set. */
+export type ReadReceiptEvent = {
+  kind: "read";
+  igScopedId: string;
+  /** Meta id of the last message read (Instagram shape). */
+  mid?: string;
+  /** Everything we sent at or before this instant was read (Messenger shape). */
+  watermark?: Date;
+};
+
+/** Our messages reached the user's device. */
+export type DeliveryEvent = {
+  kind: "delivery";
+  igScopedId: string;
+  mids: string[];
+  /** Everything we sent at or before this instant was delivered. */
+  watermark?: Date;
+};
+
+/**
+ * A read receipt, if this event is one.
+ *
+ * Both documented shapes are accepted because the Instagram reference
+ * (`messaging_seen`) carries `read.mid` while the Messenger reference
+ * (`message_reads`) carries `read.watermark`; the field an app subscribes to
+ * decides which one arrives, and handling both costs nothing.
+ */
+export function parseReadReceipt(event: MessagingEvent): ReadReceiptEvent | null {
+  const read = event.read;
+  if (!read) return null;
+  const mid = read.mid?.trim() || undefined;
+  const watermark = toDate(read.watermark);
+  if (!mid && !watermark) return null;
+  return { kind: "read", igScopedId: event.sender?.id ?? "", mid, watermark };
+}
+
+/** A delivery receipt, if this event is one. */
+export function parseDelivery(event: MessagingEvent): DeliveryEvent | null {
+  const delivery = event.delivery;
+  if (!delivery) return null;
+  const mids = (delivery.mids ?? []).filter((m): m is string => typeof m === "string" && !!m);
+  const watermark = toDate(delivery.watermark);
+  if (mids.length === 0 && !watermark) return null;
+  return { kind: "delivery", igScopedId: event.sender?.id ?? "", mids, watermark };
+}
+
+/** Meta timestamps are epoch milliseconds; reject anything that is not one. */
+function toDate(ts: unknown): Date | undefined {
+  if (typeof ts !== "number" || !Number.isFinite(ts) || ts <= 0) return undefined;
+  return new Date(ts);
+}
 
 /** A story reply: the user answered one of our stories in the DM. */
 export type StoryReplyEvent = {
@@ -159,7 +222,9 @@ export const REF_CODE_MAX = 250;
  * just opens a normal DM" — a bug with no error message anywhere. Rejecting
  * at creation is the only place this is visible.
  */
-export function validateRefCode(raw: string): { ok: true; code: string } | { ok: false; error: string } {
+export function validateRefCode(
+  raw: string,
+): { ok: true; code: string } | { ok: false; error: string } {
   const code = normalizeRefCode(raw);
   if (!code) return { ok: false, error: "Informe um código para o link." };
   if (code.length > REF_CODE_MAX) {

@@ -1,5 +1,12 @@
 import type { FlowButton, FlowNodeData, LIMITS as L } from "../lib/flow-schema";
 import { LIMITS, byteLength } from "../lib/flow-schema";
+import {
+  accountTimeZone,
+  parseLocalDateTime,
+  wallClockIn,
+  wallClockToDate,
+  type WallClock,
+} from "../lib/timezone";
 
 /**
  * Translates flow nodes into Instagram message payloads.
@@ -83,6 +90,35 @@ export function buildQuickReply(
   };
 }
 
+/** The quick-reply handle a "Pular" tap on a question carries. */
+export const SKIP_HANDLE = "skip";
+
+/**
+ * A question: plain text, plus a "Pular" quick reply when the author allows
+ * skipping and one chip per accepted answer when the input type is `option`.
+ * Instagram caps quick replies at 13, so the skip chip takes the last slot.
+ */
+export function buildQuestion(
+  nodeId: string,
+  d: Extract<FlowNodeData, { kind: "question" }>,
+): Record<string, unknown> {
+  const chips: Array<{ title: string; payload: string }> = [];
+  if (d.inputType === "option") {
+    for (const o of d.options ?? [])
+      chips.push({ title: o, payload: postbackPayload(nodeId, `opt:${o}`) });
+  }
+  if (d.allowSkip) chips.push({ title: "Pular", payload: postbackPayload(nodeId, SKIP_HANDLE) });
+  if (!chips.length) return { text: d.text };
+  return {
+    text: d.text,
+    quick_replies: chips.slice(0, LIMITS.quickReplies).map((c) => ({
+      content_type: "text",
+      title: truncateBytes(c.title, LIMITS.quickReplyTitle),
+      payload: c.payload,
+    })),
+  };
+}
+
 /** Horizontally scrolling cards. */
 export function buildCarousel(
   nodeId: string,
@@ -110,9 +146,7 @@ export function buildCarousel(
   };
 }
 
-export function buildImage(
-  d: Extract<FlowNodeData, { kind: "image" }>,
-): Record<string, unknown> {
+export function buildImage(d: Extract<FlowNodeData, { kind: "image" }>): Record<string, unknown> {
   return { attachment: { type: "image", payload: mediaPayload(d) } };
 }
 
@@ -156,9 +190,7 @@ function mediaPayload(d: { url?: string; attachmentId?: string }): Record<string
  * is accepted by JSON but rejected by the Graph API, so the distinction is
  * load-bearing and covered by a test.
  */
-export function buildAlbum(
-  d: Extract<FlowNodeData, { kind: "album" }>,
-): Record<string, unknown> {
+export function buildAlbum(d: Extract<FlowNodeData, { kind: "album" }>): Record<string, unknown> {
   return {
     attachments: d.urls.slice(0, LIMITS.albumImages).map((url) => ({
       type: "image",
@@ -198,35 +230,56 @@ export function previewOf(d: FlowNodeData): string {
  * pushed to the next moment inside the allowed hours — a 20h delay set at
  * 3am would otherwise wake someone's phone at 11pm.
  *
- * `now` is injectable so tests don't depend on wall-clock time.
+ * The hours are read on a clock in the account's timezone, not the server's:
+ * Vercel runs on UTC, and an 8–22 window measured there is 5–19 in São
+ * Paulo. `now` and `timeZone` are injectable so tests depend on neither the
+ * wall clock nor the machine's zone.
  */
 export function resumeAtFor(
   d: Extract<FlowNodeData, { kind: "delay" }>,
   now: Date = new Date(),
+  timeZone: string = accountTimeZone(),
 ): Date {
-  const at = new Date(now.getTime() + d.seconds * 1000);
+  if (d.mode === "untilDate") {
+    // An unparseable or past date resumes now: waiting forever on a typo is
+    // the worse failure.
+    const at = parseLocalDateTime(d.untilDate ?? "", timeZone);
+    return at && at.getTime() > now.getTime() ? at : now;
+  }
+  if (d.mode === "untilReply") {
+    return new Date(now.getTime() + (d.timeoutSeconds ?? 0) * 1000);
+  }
+
+  const at = new Date(now.getTime() + (d.seconds ?? 0) * 1000);
   if (!d.window) return at;
 
   const { fromHour, toHour } = d.window;
-  const h = at.getHours();
+  const wall = wallClockIn(at, timeZone);
+  const h = wall.hour;
 
   // Normal window, e.g. 8–22: inside means fromHour <= h < toHour.
   if (fromHour < toHour) {
     if (h >= fromHour && h < toHour) return at;
-    if (h < fromHour) {
-      const d2 = new Date(at);
-      d2.setHours(fromHour, 0, 0, 0);
-      return d2;
-    }
-    const d2 = new Date(at);
-    d2.setDate(d2.getDate() + 1);
-    d2.setHours(fromHour, 0, 0, 0);
-    return d2;
+    return openingAt(wall, h < fromHour ? 0 : 1, fromHour, timeZone);
   }
 
   // Overnight window, e.g. 22–6: inside means h >= fromHour or h < toHour.
   if (h >= fromHour || h < toHour) return at;
-  const d2 = new Date(at);
-  d2.setHours(fromHour, 0, 0, 0);
-  return d2;
+  return openingAt(wall, 0, fromHour, timeZone);
+}
+
+/** `hour`:00 on the day `dayOffset` days after `wall`, in `timeZone`. */
+function openingAt(wall: WallClock, dayOffset: number, hour: number, timeZone: string): Date {
+  const day = new Date(Date.UTC(wall.year, wall.month - 1, wall.day + dayOffset));
+  return wallClockToDate(
+    {
+      year: day.getUTCFullYear(),
+      month: day.getUTCMonth() + 1,
+      day: day.getUTCDate(),
+      hour,
+      minute: 0,
+      second: 0,
+    },
+    timeZone,
+  );
 }

@@ -27,7 +27,22 @@ model Contact {
   /// never received a message and may only send via a valid tag.
   lastInboundAt DateTime?
 
-  subscribed Boolean  @default(true)
+  subscribed     Boolean   @default(true)
+  /// When the contact last opted out (global keyword or action node). Null
+  /// while subscribed — this is "unsubscribed since", NOT a metric source.
+  /// The daily opt-out count reads ContactEvent (kind UNSUBSCRIBED), which
+  /// survives a re-opt-in; this field does not.
+  unsubscribedAt DateTime?
+
+  /// Set from the inbox when a human takes over: no flow starts or advances
+  /// for this contact until it is cleared. Global keywords still apply.
+  automationPaused Boolean @default(false)
+  /// When the operator last opened this conversation in the inbox. An
+  /// INBOUND message newer than this is unread.
+  lastReadAt       DateTime?
+  /// Last message either way. Orders the inbox; touched from a single
+  /// helper (server/inbox.ts touchLastMessage) at every message write.
+  lastMessageAt    DateTime?
 
   /// Where this contact came in from. Free-form so it survives new entry
   /// points without a migration: "dm", "comment", "story_reply",
@@ -42,9 +57,12 @@ model Contact {
   flowSessions  FlowSession[]
   broadcastJobs BroadcastRecipient[]
   fields        ContactField[]
+  notes         ContactNote[]
+  events        ContactEvent[]
 
   @@index([lastInboundAt])
   @@index([subscribed])
+  @@index([lastMessageAt])
 }
 
 /// Arbitrary key/value captured during flows (e.g. answers to questions).
@@ -58,6 +76,88 @@ model ContactField {
   contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
   @@unique([contactId, key])
+}
+
+enum FieldType {
+  TEXT
+  NUMBER
+  DATE
+  BOOLEAN
+}
+
+/// The registry of known contact field keys.
+///
+/// ContactField rows are free-form so a flow can save any key; this table is
+/// what the UI lists and what gives a key a label and a type. Rows are
+/// created explicitly on /campos or automatically the first time a flow
+/// saves a key that is not here yet — see server/custom-fields.ts.
+model CustomField {
+  id           String    @id @default(cuid())
+  key          String    @unique
+  label        String
+  type         FieldType @default(TEXT)
+  defaultValue String?
+  createdAt    DateTime  @default(now())
+}
+
+/// A saved audience. `rules` is the JSON shape validated by
+/// lib/segment-rules.ts; server/segments.ts turns it into a Prisma where.
+model Segment {
+  id        String   @id @default(cuid())
+  name      String
+  rules     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  broadcasts Broadcast[]
+}
+
+/// A canned answer for the inbox reply box. Typing "/" lists them; the
+/// shortcut is what the operator types after the slash to pick one.
+model QuickReplyTemplate {
+  id        String   @id @default(cuid())
+  title     String
+  text      String
+  /// Lowercase, no spaces, unique — "preco", "horario".
+  shortcut  String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Free text the owner writes about a contact. Shown on the timeline.
+model ContactNote {
+  id        String   @id @default(cuid())
+  contactId String
+  text      String
+  createdAt DateTime @default(now())
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([contactId, createdAt])
+}
+
+enum ContactEventKind {
+  TAG_ADDED
+  TAG_REMOVED
+  SUBSCRIBED
+  UNSUBSCRIBED
+  FIELD_SET
+}
+
+/// A mutation on a contact worth showing on the timeline: tag changes,
+/// opt-in/out and field writes. Written at the mutation sites themselves
+/// (flow-runner, opt-out keyword, contact page), never derived after the fact.
+model ContactEvent {
+  id        String           @id @default(cuid())
+  contactId String
+  kind      ContactEventKind
+  /// { tagId, tagName } · { key, value } · { via: "keyword" | "flow" | "panel" }
+  payload   Json?
+  createdAt DateTime         @default(now())
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([contactId, createdAt])
 }
 
 model Tag {
@@ -118,13 +218,18 @@ model Flow {
   id        String   @id @default(cuid())
   name      String
   enabled   Boolean  @default(false)
+  /// The published graph — the only one the runner reads.
   graph     Json
+  /// Unpublished edits from the editor. Null means the draft equals `graph`.
+  draftGraph  Json?
+  publishedAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  triggers Trigger[]
-  sessions FlowSession[]
-  refLinks RefLink[]
+  triggers   Trigger[]
+  sessions   FlowSession[]
+  refLinks   RefLink[]
+  broadcasts Broadcast[]
 }
 
 /// A trackable ig.me entry point: ig.me/m/<username>?ref=<code>.
@@ -172,6 +277,24 @@ model MessengerProfile {
   updatedAt DateTime @updatedAt
 }
 
+/// The Instagram User Access Token, kept here so it can be renewed without a
+/// deploy. A single row (id "default"), seeded from IG_ACCESS_TOKEN the first
+/// time a token is needed — see server/token-refresh.ts.
+model IgCredential {
+  id String @id @default("default")
+
+  accessToken String
+  /// When Meta says the token stops working. Null until a refresh reports
+  /// it: a token seeded from the env has an unknown lifetime.
+  expiresAt   DateTime?
+  /// Last successful refresh. Null for a token that only ever came from the env.
+  refreshedAt DateTime?
+  /// What the last refresh attempt said when it failed. Cleared on success.
+  lastError   String?
+
+  updatedAt DateTime @updatedAt
+}
+
 enum TriggerKind {
   KEYWORD
   COMMENT
@@ -179,6 +302,8 @@ enum TriggerKind {
   STORY_MENTION
   REF
   DEFAULT
+  /// First contact: a brand-new DM that matched no keyword. Patternless.
+  WELCOME
 }
 
 enum MatchMode {
@@ -225,13 +350,53 @@ model FlowSession {
   /// Set when a node is waiting on a delay; the worker picks it up after this.
   resumeAt      DateTime?
   startedAt     DateTime      @default(now())
+  /// Set when the run reached an end node or fell off the graph.
+  completedAt   DateTime?
+  /// Set when the run was cut short: opt-out, escape word, menu tap, or the
+  /// 24h stale sweep.
+  abandonedAt   DateTime?
   updatedAt     DateTime      @updatedAt
 
   flow    Flow    @relation(fields: [flowId], references: [id], onDelete: Cascade)
   contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
-  @@unique([contactId, flowId, status])
+  /// Only ONE open run per (contact, flow) — enforced by the partial unique
+  /// index `FlowSession_open_unique` (migration 20260828000000). Prisma cannot
+  /// express a WHERE clause on a unique, so it lives in raw SQL: a full
+  /// unique on (contactId, flowId, status) would let a contact complete a
+  /// flow exactly once, forever.
   @@index([status, resumeAt])
+  @@index([flowId, startedAt])
+}
+
+/// A contact passed through a goal node. One row per pass; the funnel
+/// reads these by flow and node. Plain ids, no FKs: a deleted session or
+/// contact must not erase the conversion it produced.
+model FlowGoalHit {
+  id        String   @id @default(cuid())
+  sessionId String
+  flowId    String
+  nodeId    String
+  contactId String
+  at        DateTime @default(now())
+
+  @@index([flowId, nodeId])
+  @@index([sessionId])
+}
+
+/// Which arm of a randomizer a session was sent down. One row per
+/// (session, node); joined with FlowGoalHit by sessionId for A/B rates.
+model AbAssignment {
+  id        String   @id @default(cuid())
+  sessionId String
+  flowId    String
+  nodeId    String
+  /// The edge handle taken: "0", "1", …
+  handle    String
+  at        DateTime @default(now())
+
+  @@unique([sessionId, nodeId])
+  @@index([flowId, nodeId])
 }
 
 enum BroadcastStatus {
@@ -245,13 +410,30 @@ enum BroadcastStatus {
 model Broadcast {
   id           String          @id @default(cuid())
   name         String
-  text         String
+  /// Plain-text body. Null when `content` or `flowId` carries the message.
+  text         String?
+  /// One sending node in the flow-schema shape (message with buttons, image,
+  /// quickreply, carousel, video, audio, file, album) — see
+  /// lib/broadcast-content.ts. Wins over `text` when present.
+  content      Json?
+  /// "Send a flow": every recipient is started into this flow instead of
+  /// receiving one message. Wins over `content` and `text`.
+  flowId       String?
+  /// Message tag to send under (HUMAN_AGENT etc.); null = standard message.
+  tag          String?
   status       BroadcastStatus @default(DRAFT)
+  /// Set when a drainer claims the QUEUED row (status SENDING). A claim
+  /// older than BROADCAST_LOCK_MS is considered dead and may be re-taken.
+  lockedAt     DateTime?
   /// Tag ids the recipient must have. Empty = everyone subscribed.
+  /// Ignored when `segmentId` is set — a segment replaces the tag filter.
   filterTagIds String[]        @default([])
+  segmentId    String?
   scheduledAt  DateTime?
   createdAt    DateTime        @default(now())
 
+  segment    Segment?             @relation(fields: [segmentId], references: [id], onDelete: SetNull)
+  flow       Flow?                @relation(fields: [flowId], references: [id], onDelete: SetNull)
   recipients BroadcastRecipient[]
 }
 
@@ -279,7 +461,16 @@ model WebhookEvent {
   raw        Json
   receivedAt DateTime @default(now())
 
+  /// Set once the handler for this event ran to completion.
+  processedAt DateTime?
+  /// Message of the last failure. Cleared when a retry succeeds.
+  error       String?
+  /// Handler runs so far (the inline one counts). reprocessFailed retries
+  /// a failed row once, so this tops out at 2.
+  attempts    Int       @default(0)
+
   @@index([receivedAt])
+  @@index([processedAt, attempts])
 }
 
 /// An inbound message that matched no trigger.
@@ -311,4 +502,45 @@ model UnmatchedMessage {
 
   @@index([resolvedAt, count])
   @@index([lastSeenAt])
+}
+
+/// One number per (day, metric, key), recomputed idempotently by
+/// server/rollup.ts. `date` is the account-timezone calendar day. `key`
+/// is "" for a global metric, or a dimension (trigger id, broadcast id).
+model DailyStat {
+  id     String   @id @default(cuid())
+  date   DateTime @db.Date
+  metric String
+  key    String   @default("")
+  value  Int      @default(0)
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([date, metric, key])
+  @@index([metric, date])
+}
+
+/// A trigger that started (or tried to start) a flow. Plain ids, no FK:
+/// deleting a trigger must not erase the history of how often it fired.
+model TriggerFire {
+  id        String   @id @default(cuid())
+  triggerId String
+  contactId String
+  at        DateTime @default(now())
+
+  @@index([at])
+  @@index([triggerId, at])
+}
+
+/// A caught failure worth remembering: the webhook handler, the background
+/// drain, the worker tick. Read by /api/health ("errors in the last 24h").
+model ErrorEvent {
+  id      String   @id @default(cuid())
+  at      DateTime @default(now())
+  scope   String
+  message String
+  stack   String?
+  payload Json?
+
+  @@index([at])
 }

@@ -26,8 +26,7 @@ export type IgMedia = {
 };
 
 /** Fields we ask Meta for. Exported so the caller and the test agree. */
-export const MEDIA_FIELDS =
-  "id,caption,media_type,media_url,thumbnail_url,permalink,timestamp";
+export const MEDIA_FIELDS = "id,caption,media_type,media_url,thumbnail_url,permalink,timestamp";
 
 /**
  * Turn a `/me/media` response body into a clean list.
@@ -57,8 +56,7 @@ export function parseMediaItem(raw: unknown): IgMedia | null {
   const id = typeof raw.id === "string" ? raw.id.trim() : "";
   if (!id) return null;
 
-  const thumbnail =
-    str(raw.thumbnail_url) ?? str(raw.media_url) ?? null;
+  const thumbnail = str(raw.thumbnail_url) ?? str(raw.media_url) ?? null;
 
   return {
     id,
@@ -78,7 +76,10 @@ export function parseMediaItem(raw: unknown): IgMedia | null {
  * id, which reads as noise.
  */
 export function mediaLabel(m: IgMedia): string {
-  const firstLine = m.caption.split("\n").find((l) => l.trim() !== "")?.trim();
+  const firstLine = m.caption
+    .split("\n")
+    .find((l) => l.trim() !== "")
+    ?.trim();
   if (firstLine) {
     return firstLine.length > 80 ? `${firstLine.slice(0, 79)}…` : firstLine;
   }

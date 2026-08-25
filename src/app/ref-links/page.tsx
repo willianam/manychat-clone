@@ -1,7 +1,27 @@
+import QRCode from "qrcode";
+import { Link2, Plus } from "lucide-react";
 import { db } from "../../server/db";
 import { refLinkUrl } from "../../lib/entry-events";
+import { refLinkStats } from "../../server/ref-link-stats";
 import { CopyLink } from "./CopyLink";
+import { LinkInsights } from "./LinkInsights";
 import { createRefLink, setRefLinkEnabled, deleteRefLink } from "./actions";
+import { Callout } from "@/components/ui/callout";
+import { Card, CardContent } from "@/components/ui/card";
+import { ConfirmSubmitButton } from "@/components/ui/confirm-submit-button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/ui/page-header";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { StatusPill } from "@/components/ui/status-pill";
+import { SubmitButton } from "@/components/ui/submit-button";
 
 export const dynamic = "force-dynamic";
 
@@ -16,144 +36,185 @@ export default async function RefLinksPage() {
     db.refLink.findMany({ include: { flow: true }, orderBy: { createdAt: "desc" } }),
     db.flow.findMany({ orderBy: { name: "asc" } }),
   ]);
+  const stats = await refLinkStats(
+    db,
+    links.map((l) => l.code),
+  );
+
+  // QR codes need the full url, hence the username; without it there is
+  // nothing to encode and the section simply omits them.
+  const qrByCode = new Map(
+    USERNAME
+      ? await Promise.all(
+          links.map(
+            async (l) =>
+              [
+                l.code,
+                await QRCode.toDataURL(refLinkUrl(USERNAME, l.code), { width: 512, margin: 1 }),
+              ] as const,
+          ),
+        )
+      : [],
+  );
 
   return (
-    <main className="mx-auto max-w-4xl px-6 py-8">
-      <div>
-        <h1 className="text-2xl font-semibold">Links rastreáveis</h1>
-        <p className="mt-0.5 text-sm text-neutral-500">
-          Um link <code className="font-mono text-xs">ig.me</code> que abre a DM já disparando
-          um fluxo. Use um por canal para saber de onde vem cada contato.
-        </p>
-      </div>
+    <main className="mx-auto w-full max-w-4xl px-6 py-8">
+      <PageHeader
+        title="Links rastreáveis"
+        description={
+          <>
+            Um link <code className="font-mono text-xs">ig.me</code> que abre a DM já disparando um
+            fluxo. Use um por canal para saber de onde vem cada contato.
+          </>
+        }
+      />
 
       {!USERNAME && (
-        <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <Callout tone="warning" className="mt-4">
           Defina <code className="font-mono text-xs">IG_USERNAME</code> nas variáveis de ambiente
           para gerar os links completos.
-        </p>
+        </Callout>
       )}
 
       {flows.length === 0 ? (
-        <p className="mt-6 rounded-lg border border-dashed px-4 py-8 text-center text-sm text-neutral-500">
-          Crie um fluxo antes de criar um link.
-        </p>
+        <EmptyState
+          className="mt-6"
+          icon={Link2}
+          title="Crie um fluxo antes de criar um link."
+          description="Um link precisa de um fluxo para disparar."
+        />
       ) : (
-        <form
-          action={createRefLink}
-          className="mt-6 flex flex-wrap items-end gap-2 rounded-xl border bg-white p-4"
-        >
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-neutral-600">Nome</span>
-            <input
-              name="label"
-              required
-              maxLength={120}
-              placeholder="Bio do Instagram"
-              className="w-48 rounded-lg border px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
-            />
-          </label>
+        <Card className="mt-6">
+          <CardContent className="p-4">
+            <form action={createRefLink} className="flex flex-wrap items-end gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="rl-label">Nome</Label>
+                <Input
+                  id="rl-label"
+                  name="label"
+                  required
+                  maxLength={120}
+                  placeholder="Bio do Instagram"
+                  className="w-48"
+                />
+              </div>
 
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-neutral-600">Fluxo</span>
-            <select
-              name="flowId"
-              required
-              className="w-52 rounded-lg border bg-white px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
-            >
-              {flows.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.name}
-                  {f.enabled ? "" : " (desativado)"}
-                </option>
-              ))}
-            </select>
-          </label>
+              <div className="space-y-1.5">
+                <Label htmlFor="rl-flow">Fluxo</Label>
+                <Select name="flowId" required defaultValue={flows[0]?.id}>
+                  <SelectTrigger id="rl-flow" className="w-56">
+                    <SelectValue placeholder="escolha…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {flows.map((f) => (
+                      <SelectItem key={f.id} value={f.id}>
+                        {f.name}
+                        {f.enabled ? "" : " (desativado)"}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-          <label className="flex flex-col gap-1">
-            <span className="text-xs font-medium text-neutral-600">Código (opcional)</span>
-            <input
-              name="code"
-              maxLength={250}
-              placeholder="gerado automaticamente"
-              className="w-52 rounded-lg border px-3 py-1.5 font-mono text-sm outline-none focus:border-indigo-400"
-            />
-          </label>
+              <div className="space-y-1.5">
+                <Label htmlFor="rl-code">Código (opcional)</Label>
+                <Input
+                  id="rl-code"
+                  name="code"
+                  maxLength={250}
+                  placeholder="gerado automaticamente"
+                  className="w-52 font-mono"
+                />
+              </div>
 
-          <button
-            type="submit"
-            className="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white transition hover:bg-indigo-700"
-          >
-            + Criar link
-          </button>
-        </form>
+              <SubmitButton pendingLabel="Criando…">
+                <Plus aria-hidden />
+                Criar link
+              </SubmitButton>
+            </form>
+          </CardContent>
+        </Card>
       )}
 
       <ul className="mt-6 space-y-3">
         {links.map((link) => (
-          <li key={link.id} className="rounded-xl border bg-white p-4">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="font-medium">
-                  {link.label}
-                  {!link.enabled && (
-                    <span className="ml-2 rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-normal text-neutral-500">
-                      pausado
-                    </span>
-                  )}
-                </p>
-                <p className="mt-0.5 text-sm text-neutral-500">
-                  Dispara <span className="text-neutral-700">{link.flow.name}</span>
-                  {!link.flow.enabled && (
-                    <span className="text-amber-700"> — fluxo desativado, nada será enviado</span>
-                  )}
-                </p>
-              </div>
+          <li key={link.id}>
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-2 font-medium">
+                      {link.label}
+                      {!link.enabled && <StatusPill tone="neutral">pausado</StatusPill>}
+                    </p>
+                    <p className="mt-0.5 text-sm text-muted-foreground">
+                      Dispara <span className="text-neutral-700">{link.flow.name}</span>
+                      {!link.flow.enabled && (
+                        <span className="text-amber-700">
+                          {" "}
+                          (fluxo desativado, nada será enviado)
+                        </span>
+                      )}
+                    </p>
+                  </div>
 
-              <div className="flex shrink-0 items-center gap-4">
-                <div className="text-right">
-                  <p className="text-sm font-medium tabular-nums">
-                    {link.clicks} {link.clicks === 1 ? "clique" : "cliques"}
-                  </p>
-                  <p className="text-xs text-neutral-500 tabular-nums">
-                    {link.conversions} no fluxo
-                  </p>
+                  <div className="flex shrink-0 items-center gap-4">
+                    <div className="text-right">
+                      <p className="text-sm font-medium tabular-nums">
+                        {link.clicks} {link.clicks === 1 ? "clique" : "cliques"}
+                      </p>
+                      <p className="text-xs tabular-nums text-muted-foreground">
+                        {link.conversions} no fluxo
+                      </p>
+                    </div>
+
+                    <form action={setRefLinkEnabled}>
+                      <input type="hidden" name="id" value={link.id} />
+                      <input type="hidden" name="enabled" value={String(!link.enabled)} />
+                      <SubmitButton variant="outline" size="sm">
+                        {link.enabled ? "Pausar" : "Ativar"}
+                      </SubmitButton>
+                    </form>
+
+                    <form action={deleteRefLink}>
+                      <input type="hidden" name="id" value={link.id} />
+                      <ConfirmSubmitButton
+                        variant="outline"
+                        size="sm"
+                        className="text-destructive hover:bg-rose-50 hover:text-destructive"
+                        title={`Excluir o link "${link.label}"?`}
+                        description="Quem abrir esse link depois cai numa DM comum, sem fluxo. Os cliques contados são perdidos."
+                      >
+                        Excluir
+                      </ConfirmSubmitButton>
+                    </form>
+                  </div>
                 </div>
 
-                <form action={setRefLinkEnabled}>
-                  <input type="hidden" name="id" value={link.id} />
-                  <input type="hidden" name="enabled" value={String(!link.enabled)} />
-                  <button
-                    type="submit"
-                    className="rounded-lg border px-2.5 py-1 text-xs font-medium text-neutral-700 transition hover:bg-neutral-50"
-                  >
-                    {link.enabled ? "Pausar" : "Ativar"}
-                  </button>
-                </form>
+                {USERNAME && (
+                  <div className="mt-3">
+                    <CopyLink url={refLinkUrl(USERNAME, link.code)} />
+                  </div>
+                )}
 
-                <form action={deleteRefLink}>
-                  <input type="hidden" name="id" value={link.id} />
-                  <button
-                    type="submit"
-                    className="rounded-lg border px-2.5 py-1 text-xs font-medium text-red-600 transition hover:bg-red-50"
-                  >
-                    Excluir
-                  </button>
-                </form>
-              </div>
-            </div>
-
-            {USERNAME && (
-              <div className="mt-3">
-                <CopyLink url={refLinkUrl(USERNAME, link.code)} />
-              </div>
-            )}
+                <LinkInsights
+                  code={link.code}
+                  rows={stats.byCode.get(link.code) ?? []}
+                  qrDataUrl={qrByCode.get(link.code) ?? null}
+                />
+              </CardContent>
+            </Card>
           </li>
         ))}
       </ul>
 
-      {links.length === 0 && (
-        <p className="mt-6 text-center text-sm text-neutral-500">Nenhum link criado ainda.</p>
+      {links.length === 0 && flows.length > 0 && (
+        <EmptyState
+          className="mt-6"
+          icon={Link2}
+          title="Nenhum link criado ainda."
+          description="Crie um acima e cole na bio, em anúncios ou em stories."
+        />
       )}
     </main>
   );

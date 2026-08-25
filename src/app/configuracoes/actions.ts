@@ -9,6 +9,7 @@ import {
   type MenuItemInput,
 } from "../../lib/messenger-profile";
 import { pushIceBreakers, pushPersistentMenu } from "../../server/messenger-profile-api";
+import { maybeRefreshToken } from "../../server/token-refresh";
 
 /**
  * Ice breakers and persistent menu.
@@ -60,9 +61,7 @@ function readMenuItems(formData: FormData): MenuItemInput[] {
     if (title === "" && url === "" && flowId === "") return; // unused slot
 
     rows.push(
-      type === "web_url"
-        ? { type: "web_url", title, url }
-        : { type: "postback", title, flowId },
+      type === "web_url" ? { type: "web_url", title, url } : { type: "postback", title, flowId },
     );
   });
   return rows;
@@ -89,9 +88,7 @@ export async function saveMenu(formData: FormData) {
   const parsed = MenuItemsInput.safeParse(readMenuItems(formData));
   if (!parsed.success) throw new Error(describe(parsed.error));
 
-  await assertFlowsUsable(
-    parsed.data.flatMap((i) => (i.type === "postback" ? [i.flowId] : [])),
-  );
+  await assertFlowsUsable(parsed.data.flatMap((i) => (i.type === "postback" ? [i.flowId] : [])));
 
   await syncAndStore(() => pushPersistentMenu(parsed.data), { menuItems: parsed.data as never });
 }
@@ -141,4 +138,18 @@ async function syncAndStore(
   });
 
   revalidatePath("/configuracoes");
+}
+
+/**
+ * "Renovar agora" on the connection tab. Forces the refresh the tick would
+ * otherwise wait for; the outcome is what the page shows next.
+ */
+export async function refreshTokenNow() {
+  const out = await maybeRefreshToken(db, new Date(), { force: true });
+  revalidatePath("/configuracoes");
+  revalidatePath("/", "layout");
+  if (out.action === "failed") throw new Error(`A Meta recusou a renovação: ${out.error}`);
+  if (out.action === "unconfigured") {
+    throw new Error("Não há token para renovar: defina IG_ACCESS_TOKEN.");
+  }
 }

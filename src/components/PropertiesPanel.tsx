@@ -4,12 +4,29 @@ import { useState } from "react";
 import type { Node } from "reactflow";
 import {
   ConditionOp,
+  InputType,
   LIMITS,
   MEDIA_FORMATS,
+  armLabel,
+  rulesOf,
+  type ConditionRule,
   type FlowButton,
   type FlowNodeData,
 } from "../lib/flow-schema";
 import { newButton, retypeButton, uid } from "../lib/flow-edit";
+import { ArrowDown, ArrowUp, Copy, Plus, Trash2, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import {
+  Select as UiSelect,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea as UiTextarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/ui/cn";
 
 /**
  * Properties panel.
@@ -26,14 +43,22 @@ import { newButton, retypeButton, uid } from "../lib/flow-edit";
 
 type Update = (data: FlowNodeData) => void;
 
+/** What a "Ir para" can point at: the other steps of this flow, and the flows. */
+export type GotoTargets = {
+  nodes: Array<{ id: string; label: string }>;
+  flows: Array<{ id: string; name: string }>;
+};
+
 export function PropertiesPanel({
   node,
+  targets,
   onChange,
   onDelete,
   onDuplicate,
   onClose,
 }: {
   node: Node | null;
+  targets?: GotoTargets;
   onChange: Update;
   onDelete: () => void;
   onDuplicate?: () => void;
@@ -43,40 +68,38 @@ export function PropertiesPanel({
   const data = node.data as FlowNodeData;
 
   return (
-    <aside className="flex w-80 shrink-0 flex-col overflow-y-auto border-l bg-white">
+    // Below md this overlays the canvas instead of taking a fixed 320px out
+    // of it: on a phone a docked panel left the canvas too narrow to use.
+    <aside className="absolute inset-y-0 right-0 z-20 flex w-full max-w-[min(20rem,100vw)] flex-col overflow-y-auto border-l bg-card shadow-xl md:static md:z-auto md:w-80 md:shrink-0 md:shadow-none">
       <div className="flex items-center gap-2 border-b px-4 py-3">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <h2 className="truncate text-sm font-semibold">{titleOf(data)}</h2>
           <p className="truncate font-mono text-[10px] text-neutral-400">{node.id}</p>
         </div>
         {onDuplicate && (
-          <button
-            onClick={onDuplicate}
-            className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
-          >
-            Duplicar bloco
-          </button>
+          <Button variant="outline" size="icon" onClick={onDuplicate} aria-label="Duplicar bloco">
+            <Copy aria-hidden />
+          </Button>
         )}
-        <button
-          onClick={onClose}
-          aria-label="Fechar painel"
-          className="ml-auto rounded px-1.5 py-0.5 text-neutral-400 hover:bg-neutral-100"
-        >
-          ✕
-        </button>
+        <Button variant="ghost" size="icon" onClick={onClose} aria-label="Fechar painel">
+          <X aria-hidden />
+        </Button>
       </div>
 
       <div className="flex-1 space-y-4 p-4">
-        <Body data={data} onChange={onChange} />
+        <Body data={data} onChange={onChange} targets={targets} self={node.id} />
       </div>
 
       <div className="border-t p-4">
-        <button
+        <Button
+          variant="outline"
+          size="sm"
           onClick={onDelete}
-          className="w-full rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-600 transition hover:bg-rose-50"
+          className="w-full text-destructive hover:bg-rose-50 hover:text-destructive"
         >
+          <Trash2 aria-hidden />
           Excluir este bloco
-        </button>
+        </Button>
         <p className="mt-1.5 text-center text-[10px] text-neutral-400">
           As ligações deste bloco também são removidas.
         </p>
@@ -85,7 +108,17 @@ export function PropertiesPanel({
   );
 }
 
-function Body({ data, onChange }: { data: FlowNodeData; onChange: Update }) {
+function Body({
+  data,
+  onChange,
+  targets,
+  self,
+}: {
+  data: FlowNodeData;
+  onChange: Update;
+  targets?: GotoTargets;
+  self: string;
+}) {
   switch (data.kind) {
     case "message":
       return <MessageProps data={data} onChange={onChange} />;
@@ -113,6 +146,16 @@ function Body({ data, onChange }: { data: FlowNodeData; onChange: Update }) {
       return <RandomProps data={data} onChange={onChange} />;
     case "tag":
       return <TagProps data={data} onChange={onChange} />;
+    case "goto":
+      return <GotoProps data={data} onChange={onChange} targets={targets} self={self} />;
+    case "goal":
+      return (
+        <Field label="Nome da meta" hint="Aparece no funil quando o contato passa por aqui.">
+          <TextInput value={data.name} max={80} onChange={(name) => onChange({ ...data, name })} />
+        </Field>
+      );
+    case "request":
+      return <RequestProps data={data} onChange={onChange} />;
     case "end":
       return (
         <p className="text-xs text-neutral-500">
@@ -144,8 +187,7 @@ function Field({
   );
 }
 
-const INPUT =
-  "mt-1 w-full rounded-lg border px-2.5 py-1.5 text-[13px] outline-none focus:border-indigo-400";
+const INPUT = "mt-1 h-8 text-[13px]";
 
 function TextInput({
   value,
@@ -162,16 +204,14 @@ function TextInput({
 }) {
   return (
     <>
-      <input
+      <Input
         value={value}
         maxLength={max}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
-        className={`${INPUT} ${mono ? "font-mono" : ""}`}
+        className={cn(INPUT, mono && "font-mono")}
       />
-      {max !== undefined && (
-        <Counter len={value.length} max={max} />
-      )}
+      {max !== undefined && <Counter len={value.length} max={max} />}
     </>
   );
 }
@@ -189,12 +229,12 @@ function TextArea({
 }) {
   return (
     <>
-      <textarea
+      <UiTextarea
         value={value}
         rows={rows}
         maxLength={max}
         onChange={(e) => onChange(e.target.value)}
-        className={`${INPUT} resize-y leading-snug`}
+        className="mt-1 min-h-0 resize-y text-[13px] leading-snug"
       />
       <Counter len={value.length} max={max} />
     </>
@@ -225,17 +265,18 @@ function Select<T extends string>({
   options: Array<{ value: T; label: string }>;
 }) {
   return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value as T)}
-      className={INPUT}
-    >
-      {options.map((o) => (
-        <option key={o.value} value={o.value}>
-          {o.label}
-        </option>
-      ))}
-    </select>
+    <UiSelect value={value} onValueChange={(v) => onChange(v as T)}>
+      <SelectTrigger className={INPUT}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((o) => (
+          <SelectItem key={o.value} value={o.value}>
+            {o.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </UiSelect>
   );
 }
 
@@ -253,13 +294,16 @@ function AddButton({
 }) {
   return (
     <div>
-      <button
+      <Button
+        variant="outline"
+        size="sm"
         onClick={onClick}
         disabled={disabled}
-        className="w-full rounded-lg border border-dashed px-3 py-1.5 text-[12px] font-medium text-neutral-600 transition hover:border-indigo-300 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-40"
+        className="w-full border-dashed text-[12px] text-neutral-600 hover:border-indigo-300 hover:text-primary"
       >
-        + {label}
-      </button>
+        <Plus aria-hidden />
+        {label}
+      </Button>
       {disabled && atLimit && (
         <p className="mt-1 text-center text-[10px] text-amber-600">{atLimit}</p>
       )}
@@ -285,25 +329,40 @@ function RowTools({
   canRemove: boolean;
   removeHint?: string;
 }) {
-  const btn =
-    "rounded px-1.5 py-0.5 text-[11px] text-neutral-400 transition hover:bg-neutral-100 disabled:opacity-25";
+  const btn = "h-6 w-6 text-neutral-400 [&_svg]:size-3";
   return (
     <div className="ml-auto flex items-center">
-      <button onClick={onUp} disabled={!canUp} className={btn} aria-label="Mover para cima">
-        ↑
-      </button>
-      <button onClick={onDown} disabled={!canDown} className={btn} aria-label="Mover para baixo">
-        ↓
-      </button>
-      <button
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={onUp}
+        disabled={!canUp}
+        className={btn}
+        aria-label="Mover para cima"
+      >
+        <ArrowUp aria-hidden />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={onDown}
+        disabled={!canDown}
+        className={btn}
+        aria-label="Mover para baixo"
+      >
+        <ArrowDown aria-hidden />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
         onClick={onRemove}
         disabled={!canRemove}
         title={!canRemove ? removeHint : undefined}
         className={`${btn} hover:text-rose-600`}
         aria-label="Remover"
       >
-        ✕
-      </button>
+        <X aria-hidden />
+      </Button>
     </div>
   );
 }
@@ -337,10 +396,7 @@ function ButtonList({
   return (
     <div className="space-y-2">
       {buttons.map((b, i) => (
-        <div
-          key={b.id}
-          className="rounded-lg border p-2"
-        >
+        <div key={b.id} className="rounded-lg border p-2">
           <div className="mb-1.5 flex items-center gap-1">
             <span className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
               Botão {i + 1}
@@ -438,6 +494,15 @@ function MessageProps({
   );
 }
 
+const INPUT_TYPE_LABELS: Record<InputType, string> = {
+  text: "Texto livre",
+  number: "Número",
+  email: "E-mail",
+  phone: "Telefone",
+  date: "Data",
+  option: "Uma das opções",
+};
+
 function QuestionProps({
   data,
   onChange,
@@ -445,6 +510,9 @@ function QuestionProps({
   data: Extract<FlowNodeData, { kind: "question" }>;
   onChange: Update;
 }) {
+  const inputType = data.inputType ?? "text";
+  const options = data.options ?? [];
+
   return (
     <>
       <Field label="Pergunta">
@@ -460,6 +528,117 @@ function QuestionProps({
           value={data.saveAs}
           placeholder="nome"
           onChange={(saveAs) => onChange({ ...data, saveAs })}
+        />
+      </Field>
+
+      <Field label="Tipo de resposta" hint="Respostas fora do formato são recusadas.">
+        <Select
+          value={inputType}
+          onChange={(v) =>
+            onChange({
+              ...data,
+              inputType: v === "text" ? undefined : v,
+              options: v === "option" ? (options.length ? options : ["Sim", "Não"]) : undefined,
+            })
+          }
+          options={InputType.options.map((o) => ({ value: o, label: INPUT_TYPE_LABELS[o] }))}
+        />
+      </Field>
+
+      {inputType === "option" && (
+        <div>
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+            Opções aceitas ({options.length}/{LIMITS.quickReplies})
+          </span>
+          <p className="mb-2 mt-0.5 text-[10px] text-neutral-400">
+            Aparecem como respostas rápidas; o contato também pode digitar uma delas.
+          </p>
+          <div className="space-y-2">
+            {options.map((o, i) => (
+              <div key={i} className="flex items-center gap-1">
+                <TextInput
+                  value={o}
+                  max={LIMITS.quickReplyTitle}
+                  placeholder={`Opção ${i + 1}`}
+                  onChange={(v) =>
+                    onChange({ ...data, options: options.map((x, n) => (n === i ? v : x)) })
+                  }
+                />
+                <RowTools
+                  canUp={i > 0}
+                  canDown={i < options.length - 1}
+                  canRemove={options.length > 1}
+                  removeHint="É preciso ao menos uma opção."
+                  onUp={() => onChange({ ...data, options: move(options, i, i - 1) })}
+                  onDown={() => onChange({ ...data, options: move(options, i, i + 1) })}
+                  onRemove={() => onChange({ ...data, options: options.filter((_, n) => n !== i) })}
+                />
+              </div>
+            ))}
+          </div>
+          <div className="mt-2">
+            <AddButton
+              label="Adicionar opção"
+              onClick={() => onChange({ ...data, options: [...options, ""] })}
+              disabled={options.length >= LIMITS.quickReplies}
+              atLimit={`O Instagram aceita no máximo ${LIMITS.quickReplies} respostas rápidas.`}
+            />
+          </div>
+        </div>
+      )}
+
+      <Field
+        label="Mensagem se inválida"
+        hint="Enviada no lugar da pergunta quando a resposta não serve."
+      >
+        <TextArea
+          value={data.validationMessage ?? ""}
+          max={LIMITS.messageText}
+          rows={2}
+          onChange={(v) => onChange({ ...data, validationMessage: v === "" ? undefined : v })}
+        />
+      </Field>
+
+      <Field label="Tentativas" hint="Respostas inválidas toleradas antes de desistir (1 a 10).">
+        <Input
+          type="number"
+          min={1}
+          max={10}
+          value={data.maxAttempts ?? 3}
+          onChange={(e) => {
+            const n = Math.round(Number(e.target.value));
+            if (!Number.isFinite(n)) return;
+            onChange({ ...data, maxAttempts: Math.min(10, Math.max(1, n)) });
+          }}
+          className={INPUT}
+        />
+      </Field>
+
+      <label className="flex items-center gap-2 text-[12px]">
+        <Checkbox
+          checked={!!data.allowSkip}
+          onCheckedChange={(checked) =>
+            onChange({ ...data, allowSkip: checked === true ? true : undefined })
+          }
+        />
+        Permitir pular (adiciona a opção &quot;Pular&quot;)
+      </label>
+
+      <Field
+        label="Quando esgotar as tentativas"
+        hint={
+          data.onInvalid === "branch"
+            ? 'Ligue a saída "inválida" do bloco: é por ela que a conversa sai na primeira falha.'
+            : 'Insiste até o limite e então segue pelo caminho normal (ou pela saída "inválida", se ligada).'
+        }
+      >
+        <Select
+          value={data.onInvalid ?? "retry"}
+          onChange={(v) => onChange({ ...data, onInvalid: v === "retry" ? undefined : v })}
+          options={[
+            { value: "retry", label: "Repetir a pergunta" },
+            { value: "branch", label: "Desviar na primeira falha" },
+          ]}
         />
       </Field>
     </>
@@ -534,7 +713,9 @@ function QuickReplyProps({
                   value={o.value ?? ""}
                   placeholder="valor salvo (padrão: o título)"
                   onChange={(v) =>
-                    set(opts.map((x, n) => (n === i ? { ...x, value: v === "" ? undefined : v } : x)))
+                    set(
+                      opts.map((x, n) => (n === i ? { ...x, value: v === "" ? undefined : v } : x)),
+                    )
                   }
                 />
               </div>
@@ -570,8 +751,8 @@ function CarouselProps({
   return (
     <>
       <p className="text-[11px] text-neutral-500">
-        Cards aparecem lado a lado. Máx. {LIMITS.carouselCards} cards e{" "}
-        {LIMITS.carouselButtons} botões por card.
+        Cards aparecem lado a lado. Máx. {LIMITS.carouselCards} cards e {LIMITS.carouselButtons}{" "}
+        botões por card.
       </p>
 
       <div className="space-y-3">
@@ -688,8 +869,18 @@ function ImageProps({
  * passes would be worse than none, because it would imply a check happened.
  */
 const MEDIA_COPY = {
-  video: { label: "URL do vídeo", title: "Vídeo", mb: LIMITS.mediaMb, formats: MEDIA_FORMATS.video },
-  audio: { label: "URL do áudio", title: "Áudio", mb: LIMITS.mediaMb, formats: MEDIA_FORMATS.audio },
+  video: {
+    label: "URL do vídeo",
+    title: "Vídeo",
+    mb: LIMITS.mediaMb,
+    formats: MEDIA_FORMATS.video,
+  },
+  audio: {
+    label: "URL do áudio",
+    title: "Áudio",
+    mb: LIMITS.mediaMb,
+    formats: MEDIA_FORMATS.audio,
+  },
   file: { label: "URL do PDF", title: "PDF", mb: LIMITS.mediaMb, formats: MEDIA_FORMATS.file },
 } as const;
 
@@ -723,13 +914,15 @@ function UploadField({
             #{attachmentId.slice(-6)}
           </span>
         </span>
-        <button
+        <Button
           type="button"
+          variant="link"
+          size="sm"
           onClick={onClear}
-          className="text-[11px] font-medium text-emerald-700 underline"
+          className="h-auto p-0 text-[11px] text-emerald-700"
         >
           Trocar
-        </button>
+        </Button>
       </div>
     );
   }
@@ -737,14 +930,14 @@ function UploadField({
   return (
     <div>
       <label
-        className={`flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-neutral-300 px-3 py-3 text-[12px] font-medium ${
-          busy ? "text-neutral-400" : "text-indigo-600 hover:bg-indigo-50"
+        className={`flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-neutral-300 px-3 py-3 text-[12px] font-medium focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 ${
+          busy ? "text-neutral-400" : "text-primary hover:bg-indigo-50"
         }`}
       >
         {busy ? "Enviando…" : "Escolher arquivo do computador"}
         <input
           type="file"
-          className="hidden"
+          className="sr-only"
           disabled={busy}
           onChange={async (e) => {
             const file = e.target.files?.[0];
@@ -838,8 +1031,8 @@ function AlbumProps({
   return (
     <>
       <p className="text-[11px] text-neutral-500">
-        Várias imagens em uma só mensagem. Máx. {LIMITS.albumImages} imagens,{" "}
-        {LIMITS.imageMb} MB cada ({MEDIA_FORMATS.image}).
+        Várias imagens em uma só mensagem. Máx. {LIMITS.albumImages} imagens, {LIMITS.imageMb} MB
+        cada ({MEDIA_FORMATS.image}).
       </p>
 
       <div className="space-y-2">
@@ -885,9 +1078,27 @@ const OP_LABELS: Record<string, string> = {
   exists: "existe",
   gt: "é maior que",
   lt: "é menor que",
+  before: "é antes de (data)",
+  after: "é depois de (data)",
   hasTag: "tem a tag",
+  notHasTag: "não tem a tag",
+  between: "está entre (min,max)",
+  startsWith: "começa com",
+  isEmpty: "está vazio",
+  inLastDays: "nos últimos N dias",
+  subscribed: "está inscrito",
 };
 
+/** `exists`, `hasTag`… are unary — a value box would just be noise. */
+const UNARY: string[] = ["exists", "hasTag", "notHasTag", "isEmpty", "subscribed"];
+
+/**
+ * Condition: one rule, or several joined by AND/OR.
+ *
+ * The first rule is always mirrored into `key`/`op`/`value` so a graph
+ * saved here still reads in anything that only knows the single-rule shape;
+ * with one rule `rules`/`combinator` are dropped altogether.
+ */
 function ConditionProps({
   data,
   onChange,
@@ -895,41 +1106,104 @@ function ConditionProps({
   data: Extract<FlowNodeData, { kind: "condition" }>;
   onChange: Update;
 }) {
-  // `exists` and `hasTag` are unary — a value box would just be noise.
-  const needsValue = data.op !== "exists" && data.op !== "hasTag";
+  const rules = rulesOf(data);
+  const combinator = data.combinator ?? "and";
+
+  const commit = (next: ConditionRule[], comb = combinator) => {
+    const first = next[0] ?? { key: "", op: "exists" as const };
+    onChange({
+      ...data,
+      key: first.key,
+      op: first.op,
+      value: first.value,
+      rules: next.length > 1 ? next : undefined,
+      combinator: next.length > 1 ? comb : undefined,
+    });
+  };
+  const patch = (i: number, r: ConditionRule) => commit(rules.map((x, n) => (n === i ? r : x)));
 
   return (
     <>
-      <Field
-        label={data.op === "hasTag" ? "Nome da tag" : "Campo"}
-        hint={data.op === "hasTag" ? "A tag procurada no contato." : "Chave salva no contexto."}
-      >
-        <TextInput mono value={data.key} onChange={(key) => onChange({ ...data, key })} />
-      </Field>
-
-      <Field label="Comparação">
-        <Select
-          value={data.op}
-          onChange={(op) =>
-            onChange({
-              ...data,
-              op,
-              // Drop a stale value when switching to a unary operator.
-              value: op === "exists" || op === "hasTag" ? undefined : data.value,
-            })
-          }
-          options={ConditionOp.options.map((o) => ({ value: o, label: OP_LABELS[o] ?? o }))}
-        />
-      </Field>
-
-      {needsValue && (
-        <Field label="Valor">
-          <TextInput
-            value={data.value ?? ""}
-            onChange={(v) => onChange({ ...data, value: v === "" ? undefined : v })}
+      {rules.length > 1 && (
+        <Field label="Combinar regras">
+          <Select
+            value={combinator}
+            onChange={(c) => commit(rules, c)}
+            options={[
+              { value: "and", label: "Todas precisam valer (E)" },
+              { value: "or", label: "Basta uma valer (OU)" },
+            ]}
           />
         </Field>
       )}
+
+      <div className="space-y-2">
+        {rules.map((r, i) => {
+          const tag = r.op === "hasTag" || r.op === "notHasTag";
+          const needsValue = !UNARY.includes(r.op);
+          return (
+            <div key={i} className="rounded-lg border p-2">
+              <div className="mb-1 flex items-center gap-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-teal-700">
+                  Regra {i + 1}
+                </span>
+                <RowTools
+                  canUp={i > 0}
+                  canDown={i < rules.length - 1}
+                  canRemove={rules.length > 1}
+                  removeHint="É preciso ao menos uma regra."
+                  onUp={() => commit(move(rules, i, i - 1))}
+                  onDown={() => commit(move(rules, i, i + 1))}
+                  onRemove={() => commit(rules.filter((_, n) => n !== i))}
+                />
+              </div>
+              {r.op !== "subscribed" && (
+                <TextInput
+                  mono
+                  value={r.key}
+                  placeholder={tag ? "nome da tag" : "campo"}
+                  onChange={(key) => patch(i, { ...r, key })}
+                />
+              )}
+              <div className="mt-1.5">
+                <Select
+                  value={r.op}
+                  onChange={(op) =>
+                    patch(i, {
+                      ...r,
+                      op,
+                      // Drop a stale value when switching to a unary operator.
+                      value: UNARY.includes(op) ? undefined : r.value,
+                      // `subscribed` ignores the key; keep it valid for the schema.
+                      key: op === "subscribed" && !r.key ? "subscribed" : r.key,
+                    })
+                  }
+                  options={ConditionOp.options.map((o) => ({
+                    value: o,
+                    label: OP_LABELS[o] ?? o,
+                  }))}
+                />
+              </div>
+              {needsValue && (
+                <div className="mt-1.5">
+                  <TextInput
+                    value={r.value ?? ""}
+                    placeholder="valor"
+                    onChange={(v) => patch(i, { ...r, value: v === "" ? undefined : v })}
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <AddButton
+        label="Adicionar regra"
+        onClick={() => commit([...rules, { key: "", op: "exists" }])}
+        disabled={rules.length >= 10}
+        atLimit="Máximo de 10 regras por condição."
+      />
 
       <p className="rounded-lg bg-neutral-50 px-2.5 py-2 text-[11px] text-neutral-500">
         As duas saídas — <b className="text-emerald-600">sim</b> e{" "}
@@ -947,6 +1221,54 @@ const DELAY_PRESETS = [
   { label: "1 dia", seconds: 86400 },
 ];
 
+const DELAY_MAX = 60 * 60 * 24 * 30;
+
+function SecondsInput({
+  value,
+  onChange,
+  presets = true,
+}: {
+  value: number;
+  onChange: (seconds: number) => void;
+  presets?: boolean;
+}) {
+  return (
+    <>
+      <Input
+        type="number"
+        min={1}
+        max={DELAY_MAX}
+        value={value}
+        onChange={(e) => {
+          const n = Math.round(Number(e.target.value));
+          if (!Number.isFinite(n)) return;
+          onChange(Math.min(DELAY_MAX, Math.max(1, n)));
+        }}
+        className={INPUT}
+      />
+      {presets && (
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {DELAY_PRESETS.map((p) => (
+            <button
+              key={p.seconds}
+              type="button"
+              aria-pressed={value === p.seconds}
+              onClick={() => onChange(p.seconds)}
+              className={`rounded-full border px-2.5 py-0.5 text-[11px] transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+                value === p.seconds
+                  ? "border-rose-300 bg-rose-50 text-rose-700"
+                  : "text-neutral-500 hover:bg-neutral-50"
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
 function DelayProps({
   data,
   onChange,
@@ -954,100 +1276,165 @@ function DelayProps({
   data: Extract<FlowNodeData, { kind: "delay" }>;
   onChange: Update;
 }) {
-  const MAX = 60 * 60 * 24 * 30;
+  const mode = data.mode ?? "fixed";
 
   return (
     <>
-      <Field label="Esperar (segundos)" hint={`Entre 1 segundo e 30 dias (${MAX}s).`}>
-        <input
-          type="number"
-          min={1}
-          max={MAX}
-          value={data.seconds}
-          onChange={(e) => {
-            const n = Math.round(Number(e.target.value));
-            if (!Number.isFinite(n)) return;
-            onChange({ ...data, seconds: Math.min(MAX, Math.max(1, n)) });
+      <Field label="Esperar">
+        <Select
+          value={mode}
+          onChange={(m) => {
+            if (m === "fixed") {
+              onChange({
+                kind: "delay",
+                seconds: data.seconds ?? 3600,
+                window: data.window,
+              });
+            } else if (m === "untilReply") {
+              onChange({ kind: "delay", mode: "untilReply" });
+            } else {
+              onChange({
+                kind: "delay",
+                mode: "untilDate",
+                untilDate: data.untilDate ?? defaultUntilDate(),
+                window: data.window,
+              });
+            }
           }}
-          className={INPUT}
+          options={[
+            { value: "fixed", label: "Um tempo fixo" },
+            { value: "untilReply", label: "Até o contato responder" },
+            { value: "untilDate", label: "Até uma data e hora" },
+          ]}
         />
       </Field>
 
-      <div className="flex flex-wrap gap-1">
-        {DELAY_PRESETS.map((p) => (
-          <button
-            key={p.seconds}
-            onClick={() => onChange({ ...data, seconds: p.seconds })}
-            className={`rounded-full border px-2.5 py-0.5 text-[11px] transition ${
-              data.seconds === p.seconds
-                ? "border-rose-300 bg-rose-50 text-rose-700"
-                : "text-neutral-500 hover:bg-neutral-50"
-            }`}
-          >
-            {p.label}
-          </button>
-        ))}
-      </div>
-
-      <label className="flex items-center gap-2 text-[12px]">
-        <input
-          type="checkbox"
-          checked={!!data.window}
-          onChange={(e) =>
-            onChange({
-              ...data,
-              window: e.target.checked ? { fromHour: 8, toHour: 22 } : undefined,
-            })
-          }
-        />
-        Só continuar dentro de um horário
-      </label>
-
-      {data.window && (
-        <div className="flex items-end gap-2">
-          <div className="flex-1">
-            <Field label="Das">
-              <HourSelect
-                value={data.window.fromHour}
-                onChange={(fromHour) =>
-                  onChange({ ...data, window: { ...data.window!, fromHour } })
-                }
-              />
-            </Field>
-          </div>
-          <div className="flex-1">
-            <Field label="Até">
-              <HourSelect
-                value={data.window.toHour}
-                onChange={(toHour) => onChange({ ...data, window: { ...data.window!, toHour } })}
-              />
-            </Field>
-          </div>
-        </div>
+      {mode === "fixed" && (
+        <>
+          <Field label="Segundos" hint={`Entre 1 segundo e 30 dias (${DELAY_MAX}s).`}>
+            <SecondsInput
+              value={data.seconds ?? 0}
+              onChange={(seconds) => onChange({ ...data, seconds })}
+            />
+          </Field>
+          <label className="flex items-center gap-2 text-[12px]">
+            <Checkbox
+              checked={!!data.cancelOnReply}
+              onCheckedChange={(checked) =>
+                onChange({ ...data, cancelOnReply: checked === true ? true : undefined })
+              }
+            />
+            Se o contato responder antes, seguir pela saída &quot;respondeu&quot;
+          </label>
+        </>
       )}
 
-      {data.window && (
-        <p className="text-[10px] text-neutral-400">
-          Se o tempo terminar fora da janela, a conversa continua na próxima abertura.
-        </p>
+      {mode === "untilReply" && (
+        <>
+          <label className="flex items-center gap-2 text-[12px]">
+            <Checkbox
+              checked={data.timeoutSeconds !== undefined}
+              onCheckedChange={(checked) =>
+                onChange({ ...data, timeoutSeconds: checked === true ? 86400 : undefined })
+              }
+            />
+            Desistir depois de um tempo (saída &quot;tempo esgotado&quot;)
+          </label>
+          {data.timeoutSeconds !== undefined && (
+            <Field label="Limite (segundos)">
+              <SecondsInput
+                value={data.timeoutSeconds}
+                onChange={(timeoutSeconds) => onChange({ ...data, timeoutSeconds })}
+              />
+            </Field>
+          )}
+        </>
+      )}
+
+      {mode === "untilDate" && (
+        <Field label="Continuar em" hint="No fuso da conta. Uma data já passada continua na hora.">
+          <Input
+            type="datetime-local"
+            value={data.untilDate ?? ""}
+            onChange={(e) => onChange({ ...data, untilDate: e.target.value.slice(0, 16) })}
+            className={INPUT}
+          />
+        </Field>
+      )}
+
+      {mode !== "untilReply" && (
+        <>
+          <label className="flex items-center gap-2 text-[12px]">
+            <Checkbox
+              checked={!!data.window}
+              onCheckedChange={(checked) =>
+                onChange({
+                  ...data,
+                  window: checked === true ? { fromHour: 8, toHour: 22 } : undefined,
+                })
+              }
+            />
+            Só continuar dentro de um horário
+          </label>
+
+          {data.window && (
+            <div className="flex items-end gap-2">
+              <div className="flex-1">
+                <Field label="Das">
+                  <HourSelect
+                    value={data.window.fromHour}
+                    onChange={(fromHour) =>
+                      onChange({ ...data, window: { ...data.window!, fromHour } })
+                    }
+                  />
+                </Field>
+              </div>
+              <div className="flex-1">
+                <Field label="Até">
+                  <HourSelect
+                    value={data.window.toHour}
+                    onChange={(toHour) =>
+                      onChange({ ...data, window: { ...data.window!, toHour } })
+                    }
+                  />
+                </Field>
+              </div>
+            </div>
+          )}
+
+          {data.window && (
+            <p className="text-[10px] text-neutral-400">
+              Se o tempo terminar fora da janela, a conversa continua na próxima abertura.
+            </p>
+          )}
+        </>
       )}
     </>
   );
 }
 
+/** Tomorrow at 09:00, local time, in the "YYYY-MM-DDTHH:mm" shape the schema wants. */
+function defaultUntilDate(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T09:00`;
+}
+
 function HourSelect({ value, onChange }: { value: number; onChange: (h: number) => void }) {
   return (
-    <select
-      value={value}
-      onChange={(e) => onChange(Number(e.target.value))}
-      className={INPUT}
-    >
-      {Array.from({ length: 24 }, (_, h) => (
-        <option key={h} value={h}>
-          {String(h).padStart(2, "0")}:00
-        </option>
-      ))}
-    </select>
+    <UiSelect value={String(value)} onValueChange={(v) => onChange(Number(v))}>
+      <SelectTrigger className={INPUT}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {Array.from({ length: 24 }, (_, h) => (
+          <SelectItem key={h} value={String(h)}>
+            {String(h).padStart(2, "0")}:00
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </UiSelect>
   );
 }
 
@@ -1056,6 +1443,8 @@ const ACTION_LABELS: Record<string, string> = {
   removeTag: "Remover tag",
   setField: "Gravar campo",
   unsetField: "Limpar campo",
+  unsubscribe: "Cancelar inscrição",
+  resubscribe: "Reativar inscrição",
 };
 
 type Op = Extract<FlowNodeData, { kind: "action" }>["ops"][number];
@@ -1071,6 +1460,10 @@ function blankOp(op: Op["op"]): Op {
       return { op: "setField", key: "campo", value: "", valueType: "text" };
     case "unsetField":
       return { op: "unsetField", key: "campo" };
+    case "unsubscribe":
+      return { op: "unsubscribe" };
+    case "resubscribe":
+      return { op: "resubscribe" };
   }
 }
 
@@ -1132,6 +1525,12 @@ function ActionProps({
               <div className="mt-1.5">
                 <TextInput mono value={o.key} onChange={(key) => patch(i, { ...o, key })} />
               </div>
+            )}
+
+            {o.op === "unsubscribe" && (
+              <p className="mt-1.5 text-[11px] text-neutral-500">
+                O contato deixa de receber disparos e novos fluxos até enviar <b>voltar</b>.
+              </p>
             )}
 
             {o.op === "setField" && (
@@ -1203,12 +1602,24 @@ function RandomProps({
 
       {w.map((v, i) => (
         <div key={i} className="flex items-center gap-2">
-          <span className="w-16 text-[11px] text-neutral-500">Saída {i + 1}</span>
-          <input
+          <Input
+            value={data.labels?.[i] ?? ""}
+            maxLength={40}
+            placeholder={armLabel({}, i)}
+            aria-label={`Nome da saída ${i + 1}`}
+            onChange={(e) => {
+              const labels = w.map((_, k) => data.labels?.[k] ?? "");
+              labels[i] = e.target.value;
+              onChange({ ...data, labels: labels.some(Boolean) ? labels : undefined });
+            }}
+            className={`${INPUT} w-28`}
+          />
+          <Input
             type="number"
             min={1}
             max={100}
             value={v}
+            aria-label={`Peso da saída ${i + 1}`}
             onChange={(e) => {
               const n = Math.round(Number(e.target.value));
               if (!Number.isFinite(n)) return;
@@ -1219,6 +1630,7 @@ function RandomProps({
             }}
             className={`${INPUT} flex-1`}
           />
+          <span className="text-[11px] text-neutral-400">%</span>
         </div>
       ))}
 
@@ -1229,26 +1641,32 @@ function RandomProps({
       </div>
 
       <div className="flex gap-2">
-        <button
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => onChange({ ...data, weights: balance(w.length) })}
-          className="flex-1 rounded-lg border px-2 py-1 text-[11px]"
+          className="flex-1 text-[11px]"
         >
           Equilibrar
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => onChange({ ...data, weights: balance(w.length + 1) })}
           disabled={w.length >= 4}
-          className="flex-1 rounded-lg border px-2 py-1 text-[11px] disabled:opacity-40"
+          className="flex-1 text-[11px]"
         >
           + Saída
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
           onClick={() => onChange({ ...data, weights: balance(w.length - 1) })}
           disabled={w.length <= 2}
-          className="flex-1 rounded-lg border px-2 py-1 text-[11px] disabled:opacity-40"
+          className="flex-1 text-[11px]"
         >
           − Saída
-        </button>
+        </Button>
       </div>
     </>
   );
@@ -1265,8 +1683,7 @@ function TagProps({
   return (
     <>
       <p className="rounded-lg bg-amber-50 px-2.5 py-2 text-[11px] text-amber-700">
-        Bloco antigo, mantido para os fluxos que já o usam. Em blocos novos,
-        prefira <b>Ações</b>.
+        Bloco antigo, mantido para os fluxos que já o usam. Em blocos novos, prefira <b>Ações</b>.
       </p>
       <Field label="O que fazer">
         <Select
@@ -1281,6 +1698,253 @@ function TagProps({
       <Field label="Tag">
         <TextInput value={data.tagName} onChange={(tagName) => onChange({ ...data, tagName })} />
       </Field>
+    </>
+  );
+}
+
+function GotoProps({
+  data,
+  onChange,
+  targets,
+  self,
+}: {
+  data: Extract<FlowNodeData, { kind: "goto" }>;
+  onChange: Update;
+  targets?: GotoTargets;
+  self: string;
+}) {
+  const toFlow = "flowId" in data.target;
+  const nodes = (targets?.nodes ?? []).filter((n) => n.id !== self);
+  const flows = targets?.flows ?? [];
+
+  return (
+    <>
+      <Field label="Ir para">
+        <Select
+          value={toFlow ? "flow" : "node"}
+          onChange={(v) =>
+            onChange({
+              ...data,
+              target:
+                v === "flow" ? { flowId: flows[0]?.id ?? "" } : { nodeId: nodes[0]?.id ?? "" },
+            })
+          }
+          options={[
+            { value: "node", label: "Um passo deste fluxo" },
+            { value: "flow", label: "Outro fluxo" },
+          ]}
+        />
+      </Field>
+
+      {!toFlow && (
+        <Field label="Passo" hint="A conversa continua a partir dele, sem voltar.">
+          {nodes.length ? (
+            <Select
+              value={"nodeId" in data.target && data.target.nodeId ? data.target.nodeId : "__none"}
+              onChange={(nodeId) => onChange({ ...data, target: { nodeId } })}
+              options={[
+                ...("nodeId" in data.target && !data.target.nodeId
+                  ? [{ value: "__none", label: "Escolha um passo" }]
+                  : []),
+                ...nodes.map((n) => ({ value: n.id, label: n.label })),
+              ]}
+            />
+          ) : (
+            <p className="mt-1 text-[11px] text-neutral-500">Não há outros passos neste fluxo.</p>
+          )}
+        </Field>
+      )}
+
+      {toFlow && (
+        <Field label="Fluxo" hint="Encerra esta conversa e começa o outro fluxo do início.">
+          {flows.length ? (
+            <Select
+              value={"flowId" in data.target && data.target.flowId ? data.target.flowId : "__none"}
+              onChange={(flowId) => onChange({ ...data, target: { flowId } })}
+              options={[
+                ...("flowId" in data.target && !data.target.flowId
+                  ? [{ value: "__none", label: "Escolha um fluxo" }]
+                  : []),
+                ...flows.map((f) => ({ value: f.id, label: f.name })),
+              ]}
+            />
+          ) : (
+            <p className="mt-1 text-[11px] text-neutral-500">Nenhum outro fluxo disponível.</p>
+          )}
+        </Field>
+      )}
+
+      <p className="rounded-lg bg-neutral-50 px-2.5 py-2 text-[11px] text-neutral-500">
+        Este bloco não tem saída própria: o caminho continua no destino.
+      </p>
+    </>
+  );
+}
+
+function RequestProps({
+  data,
+  onChange,
+}: {
+  data: Extract<FlowNodeData, { kind: "request" }>;
+  onChange: Update;
+}) {
+  const headers = data.headers ?? [];
+  const mapping = data.mapping ?? [];
+  const setHeaders = (next: typeof headers) =>
+    onChange({ ...data, headers: next.length ? next : undefined });
+  const setMapping = (next: typeof mapping) =>
+    onChange({ ...data, mapping: next.length ? next : undefined });
+
+  return (
+    <>
+      <Field label="Método">
+        <Select
+          value={data.method}
+          onChange={(method) => onChange({ ...data, method })}
+          options={[
+            { value: "GET", label: "GET" },
+            { value: "POST", label: "POST" },
+          ]}
+        />
+      </Field>
+
+      <Field
+        label="URL"
+        hint="Aceita {{campo}} do contato e {{secret.NOME}} (env FLOW_SECRET_NOME)."
+      >
+        <TextInput
+          mono
+          value={data.url}
+          max={2000}
+          placeholder="https://api.exemplo.com/…"
+          onChange={(url) => onChange({ ...data, url })}
+        />
+      </Field>
+
+      <div>
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+          Cabeçalhos ({headers.length}/20)
+        </span>
+        <div className="mt-1.5 space-y-2">
+          {headers.map((h, i) => (
+            <div key={i} className="rounded-lg border p-2">
+              <div className="mb-1 flex items-center gap-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
+                  Cabeçalho {i + 1}
+                </span>
+                <RowTools
+                  canUp={i > 0}
+                  canDown={i < headers.length - 1}
+                  canRemove
+                  onUp={() => setHeaders(move(headers, i, i - 1))}
+                  onDown={() => setHeaders(move(headers, i, i + 1))}
+                  onRemove={() => setHeaders(headers.filter((_, n) => n !== i))}
+                />
+              </div>
+              <TextInput
+                mono
+                value={h.name}
+                max={100}
+                placeholder="Authorization"
+                onChange={(name) =>
+                  setHeaders(headers.map((x, n) => (n === i ? { ...x, name } : x)))
+                }
+              />
+              <div className="mt-1.5">
+                <TextInput
+                  mono
+                  value={h.value}
+                  max={2000}
+                  placeholder="Bearer {{secret.API}}"
+                  onChange={(value) =>
+                    setHeaders(headers.map((x, n) => (n === i ? { ...x, value } : x)))
+                  }
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-2">
+          <AddButton
+            label="Adicionar cabeçalho"
+            onClick={() => setHeaders([...headers, { name: "", value: "" }])}
+            disabled={headers.length >= 20}
+            atLimit="Máximo de 20 cabeçalhos."
+          />
+        </div>
+      </div>
+
+      {data.method === "POST" && (
+        <Field label="Corpo (JSON)" hint="Enviado como application/json; {{campo}} é substituído.">
+          <UiTextarea
+            value={data.body ?? ""}
+            rows={5}
+            maxLength={10_000}
+            onChange={(e) => onChange({ ...data, body: e.target.value || undefined })}
+            className="mt-1 min-h-0 resize-y font-mono text-[12px] leading-snug"
+          />
+        </Field>
+      )}
+
+      <div>
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+          Gravar da resposta ({mapping.length}/20)
+        </span>
+        <p className="mb-1.5 mt-0.5 text-[10px] text-neutral-400">
+          Caminho no JSON (ex.: data.items[0].price) → campo do contato.
+        </p>
+        <div className="space-y-2">
+          {mapping.map((m, i) => (
+            <div key={i} className="rounded-lg border p-2">
+              <div className="mb-1 flex items-center gap-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">
+                  Campo {i + 1}
+                </span>
+                <RowTools
+                  canUp={i > 0}
+                  canDown={i < mapping.length - 1}
+                  canRemove
+                  onUp={() => setMapping(move(mapping, i, i - 1))}
+                  onDown={() => setMapping(move(mapping, i, i + 1))}
+                  onRemove={() => setMapping(mapping.filter((_, n) => n !== i))}
+                />
+              </div>
+              <TextInput
+                mono
+                value={m.path}
+                max={200}
+                placeholder="data.preco"
+                onChange={(path) =>
+                  setMapping(mapping.map((x, n) => (n === i ? { ...x, path } : x)))
+                }
+              />
+              <div className="mt-1.5">
+                <TextInput
+                  mono
+                  value={m.field}
+                  placeholder="nome_do_campo"
+                  onChange={(field) =>
+                    setMapping(mapping.map((x, n) => (n === i ? { ...x, field } : x)))
+                  }
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-2">
+          <AddButton
+            label="Adicionar campo"
+            onClick={() => setMapping([...mapping, { path: "", field: "" }])}
+            disabled={mapping.length >= 20}
+            atLimit="Máximo de 20 campos."
+          />
+        </div>
+      </div>
+
+      <p className="rounded-lg bg-neutral-50 px-2.5 py-2 text-[11px] text-neutral-500">
+        Sai por <b className="text-emerald-600">sucesso</b> em respostas 2xx e por{" "}
+        <b className="text-rose-600">erro</b> no resto, inclusive tempo esgotado.
+      </p>
     </>
   );
 }
@@ -1301,6 +1965,9 @@ function titleOf(data: FlowNodeData): string {
     action: "Ações",
     random: "Randomizador",
     tag: "Tag (antigo)",
+    goto: "Ir para",
+    goal: "Meta",
+    request: "Requisição externa",
     end: "Fim",
   };
   return names[data.kind];

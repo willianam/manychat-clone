@@ -26,10 +26,12 @@
  * `\p{Emoji}`, which also matches plain digits and `#`/`*` — characters that
  * are legitimate parts of a keyword.
  */
-const EMOJI = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F1E6}-\u{1F1FF}\u{200D}\u{20E3}\u{2B00}-\u{2BFF}]/gu;
+const EMOJI =
+  /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}\u{1F1E6}-\u{1F1FF}\u{200D}\u{20E3}\u{2B00}-\u{2BFF}]/gu;
 
 /** Punctuation trimmed from the ends of the string and of each word. */
-const EDGE_PUNCT = /^[\s!¡?¿.,;:…"'`´^~*_\-–—()[\]{}<>/\\|@#$%&+=]+|[\s!¡?¿.,;:…"'`´^~*_\-–—()[\]{}<>/\\|@#$%&+=]+$/gu;
+const EDGE_PUNCT =
+  /^[\s!¡?¿.,;:…"'`´^~*_\-–—()[\]{}<>/\\|@#$%&+=]+|[\s!¡?¿.,;:…"'`´^~*_\-–—()[\]{}<>/\\|@#$%&+=]+$/gu;
 
 /**
  * Fold a string to its comparable form.
@@ -40,16 +42,18 @@ const EDGE_PUNCT = /^[\s!¡?¿.,;:…"'`´^~*_\-–—()[\]{}<>/\\|@#$%&+=]+|[\s
  * anything downstream that inspects it.
  */
 export function normalizeText(input: string): string {
-  return input
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "") // strip diacritics left behind by NFD
-    .normalize("NFC")
-    .toLowerCase()
-    .replace(EMOJI, " ") // an emoji becomes a separator, not a deletion:
-    //                      "oi👋tudo" must not collapse into "oitudo"
-    .replace(/\s+/g, " ") // collapse repeated whitespace
-    .replace(EDGE_PUNCT, "")
-    .trim();
+  return (
+    input
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "") // strip diacritics left behind by NFD
+      .normalize("NFC")
+      .toLowerCase()
+      .replace(EMOJI, " ") // an emoji becomes a separator, not a deletion:
+      //                      "oi👋tudo" must not collapse into "oitudo"
+      .replace(/\s+/g, " ") // collapse repeated whitespace
+      .replace(EDGE_PUNCT, "")
+      .trim()
+  );
 }
 
 /**

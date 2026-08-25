@@ -1,8 +1,15 @@
 import { describe, it, expect } from "vitest";
 import {
-  buildMessage, buildQuickReply, buildCarousel, buildImage,
-  buildMedia, buildAlbum,
-  postbackPayload, parsePostback, resumeAtFor, previewOf,
+  buildMessage,
+  buildQuickReply,
+  buildCarousel,
+  buildImage,
+  buildMedia,
+  buildAlbum,
+  postbackPayload,
+  parsePostback,
+  resumeAtFor,
+  previewOf,
 } from "../message-payload";
 import { LIMITS } from "../../lib/flow-schema";
 
@@ -188,10 +195,15 @@ describe("buildAlbum", () => {
 
 describe("previewOf", () => {
   it("summarises payloads that carry no text", () => {
-    expect(previewOf({
-      kind: "carousel",
-      cards: [{ id: "a", title: "Básico" }, { id: "b", title: "Pro" }],
-    })).toBe("[carrossel: Básico, Pro]");
+    expect(
+      previewOf({
+        kind: "carousel",
+        cards: [
+          { id: "a", title: "Básico" },
+          { id: "b", title: "Pro" },
+        ],
+      }),
+    ).toBe("[carrossel: Básico, Pro]");
     expect(previewOf({ kind: "image", url: "https://x/y.png" })).toBe("[imagem]");
     expect(previewOf({ kind: "video", url: "https://x/y.mp4" })).toBe("[vídeo]");
     expect(previewOf({ kind: "audio", url: "https://x/y.m4a" })).toBe("[áudio]");
@@ -205,10 +217,14 @@ describe("previewOf", () => {
 });
 
 describe("resumeAtFor", () => {
+  // These cases are written against the machine's own zone, so `getHours()`
+  // reads back what was put in; the zone is passed explicitly because the
+  // default is ACCOUNT_TIMEZONE, which is not necessarily where CI runs.
+  const LOCAL = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const at = (h: number) => new Date(2026, 7, 17, h, 0, 0);
 
   it("adds the delay when no window is set", () => {
-    const out = resumeAtFor({ kind: "delay", seconds: 3600 }, at(10));
+    const out = resumeAtFor({ kind: "delay", seconds: 3600 }, at(10), LOCAL);
     expect(out.getHours()).toBe(11);
   });
 
@@ -216,6 +232,7 @@ describe("resumeAtFor", () => {
     const out = resumeAtFor(
       { kind: "delay", seconds: 3600, window: { fromHour: 8, toHour: 22 } },
       at(10),
+      LOCAL,
     );
     expect(out.getHours()).toBe(11);
   });
@@ -225,6 +242,7 @@ describe("resumeAtFor", () => {
     const out = resumeAtFor(
       { kind: "delay", seconds: 3600, window: { fromHour: 8, toHour: 22 } },
       at(3),
+      LOCAL,
     );
     expect(out.getHours()).toBe(8);
     expect(out.getDate()).toBe(17);
@@ -235,6 +253,7 @@ describe("resumeAtFor", () => {
     const out = resumeAtFor(
       { kind: "delay", seconds: 3600, window: { fromHour: 8, toHour: 22 } },
       at(23),
+      LOCAL,
     );
     expect(out.getHours()).toBe(8);
     expect(out.getDate()).toBe(18);
@@ -245,7 +264,39 @@ describe("resumeAtFor", () => {
     const out = resumeAtFor(
       { kind: "delay", seconds: 3600, window: { fromHour: 22, toHour: 6 } },
       at(1),
+      LOCAL,
     );
     expect(out.getHours()).toBe(2);
+  });
+
+  it("reads the window on the account's clock, not the server's", () => {
+    // 06:00Z + 1h = 07:00Z. In São Paulo (UTC-3) that is 04:00, before an
+    // 8–22 window, so the flow waits until 08:00 there — 11:00Z. In Tokyo
+    // (UTC+9) the same instant is 16:00, inside the window, so it stands.
+    // Neither answer depends on where this test happens to run.
+    const now = new Date("2026-08-17T06:00:00Z");
+    const window = { fromHour: 8, toHour: 22 };
+
+    const saoPaulo = resumeAtFor(
+      { kind: "delay", seconds: 3600, window },
+      now,
+      "America/Sao_Paulo",
+    );
+    expect(saoPaulo.toISOString()).toBe("2026-08-17T11:00:00.000Z");
+
+    const tokyo = resumeAtFor({ kind: "delay", seconds: 3600, window }, now, "Asia/Tokyo");
+    expect(tokyo.toISOString()).toBe("2026-08-17T07:00:00.000Z");
+  });
+
+  it("rolls to the next day in the account's zone, across the UTC date line", () => {
+    // 23:30 in São Paulo on the 17th is 02:30Z on the 18th. Past a 22:00
+    // close, so: 08:00 São Paulo on the 18th = 11:00Z on the 18th, not the 19th.
+    const now = new Date("2026-08-18T02:00:00Z");
+    const out = resumeAtFor(
+      { kind: "delay", seconds: 1800, window: { fromHour: 8, toHour: 22 } },
+      now,
+      "America/Sao_Paulo",
+    );
+    expect(out.toISOString()).toBe("2026-08-18T11:00:00.000Z");
   });
 });

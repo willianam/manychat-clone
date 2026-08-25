@@ -5,7 +5,12 @@ import type { FlowGraph } from "../flow-schema";
 /** message → quickreply(A/B) → two different endings. */
 const graph: FlowGraph = {
   nodes: [
-    { id: "m1", type: "message", position: { x: 0, y: 0 }, data: { kind: "message", text: "Olá!" } },
+    {
+      id: "m1",
+      type: "message",
+      position: { x: 0, y: 0 },
+      data: { kind: "message", text: "Olá!" },
+    },
     {
       id: "q1",
       type: "quickreply",
@@ -20,8 +25,18 @@ const graph: FlowGraph = {
         ],
       },
     },
-    { id: "mA", type: "message", position: { x: 0, y: 0 }, data: { kind: "message", text: "Básico: R$97" } },
-    { id: "mB", type: "message", position: { x: 0, y: 0 }, data: { kind: "message", text: "Pro: R$297" } },
+    {
+      id: "mA",
+      type: "message",
+      position: { x: 0, y: 0 },
+      data: { kind: "message", text: "Básico: R$97" },
+    },
+    {
+      id: "mB",
+      type: "message",
+      position: { x: 0, y: 0 },
+      data: { kind: "message", text: "Pro: R$297" },
+    },
     { id: "end", type: "end", position: { x: 0, y: 0 }, data: { kind: "end" } },
   ],
   edges: [
@@ -90,9 +105,24 @@ describe("previewFrom", () => {
   it("presents a condition as a fork rather than evaluating it", () => {
     const g: FlowGraph = {
       nodes: [
-        { id: "c1", type: "condition", position: { x: 0, y: 0 }, data: { kind: "condition", key: "nome", op: "exists" } },
-        { id: "y", type: "message", position: { x: 0, y: 0 }, data: { kind: "message", text: "sim!" } },
-        { id: "n", type: "message", position: { x: 0, y: 0 }, data: { kind: "message", text: "não!" } },
+        {
+          id: "c1",
+          type: "condition",
+          position: { x: 0, y: 0 },
+          data: { kind: "condition", key: "nome", op: "exists" },
+        },
+        {
+          id: "y",
+          type: "message",
+          position: { x: 0, y: 0 },
+          data: { kind: "message", text: "sim!" },
+        },
+        {
+          id: "n",
+          type: "message",
+          position: { x: 0, y: 0 },
+          data: { kind: "message", text: "não!" },
+        },
       ],
       edges: [
         { id: "e1", source: "c1", target: "y", sourceHandle: "true" },
@@ -108,7 +138,12 @@ describe("previewFrom", () => {
   it("shows silent nodes as notes, not as messages", () => {
     const g: FlowGraph = {
       nodes: [
-        { id: "d1", type: "delay", position: { x: 0, y: 0 }, data: { kind: "delay", seconds: 3600 } },
+        {
+          id: "d1",
+          type: "delay",
+          position: { x: 0, y: 0 },
+          data: { kind: "delay", seconds: 3600 },
+        },
         { id: "end", type: "end", position: { x: 0, y: 0 }, data: { kind: "end" } },
       ],
       edges: [{ id: "e1", source: "d1", target: "end" }],
@@ -120,8 +155,18 @@ describe("previewFrom", () => {
   it("renders the new media kinds", () => {
     const g: FlowGraph = {
       nodes: [
-        { id: "a1", type: "album", position: { x: 0, y: 0 }, data: { kind: "album", urls: ["https://x/1.jpg", "https://x/2.jpg"] } },
-        { id: "v1", type: "video", position: { x: 0, y: 0 }, data: { kind: "video", url: "https://x/v.mp4" } },
+        {
+          id: "a1",
+          type: "album",
+          position: { x: 0, y: 0 },
+          data: { kind: "album", urls: ["https://x/1.jpg", "https://x/2.jpg"] },
+        },
+        {
+          id: "v1",
+          type: "video",
+          position: { x: 0, y: 0 },
+          data: { kind: "video", url: "https://x/v.mp4" },
+        },
         { id: "end", type: "end", position: { x: 0, y: 0 }, data: { kind: "end" } },
       ],
       edges: [
@@ -137,8 +182,18 @@ describe("previewFrom", () => {
   it("stops rather than spinning on a cycle", () => {
     const g: FlowGraph = {
       nodes: [
-        { id: "a", type: "message", position: { x: 0, y: 0 }, data: { kind: "message", text: "a" } },
-        { id: "b", type: "message", position: { x: 0, y: 0 }, data: { kind: "message", text: "b" } },
+        {
+          id: "a",
+          type: "message",
+          position: { x: 0, y: 0 },
+          data: { kind: "message", text: "a" },
+        },
+        {
+          id: "b",
+          type: "message",
+          position: { x: 0, y: 0 },
+          data: { kind: "message", text: "b" },
+        },
       ],
       edges: [
         { id: "e1", source: "a", target: "b" },

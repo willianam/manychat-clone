@@ -2,9 +2,19 @@
 
 import { Handle, Position, type NodeProps } from "reactflow";
 import { useEffect, useRef, useState } from "react";
-import type { FlowNodeData } from "../lib/flow-schema";
+import {
+  ExternalLink,
+  FileText,
+  Maximize2,
+  Minimize2,
+  Music,
+  Play,
+  type LucideIcon,
+} from "lucide-react";
+import { armLabel, rulesOf, type FlowNodeData } from "../lib/flow-schema";
 import { inlineLimitOf } from "../lib/flow-edit";
 import type { NodeStats } from "../server/flow-metrics";
+import type { ArmStats } from "../server/ab-stats";
 
 /**
  * Canvas nodes.
@@ -39,6 +49,10 @@ type WithStats = FlowNodeData & {
   _stats?: NodeStats;
   /** Commit an inline text edit for this node. Absent = read-only canvas. */
   _onText?: (text: string) => void;
+  /** Flow id → name, so a "Ir para" can say where it goes. */
+  _names?: Record<string, string>;
+  /** A/B results per arm, for randomizers. */
+  _ab?: ArmStats[];
 };
 
 /**
@@ -53,8 +67,7 @@ type WithStats = FlowNodeData & {
 const HANDLE =
   "!h-3 !w-3 !border-2 !border-white !shadow-sm hover:!scale-125 !transition-transform";
 
-const SHELL =
-  "rounded-xl border bg-white shadow-sm text-sm";
+const SHELL = "rounded-xl border bg-white shadow-sm text-sm";
 
 /** Colored header strip, the way each node announces its kind. */
 function Head({ tone, label, right }: { tone: string; label: string; right?: React.ReactNode }) {
@@ -77,6 +90,7 @@ function Stats({ s }: { s?: NodeStats }) {
       {s.deliveredPct !== null && (
         <Metric value={`${s.deliveredPct}%`} label="Entregue" tone="text-emerald-600" />
       )}
+      {s.readPct !== null && <Metric value={`${s.readPct}%`} label="Lido" tone="text-sky-600" />}
       {s.clickedPct !== null && (
         <Metric value={`${s.clickedPct}%`} label="Clicado" tone="text-indigo-600" />
       )}
@@ -183,7 +197,7 @@ function EditableText({
           // Delete/Backspace inside the textarea must not delete the node.
           e.stopPropagation();
         }}
-        className="nodrag nowheel w-full resize-none rounded-lg border border-indigo-400 bg-white px-2.5 py-1.5 text-[12px] leading-snug outline-none"
+        className="nodrag nowheel w-full resize-none rounded-lg border border-indigo-400 bg-white px-2.5 py-1.5 text-[12px] leading-snug focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
       />
     );
   }
@@ -196,11 +210,7 @@ function EditableText({
         onCommit ? "cursor-text hover:ring-1 hover:ring-indigo-300" : ""
       }`}
     >
-      {value === "" ? (
-        <span className="text-neutral-400">{placeholder ?? "…"}</span>
-      ) : (
-        value
-      )}
+      {value === "" ? <span className="text-neutral-400">{placeholder ?? "…"}</span> : value}
     </div>
   );
 }
@@ -221,7 +231,7 @@ function PortButton({
     <div className="relative mt-1">
       <div className="flex items-center justify-center gap-1 rounded-full border border-neutral-200 py-1 text-[12px] font-semibold text-indigo-600">
         <span>{title}</span>
-        {external && <span className="text-[10px]">↗</span>}
+        {external && <ExternalLink className="h-3 w-3" aria-hidden />}
         {ctr !== undefined && ctr > 0 && (
           <span className="text-[9px] font-medium text-neutral-400">CTR {ctr}%</span>
         )}
@@ -249,7 +259,10 @@ export function MessageNode({ data }: NodeProps<WithStats>) {
   return (
     <div className={`${SHELL} w-[248px]`}>
       <Handle type="target" position={T} className={`${HANDLE} !top-[-8px] !bg-neutral-400`} />
-      <Head tone="bg-emerald-50 text-emerald-800 border-b border-emerald-100" label="Enviar mensagem" />
+      <Head
+        tone="bg-emerald-50 text-emerald-800 border-b border-emerald-100"
+        label="Enviar mensagem"
+      />
       <Stats s={s} />
       <div className="p-2.5">
         <EditableBubble text={d.text} onCommit={data._onText} max={inlineLimitOf(d)} />
@@ -259,7 +272,11 @@ export function MessageNode({ data }: NodeProps<WithStats>) {
             id={b.id}
             title={b.title}
             external={b.type === "url"}
-            ctr={s?.byHandle[b.id] && s.sent ? Math.round((s.byHandle[b.id]! / s.sent) * 100) : undefined}
+            ctr={
+              s?.byHandle[b.id] && s.sent
+                ? Math.round((s.byHandle[b.id]! / s.sent) * 100)
+                : undefined
+            }
           />
         ))}
       </div>
@@ -300,10 +317,36 @@ export function QuestionNode({ data }: NodeProps<WithStats>) {
       <div className="p-2.5">
         <EditableBubble text={d.text} onCommit={data._onText} max={inlineLimitOf(d)} />
         <div className="mt-1.5 rounded border border-dashed border-neutral-300 px-2 py-1 text-[11px] text-neutral-500">
-          resposta livre → <span className="font-mono">{d.saveAs}</span>
+          {INPUT_TYPE_HINT[d.inputType ?? "text"]} → <span className="font-mono">{d.saveAs}</span>
+          {d.allowSkip && <span className="ml-1 text-neutral-400">· pode pular</span>}
         </div>
+        {d.onInvalid === "branch" && <SidePort id="invalid" label="inválida" tone="!bg-rose-500" />}
       </div>
       <NextStep />
+    </div>
+  );
+}
+
+const INPUT_TYPE_HINT: Record<string, string> = {
+  text: "resposta livre",
+  number: "número",
+  email: "e-mail",
+  phone: "telefone",
+  date: "data",
+  option: "uma das opções",
+};
+
+/** A named secondary output on the right edge, with its label. */
+function SidePort({ id, label, tone }: { id: string; label: string; tone: string }) {
+  return (
+    <div className="relative mt-1.5 flex items-center justify-end">
+      <span className="text-[10px] font-semibold text-neutral-500">{label}</span>
+      <Handle
+        type="source"
+        position={Position.Right}
+        id={id}
+        className={`${HANDLE} !right-[-14px] ${tone}`}
+      />
     </div>
   );
 }
@@ -324,7 +367,9 @@ export function QuickReplyNode({ data }: NodeProps<WithStats>) {
               <div className="inline-flex items-center gap-1 rounded-full border border-indigo-300 px-2.5 py-0.5 text-[11px] font-semibold text-indigo-600">
                 {o.title}
                 {s?.byHandle[o.id] ? (
-                  <span className="text-[9px] font-medium text-neutral-400">{s.byHandle[o.id]}</span>
+                  <span className="text-[9px] font-medium text-neutral-400">
+                    {s.byHandle[o.id]}
+                  </span>
                 ) : null}
               </div>
               <Handle
@@ -364,10 +409,15 @@ export function CarouselNode({ data, id }: NodeProps<WithStats>) {
         right={
           <button
             onClick={() => setOpen((v) => !v)}
-            className="ml-auto rounded px-1 text-[13px] leading-none hover:bg-violet-100"
+            className="nodrag ml-auto rounded p-0.5 leading-none hover:bg-violet-100 focus-visible:ring-2 focus-visible:ring-ring"
             aria-label={open ? "Recolher" : "Expandir"}
+            aria-expanded={open}
           >
-            {open ? "⤡" : "⤢"}
+            {open ? (
+              <Minimize2 className="h-3 w-3" aria-hidden />
+            ) : (
+              <Maximize2 className="h-3 w-3" aria-hidden />
+            )}
           </button>
         }
       />
@@ -383,7 +433,11 @@ export function CarouselNode({ data, id }: NodeProps<WithStats>) {
                 className={`flex items-center justify-center bg-neutral-100 text-[9px] text-neutral-400 ${open ? "h-[72px]" : "h-[40px]"}`}
                 style={
                   c.imageUrl
-                    ? { backgroundImage: `url(${c.imageUrl})`, backgroundSize: "cover", backgroundPosition: "center" }
+                    ? {
+                        backgroundImage: `url(${c.imageUrl})`,
+                        backgroundSize: "cover",
+                        backgroundPosition: "center",
+                      }
                     : undefined
                 }
               >
@@ -393,7 +447,9 @@ export function CarouselNode({ data, id }: NodeProps<WithStats>) {
                 <>
                   <div className="truncate px-1.5 pt-1 text-[11px] font-semibold">{c.title}</div>
                   {c.subtitle && (
-                    <div className="truncate px-1.5 pb-1 text-[10px] text-neutral-500">{c.subtitle}</div>
+                    <div className="truncate px-1.5 pb-1 text-[10px] text-neutral-500">
+                      {c.subtitle}
+                    </div>
                   )}
                   {(c.buttons ?? []).map((b) => (
                     <div key={b.id} className="relative border-t">
@@ -434,7 +490,11 @@ export function ImageNode({ data }: NodeProps<WithStats>) {
       <div className="p-2.5">
         <div
           className="flex h-[86px] items-center justify-center rounded-lg bg-neutral-100 text-[10px] text-neutral-400"
-          style={{ backgroundImage: `url(${d.url ?? "arquivo enviado"})`, backgroundSize: "cover", backgroundPosition: "center" }}
+          style={{
+            backgroundImage: `url(${d.url ?? "arquivo enviado"})`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+          }}
         />
         <div className="mt-1.5 text-[11px] text-neutral-600">
           <EditableText
@@ -458,14 +518,12 @@ export function ImageNode({ data }: NodeProps<WithStats>) {
  * the part that tells you *which* asset this block sends. Showing a fake
  * player would suggest a preview we don't have.
  */
-function MediaCard({ icon, url, label }: { icon: string; url: string; label: string }) {
+function MediaCard({ icon: Icon, url, label }: { icon: LucideIcon; url: string; label: string }) {
   return (
     <div className="flex items-center gap-2 rounded-lg bg-neutral-100 px-2.5 py-2">
-      <span className="text-[18px] leading-none">{icon}</span>
+      <Icon className="h-4 w-4 shrink-0 text-neutral-500" aria-hidden />
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[11px] font-medium text-neutral-700">
-          {label}
-        </div>
+        <div className="truncate text-[11px] font-medium text-neutral-700">{label}</div>
         <div className="truncate text-[9px] text-neutral-400" title={url}>
           {basenameOf(url)}
         </div>
@@ -482,7 +540,7 @@ export function VideoNode({ data }: NodeProps<WithStats>) {
       <Head tone="bg-fuchsia-50 text-fuchsia-700" label="Vídeo" />
       <Stats s={data._stats} />
       <div className="p-2.5">
-        <MediaCard icon="▶" url={d.url ?? ""} label="Vídeo" />
+        <MediaCard icon={Play} url={d.url ?? ""} label="Vídeo" />
       </div>
       <Handle type="source" position={B} className={`${HANDLE} !bottom-[-8px] !bg-neutral-400`} />
     </div>
@@ -497,7 +555,7 @@ export function AudioNode({ data }: NodeProps<WithStats>) {
       <Head tone="bg-cyan-50 text-cyan-700" label="Áudio" />
       <Stats s={data._stats} />
       <div className="p-2.5">
-        <MediaCard icon="♪" url={d.url ?? ""} label="Áudio" />
+        <MediaCard icon={Music} url={d.url ?? ""} label="Áudio" />
       </div>
       <Handle type="source" position={B} className={`${HANDLE} !bottom-[-8px] !bg-neutral-400`} />
     </div>
@@ -512,7 +570,7 @@ export function FileNode({ data }: NodeProps<WithStats>) {
       <Head tone="bg-stone-100 text-stone-700" label="PDF" />
       <Stats s={data._stats} />
       <div className="p-2.5">
-        <MediaCard icon="▤" url={d.url ?? ""} label={d.filename ?? "Documento PDF"} />
+        <MediaCard icon={FileText} url={d.url ?? ""} label={d.filename ?? "Documento PDF"} />
       </div>
       <Handle type="source" position={B} className={`${HANDLE} !bottom-[-8px] !bg-neutral-400`} />
     </div>
@@ -535,7 +593,11 @@ export function AlbumNode({ data }: NodeProps<WithStats>) {
           <div
             key={`${u}-${i}`}
             className="h-[46px] rounded bg-neutral-100"
-            style={{ backgroundImage: `url(${u})`, backgroundSize: "cover", backgroundPosition: "center" }}
+            style={{
+              backgroundImage: `url(${u})`,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+            }}
           />
         ))}
         {d.urls.length > 6 && (
@@ -566,16 +628,38 @@ export function ConditionNode({ data }: NodeProps<WithStats>) {
       <Handle type="target" position={T} className={`${HANDLE} !top-[-8px] !bg-neutral-400`} />
       <Head tone="bg-cyan-50 text-cyan-800 border-b border-cyan-100" label="Condição" />
       <div className="p-2.5">
-        <div className="rounded border px-2 py-1 font-mono text-[11px]">
-          {d.key} {d.op} {d.value ?? ""}
-        </div>
+        {rulesOf(d).map((r, i) => (
+          <div key={i} className="flex items-center gap-1">
+            {i > 0 && (
+              <span className="w-6 text-[9px] font-semibold uppercase text-neutral-400">
+                {d.combinator === "or" ? "ou" : "e"}
+              </span>
+            )}
+            <div className="mt-0.5 flex-1 truncate rounded border px-2 py-1 font-mono text-[11px]">
+              {r.op === "subscribed" ? "" : `${r.key} `}
+              {r.op} {r.value ?? ""}
+            </div>
+          </div>
+        ))}
         <div className="mt-2 flex justify-between text-[11px] font-semibold">
           <span className="text-emerald-600">sim</span>
           <span className="text-rose-600">não</span>
         </div>
       </div>
-      <Handle type="source" position={B} id="true" style={{ left: "25%" }} className={`${HANDLE} !bottom-[-8px] !bg-emerald-500`} />
-      <Handle type="source" position={B} id="false" style={{ left: "75%" }} className={`${HANDLE} !bottom-[-8px] !bg-rose-500`} />
+      <Handle
+        type="source"
+        position={B}
+        id="true"
+        style={{ left: "25%" }}
+        className={`${HANDLE} !bottom-[-8px] !bg-emerald-500`}
+      />
+      <Handle
+        type="source"
+        position={B}
+        id="false"
+        style={{ left: "75%" }}
+        className={`${HANDLE} !bottom-[-8px] !bg-rose-500`}
+      />
     </div>
   );
 }
@@ -587,9 +671,36 @@ export function DelayNode({ data }: NodeProps<WithStats>) {
       <Handle type="target" position={T} className={`${HANDLE} !top-[-8px] !bg-neutral-400`} />
       <Head tone="bg-rose-50 text-rose-800 border-b border-rose-100" label="Atraso inteligente" />
       <div className="p-2.5 text-[12px] text-neutral-700">
-        Aguarde <b>{humanize(d.seconds)}</b>
+        {d.mode === "untilReply" && (
+          <>
+            Aguarde <b>a resposta</b>
+            {d.timeoutSeconds && <> (até {humanize(d.timeoutSeconds)})</>}
+          </>
+        )}
+        {d.mode === "untilDate" && (
+          <>
+            Aguarde até <b>{d.untilDate?.replace("T", " ")}</b>
+          </>
+        )}
+        {(d.mode ?? "fixed") === "fixed" && (
+          <>
+            Aguarde <b>{humanize(d.seconds ?? 0)}</b>
+          </>
+        )}
         {d.window && (
-          <> e continue entre <b>{pad(d.window.fromHour)}:00–{pad(d.window.toHour)}:00</b></>
+          <>
+            {" "}
+            e continue entre{" "}
+            <b>
+              {pad(d.window.fromHour)}:00–{pad(d.window.toHour)}:00
+            </b>
+          </>
+        )}
+        {(d.mode ?? "fixed") === "fixed" && d.cancelOnReply && (
+          <SidePort id="replied" label="respondeu" tone="!bg-amber-500" />
+        )}
+        {d.mode === "untilReply" && d.timeoutSeconds && (
+          <SidePort id="timeout" label="tempo esgotado" tone="!bg-rose-500" />
         )}
       </div>
       <Handle type="source" position={B} className={`${HANDLE} !bottom-[-8px] !bg-neutral-400`} />
@@ -606,10 +717,28 @@ export function ActionNode({ data }: NodeProps<WithStats>) {
       <div className="space-y-0.5 p-2.5 text-[11px] text-neutral-700">
         {d.ops.map((o, i) => (
           <div key={i}>
-            {o.op === "addTag" && <>+ tag <b>{o.tagName}</b></>}
-            {o.op === "removeTag" && <>− tag <b>{o.tagName}</b></>}
-            {o.op === "setField" && <>definir <b>{o.key}</b> = {o.value}</>}
-            {o.op === "unsetField" && <>limpar <b>{o.key}</b></>}
+            {o.op === "addTag" && (
+              <>
+                + tag <b>{o.tagName}</b>
+              </>
+            )}
+            {o.op === "removeTag" && (
+              <>
+                − tag <b>{o.tagName}</b>
+              </>
+            )}
+            {o.op === "setField" && (
+              <>
+                definir <b>{o.key}</b> = {o.value}
+              </>
+            )}
+            {o.op === "unsetField" && (
+              <>
+                limpar <b>{o.key}</b>
+              </>
+            )}
+            {o.op === "unsubscribe" && <>cancelar inscrição</>}
+            {o.op === "resubscribe" && <>reativar inscrição</>}
           </div>
         ))}
       </div>
@@ -620,6 +749,7 @@ export function ActionNode({ data }: NodeProps<WithStats>) {
 
 export function RandomNode({ data }: NodeProps<WithStats>) {
   const d = data as Extract<FlowNodeData, { kind: "random" }>;
+  const ab = data._ab;
   return (
     <div className={`${SHELL} w-[224px]`}>
       <Handle type="target" position={T} className={`${HANDLE} !top-[-8px] !bg-neutral-400`} />
@@ -627,10 +757,21 @@ export function RandomNode({ data }: NodeProps<WithStats>) {
       <div className="p-2.5">
         {d.weights.map((w, i) => (
           <div key={i} className="relative mt-1 flex items-center gap-2">
+            {d.labels?.[i]?.trim() && (
+              <span className="w-16 truncate text-[10px] text-neutral-600">{armLabel(d, i)}</span>
+            )}
             <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-neutral-100">
               <div className="h-full bg-slate-400" style={{ width: `${w}%` }} />
             </div>
             <span className="w-8 text-right text-[11px] tabular-nums text-neutral-500">{w}%</span>
+            {ab?.[i] && ab[i]!.sessions > 0 && (
+              <span
+                className="text-[9px] tabular-nums text-neutral-400"
+                title={`${ab[i]!.sessions} contatos, ${ab[i]!.goals} metas`}
+              >
+                {ab[i]!.sessions} · {ab[i]!.rate ?? 0}%
+              </span>
+            )}
             <Handle
               type="source"
               position={Position.Right}
@@ -640,6 +781,71 @@ export function RandomNode({ data }: NodeProps<WithStats>) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+export function GotoNode({ data }: NodeProps<WithStats>) {
+  const d = data as Extract<FlowNodeData, { kind: "goto" }>;
+  const target =
+    "flowId" in d.target
+      ? `fluxo ${data._names?.[d.target.flowId] ?? d.target.flowId}`
+      : `passo ${d.target.nodeId}`;
+  return (
+    <div className={`${SHELL} w-[224px]`}>
+      <Handle type="target" position={T} className={`${HANDLE} !top-[-8px] !bg-neutral-400`} />
+      <Head tone="bg-violet-50 text-violet-800 border-b border-violet-100" label="Ir para" />
+      <div className="p-2.5 font-mono text-[11px] text-neutral-700">→ {target}</div>
+    </div>
+  );
+}
+
+export function GoalNode({ data }: NodeProps<WithStats>) {
+  const d = data as Extract<FlowNodeData, { kind: "goal" }>;
+  return (
+    <div className={`${SHELL} w-[224px]`}>
+      <Handle type="target" position={T} className={`${HANDLE} !top-[-8px] !bg-neutral-400`} />
+      <Head tone="bg-emerald-50 text-emerald-800 border-b border-emerald-100" label="Meta" />
+      <div className="p-2.5 text-[12px] text-neutral-700">
+        Conversão: <b>{d.name}</b>
+      </div>
+      <Handle type="source" position={B} className={`${HANDLE} !bottom-[-8px] !bg-neutral-400`} />
+    </div>
+  );
+}
+
+export function RequestNode({ data }: NodeProps<WithStats>) {
+  const d = data as Extract<FlowNodeData, { kind: "request" }>;
+  return (
+    <div className={`${SHELL} w-[248px]`}>
+      <Handle type="target" position={T} className={`${HANDLE} !top-[-8px] !bg-neutral-400`} />
+      <Head
+        tone="bg-orange-50 text-orange-800 border-b border-orange-100"
+        label="Requisição externa"
+      />
+      <div className="p-2.5">
+        <div className="truncate rounded border px-2 py-1 font-mono text-[11px]">
+          {d.method} {d.url}
+        </div>
+        <div className="mt-2 flex justify-between text-[11px] font-semibold">
+          <span className="text-emerald-600">sucesso</span>
+          <span className="text-rose-600">erro</span>
+        </div>
+      </div>
+      <Handle
+        type="source"
+        position={B}
+        id="success"
+        style={{ left: "25%" }}
+        className={`${HANDLE} !bottom-[-8px] !bg-emerald-500`}
+      />
+      <Handle
+        type="source"
+        position={B}
+        id="error"
+        style={{ left: "75%" }}
+        className={`${HANDLE} !bottom-[-8px] !bg-rose-500`}
+      />
     </div>
   );
 }
@@ -698,5 +904,8 @@ export const nodeTypes = {
   action: ActionNode,
   random: RandomNode,
   tag: TagNode,
+  goto: GotoNode,
+  goal: GoalNode,
+  request: RequestNode,
   end: EndNode,
 };

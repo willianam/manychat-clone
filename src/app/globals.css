@@ -1,3 +1,51 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Semantic tokens. HSL triplets so Tailwind can apply opacity modifiers. */
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 9%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 9%;
+    --primary: 243 75% 59%; /* indigo-600 */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 96%; /* neutral-100 */
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 45%; /* neutral-500 */
+    --accent: 0 0% 96%;
+    --accent-foreground: 0 0% 9%;
+    --destructive: 347 77% 50%; /* rose-600 */
+    --destructive-foreground: 0 0% 100%;
+    --success: 160 84% 39%; /* emerald-600 */
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%; /* amber-500 */
+    --warning-foreground: 0 0% 9%;
+    --border: 0 0% 90%; /* neutral-200 */
+    --input: 0 0% 90%;
+    --ring: 243 75% 59%;
+    --radius: 0.5rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+
+  /*
+   * The native focus outline is replaced by the ring every primitive draws
+   * with `focus-visible:ring-2 focus-visible:ring-offset-2`, so keyboard
+   * focus stays visible without doubling up on outline + ring.
+   */
+  :focus-visible {
+    outline: 2px solid transparent;
+    outline-offset: 2px;
+  }
+}

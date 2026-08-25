@@ -1,48 +1,52 @@
 import "./globals.css";
-import Link from "next/link";
+import { Inter } from "next/font/google";
+import { cookies } from "next/headers";
+import { AppShell } from "@/components/shell/app-shell";
+import { Toaster } from "@/components/ui/sonner";
+import { db } from "../server/db";
+import { unreadConversationCount } from "../server/inbox";
+import { connectionStatus } from "../server/connection-status";
 
-export const metadata = { title: "ManyChat Clone — Preview" };
+const inter = Inter({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export const metadata = { title: "ManyChat Clone" };
+
+// The unread count and the connection status are read on every request;
+// nothing here is prerendered.
+export const dynamic = "force-dynamic";
+
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Connection details only for a signed-in browser: the login page must not
+  // carry token details in its payload. The middleware has already verified
+  // the cookie on every route that renders the shell; here its presence is
+  // enough. Never throws: a dead database paints the light red instead of a 500.
+  const signedIn = (await cookies()).has("mc_auth");
+  const connection = signedIn
+    ? await connectionStatus(db)
+    : { level: "down" as const, label: "sem sessão", detail: [] };
+  // Same gate for the badge: /login and /privacidade render bare anyway.
+  const unreadConversations = signedIn ? await unreadBadge() : 0;
   return (
-    <html lang="pt-BR">
-      <body className="min-h-screen bg-neutral-50 text-neutral-900">
-        <header className="border-b bg-white">
-          <nav className="mx-auto flex max-w-6xl items-center gap-6 px-6 py-3">
-            <Link href="/" className="font-semibold">
-              ManyChat Clone
-            </Link>
-            <Link href="/flows" className="text-sm text-neutral-600 hover:text-neutral-900">
-              Fluxos
-            </Link>
-            <Link href="/gatilhos" className="text-sm text-neutral-600 hover:text-neutral-900">
-              Gatilhos
-            </Link>
-            <Link href="/contacts" className="text-sm text-neutral-600 hover:text-neutral-900">
-              Contatos
-            </Link>
-            <Link href="/tags" className="text-sm text-neutral-600 hover:text-neutral-900">
-              Etiquetas
-            </Link>
-            <Link href="/broadcasts" className="text-sm text-neutral-600 hover:text-neutral-900">
-              Disparos
-            </Link>
-            <Link href="/insights" className="text-sm text-neutral-600 hover:text-neutral-900">
-              Insights
-            </Link>
-            <Link href="/ref-links" className="text-sm text-neutral-600 hover:text-neutral-900">
-              Links
-            </Link>
-            <Link href="/configuracoes" className="text-sm text-neutral-600 hover:text-neutral-900">
-              Configurações
-            </Link>
-            <span className="ml-auto rounded-full bg-emerald-100 px-3 py-1 text-xs text-emerald-800">
-              produção
-            </span>
-          </nav>
-        </header>
-        {children}
+    <html lang="pt-BR" className={inter.variable}>
+      <body className="min-h-screen bg-neutral-50 font-sans text-foreground">
+        <AppShell connection={connection} unreadConversations={unreadConversations}>
+          {children}
+        </AppShell>
+        <Toaster />
       </body>
     </html>
   );
+}
+
+/**
+ * Unread conversations for the sidebar badge. Swallows failures: the
+ * layout also wraps /login and /privacidade, which must render when the
+ * database is down — the page's own query will surface the error.
+ */
+async function unreadBadge(): Promise<number> {
+  try {
+    return await unreadConversationCount(db);
+  } catch {
+    return 0;
+  }
 }

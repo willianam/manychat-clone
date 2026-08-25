@@ -1,9 +1,21 @@
+import Link from "next/link";
+import { Inbox } from "lucide-react";
 import { db } from "../../server/db";
+import { createTriggerFromUnmatched, dismissUnmatched, restoreUnmatched } from "./actions";
+import { Callout } from "@/components/ui/callout";
+import { Card, CardContent } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/ui/page-header";
 import {
-  createTriggerFromUnmatched,
-  dismissUnmatched,
-  restoreUnmatched,
-} from "./actions";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { SubmitButton } from "@/components/ui/submit-button";
+import { cn } from "@/lib/ui/cn";
 
 export const dynamic = "force-dynamic";
 
@@ -36,121 +48,148 @@ export default async function InsightsPage({
   const totalMisses = rows.reduce((n, r) => n + r.count, 0);
 
   return (
-    <main className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="text-2xl font-semibold">O que digitaram e não casou</h1>
-      <p className="mt-1 text-sm text-neutral-600">
-        Mensagens que não bateram com nenhum gatilho, agrupadas por texto. Uma linha
-        pode representar muita gente — use a contagem para decidir o que vira palavra-chave.
-      </p>
+    <main className="mx-auto w-full max-w-4xl px-6 py-8">
+      <PageHeader
+        title="O que digitaram e não casou"
+        description="Mensagens que não bateram com nenhum gatilho, agrupadas por texto. Uma linha pode representar muita gente; use a contagem para decidir o que vira palavra-chave."
+      />
 
-      <div className="mt-4 flex items-center gap-4 text-sm">
-        <a
-          href="/insights"
-          className={showResolved ? "text-neutral-600 hover:text-neutral-900" : "font-medium"}
+      <div className="mt-6 flex flex-wrap items-center gap-3 text-sm">
+        <nav
+          aria-label="Filtro"
+          className="inline-flex items-center rounded-lg bg-muted p-1 text-muted-foreground"
         >
-          Pendentes ({pendingCount})
-        </a>
-        <a
-          href="/insights?mostrar=resolvidas"
-          className={showResolved ? "font-medium" : "text-neutral-600 hover:text-neutral-900"}
-        >
-          Já resolvidas
-        </a>
+          <FilterTab href="/insights" active={!showResolved}>
+            Pendentes ({pendingCount})
+          </FilterTab>
+          <FilterTab href="/insights?mostrar=resolvidas" active={showResolved}>
+            Já resolvidas
+          </FilterTab>
+        </nav>
         {!showResolved && totalMisses > 0 && (
-          <span className="ml-auto text-neutral-500">
+          <span className="ml-auto text-muted-foreground">
             {totalMisses} mensagem{totalMisses === 1 ? "" : "s"} sem resposta automática
           </span>
         )}
       </div>
 
       {rows.length === 0 && (
-        <div className="mt-6 rounded-lg border border-dashed bg-white p-8 text-center text-sm text-neutral-500">
-          {showResolved
-            ? "Nada resolvido ainda."
-            : "Nenhuma mensagem sem gatilho por enquanto. Quando alguém escrever algo que os seus gatilhos não cobrem, aparece aqui."}
-        </div>
+        <EmptyState
+          className="mt-6"
+          icon={Inbox}
+          title={showResolved ? "Nada resolvido ainda." : "Nenhuma mensagem sem gatilho."}
+          description={
+            showResolved
+              ? undefined
+              : "Quando alguém escrever algo que os seus gatilhos não cobrem, aparece aqui."
+          }
+        />
       )}
 
       <div className="mt-4 space-y-2">
         {rows.map((r) => (
-          <div key={r.id} className="rounded-lg border bg-white p-4">
-            <div className="flex items-start gap-3">
-              <span
-                className={`shrink-0 rounded-full px-2.5 py-1 text-sm font-semibold tabular-nums ${
-                  r.count >= 10
-                    ? "bg-amber-100 text-amber-900"
-                    : "bg-neutral-100 text-neutral-700"
-                }`}
-                title={`${r.count} pessoa(s) escreveram algo equivalente`}
-              >
-                {r.count}×
-              </span>
+          <Card key={r.id}>
+            <CardContent className="p-4">
+              <div className="flex items-start gap-3">
+                <span
+                  className={cn(
+                    "shrink-0 rounded-full px-2.5 py-1 text-sm font-semibold tabular-nums",
+                    r.count >= 10 ? "bg-amber-100 text-amber-900" : "bg-muted text-neutral-700",
+                  )}
+                  title={`${r.count} pessoa(s) escreveram algo equivalente`}
+                >
+                  {r.count}×
+                </span>
 
-              <div className="min-w-0 flex-1">
-                <div className="truncate font-medium">{r.sample}</div>
-                {r.normalized !== r.sample.toLowerCase() && (
-                  <div className="truncate text-xs text-neutral-500">
-                    agrupado como “{r.normalized}”
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-medium">{r.sample}</div>
+                  {r.normalized !== r.sample.toLowerCase() && (
+                    <div className="truncate text-xs text-muted-foreground">
+                      agrupado como “{r.normalized}”
+                    </div>
+                  )}
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    primeira vez {fmt(r.firstSeenAt)} · última vez {fmt(r.lastSeenAt)}
                   </div>
-                )}
-                <div className="mt-1 text-xs text-neutral-500">
-                  primeira vez {fmt(r.firstSeenAt)} · última vez {fmt(r.lastSeenAt)}
                 </div>
               </div>
-            </div>
 
-            {showResolved ? (
-              <form action={restoreUnmatched} className="mt-3">
-                <input type="hidden" name="id" value={r.id} />
-                <button className="text-sm text-neutral-600 underline hover:text-neutral-900">
-                  Voltar para pendentes
-                </button>
-              </form>
-            ) : (
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <form action={createTriggerFromUnmatched} className="flex items-center gap-2">
+              {showResolved ? (
+                <form action={restoreUnmatched} className="mt-3">
                   <input type="hidden" name="id" value={r.id} />
-                  <select
-                    name="flowId"
-                    required
-                    defaultValue=""
-                    className="rounded border px-2 py-1.5 text-sm"
-                  >
-                    <option value="" disabled>
-                      escolha o fluxo…
-                    </option>
-                    {flows.map((f) => (
-                      <option key={f.id} value={f.id}>
-                        {f.name}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    disabled={flows.length === 0}
-                    className="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-40"
-                  >
-                    Criar gatilho com isso
-                  </button>
+                  <SubmitButton variant="link" size="sm" className="h-auto p-0">
+                    Voltar para pendentes
+                  </SubmitButton>
                 </form>
+              ) : (
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <form
+                    action={createTriggerFromUnmatched}
+                    className="flex flex-wrap items-center gap-2"
+                  >
+                    <input type="hidden" name="id" value={r.id} />
+                    <Label htmlFor={`flow-${r.id}`} className="sr-only">
+                      Fluxo
+                    </Label>
+                    <Select name="flowId" required>
+                      <SelectTrigger id={`flow-${r.id}`} className="h-8 w-56 text-xs">
+                        <SelectValue placeholder="escolha o fluxo…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {flows.map((f) => (
+                          <SelectItem key={f.id} value={f.id}>
+                            {f.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <SubmitButton size="sm" disabled={flows.length === 0} pendingLabel="Criando…">
+                      Criar gatilho com isso
+                    </SubmitButton>
+                  </form>
 
-                <form action={dismissUnmatched}>
-                  <input type="hidden" name="id" value={r.id} />
-                  <button className="rounded border px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-50">
-                    Ignorar
-                  </button>
-                </form>
-              </div>
-            )}
-          </div>
+                  <form action={dismissUnmatched}>
+                    <input type="hidden" name="id" value={r.id} />
+                    <SubmitButton variant="outline" size="sm">
+                      Ignorar
+                    </SubmitButton>
+                  </form>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         ))}
       </div>
 
       {flows.length === 0 && rows.length > 0 && (
-        <p className="mt-4 text-sm text-amber-800">
+        <Callout tone="warning" className="mt-4">
           Crie um fluxo antes para poder apontar um gatilho para ele.
-        </p>
+        </Callout>
       )}
     </main>
+  );
+}
+
+function FilterTab({
+  href,
+  active,
+  children,
+}: {
+  href: string;
+  active: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <Link
+      href={href}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "rounded-md px-3 py-1 text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+        active ? "bg-background text-foreground shadow-sm" : "hover:text-foreground",
+      )}
+    >
+      {children}
+    </Link>
   );
 }
 

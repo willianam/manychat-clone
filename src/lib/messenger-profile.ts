@@ -80,7 +80,10 @@ export const MenuItemInput = z.discriminatedUnion("type", [
       .string()
       .trim()
       .min(1, "O título não pode ficar vazio.")
-      .max(PROFILE_LIMITS.menuTitle, `O título pode ter no máximo ${PROFILE_LIMITS.menuTitle} caracteres.`),
+      .max(
+        PROFILE_LIMITS.menuTitle,
+        `O título pode ter no máximo ${PROFILE_LIMITS.menuTitle} caracteres.`,
+      ),
     flowId: z.string().min(1, "Escolha um fluxo para este item."),
   }),
   z.object({
@@ -89,9 +92,16 @@ export const MenuItemInput = z.discriminatedUnion("type", [
       .string()
       .trim()
       .min(1, "O título não pode ficar vazio.")
-      .max(PROFILE_LIMITS.menuTitle, `O título pode ter no máximo ${PROFILE_LIMITS.menuTitle} caracteres.`),
+      .max(
+        PROFILE_LIMITS.menuTitle,
+        `O título pode ter no máximo ${PROFILE_LIMITS.menuTitle} caracteres.`,
+      ),
     // Meta rejects a non-https url outright, so catch it before the API call.
-    url: z.string().trim().url("Informe uma URL válida.").startsWith("https://", "A URL precisa começar com https://"),
+    url: z
+      .string()
+      .trim()
+      .url("Informe uma URL válida.")
+      .startsWith("https://", "A URL precisa começar com https://"),
   }),
 ]);
 export type MenuItemInput = z.infer<typeof MenuItemInput>;

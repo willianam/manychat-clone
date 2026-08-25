@@ -167,10 +167,7 @@ export function starterGraph(): FlowGraph {
  * either would be ambiguous. `handleMap` records old→new so callers that
  * also copy edges can repoint them.
  */
-function reindexData(
-  data: FlowNodeData,
-  handleMap: Map<string, string>,
-): FlowNodeData {
+function reindexData(data: FlowNodeData, handleMap: Map<string, string>): FlowNodeData {
   const remapButtons = (buttons: FlowButton[] | undefined): FlowButton[] | undefined =>
     buttons?.map((b) => {
       const next = uid("b");
@@ -237,8 +234,24 @@ export function reindexGraph(graph: FlowGraph): FlowGraph {
     id: uid("e"),
     source: nodeMap.get(e.source) ?? e.source,
     target: nodeMap.get(e.target) ?? e.target,
-    sourceHandle: e.sourceHandle ? handleMap.get(e.sourceHandle) ?? e.sourceHandle : e.sourceHandle,
+    sourceHandle: e.sourceHandle
+      ? (handleMap.get(e.sourceHandle) ?? e.sourceHandle)
+      : e.sourceHandle,
   }));
 
   return { nodes, edges };
+}
+
+/**
+ * Where a block added by click lands: right below the selected node, or
+ * below the last node when nothing is selected. Deterministic on purpose —
+ * a random offset made "add, add, add" scatter blocks across the canvas.
+ */
+export function insertPosition(
+  nodes: Array<{ id: string; position: { x: number; y: number } }>,
+  selectedId: string | null,
+): { x: number; y: number } {
+  const anchor = nodes.find((n) => n.id === selectedId) ?? nodes[nodes.length - 1];
+  if (!anchor) return { x: 240, y: 80 };
+  return { x: anchor.position.x, y: anchor.position.y + 180 };
 }

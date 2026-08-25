@@ -1,20 +1,31 @@
-import type { PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 import { FlowGraph } from "../lib/flow-schema";
 import { postbackPayload } from "./message-payload";
 
 /**
  * Per-node delivery stats, shown on the canvas the way ManyChat does.
  *
- * Everything here is derived from rows we already write — Message for sends,
- * WebhookEvent for taps — so nothing new has to be recorded at send time.
+ * Sends are attributed by `Message.payload.meta.nodeId`, written by
+ * `sendMessage` for every message a flow node sends. Rows from before that
+ * existed have no meta and are matched back to nodes the old way — by text,
+ * or by the node id embedded in interactive payloads. The two populations
+ * are disjoint (a row either has meta or it does not), so they add up
+ * without double counting.
+ *
+ * Everything that can be aggregated in Postgres is: the tagged rows come
+ * back as (nodeId, status, count), the taps as (payload, count). Only the
+ * legacy rows are read one by one, and those are bounded by `limit` and
+ * the period.
  */
 
 export type NodeStats = {
   sent: number;
   delivered: number;
+  read: number;
   failed: number;
   /** Percent, or null when nothing was sent yet. */
   deliveredPct: number | null;
+  readPct: number | null;
   clickedPct: number | null;
   /** Taps per button/option handle, for the per-button CTR. */
   byHandle: Record<string, number>;
@@ -22,46 +33,73 @@ export type NodeStats = {
 
 export type FlowStats = Record<string, NodeStats>;
 
-/**
- * Message rows don't carry a node id, so sends are matched back to nodes by
- * their payload. That is exact for interactive nodes (the postback payload
- * embeds the node id) and text-matched for plain messages.
- *
- * The alternative — a nodeId column on Message — is cleaner but would only
- * report on conversations that ran *after* the migration. This reads history.
- */
-export async function flowStats(db: PrismaClient, flowId: string): Promise<FlowStats> {
+export type FlowStatsOptions = {
+  /** Inclusive lower bound on the send / tap time. */
+  from?: Date;
+  /** Inclusive upper bound on the send / tap time. */
+  to?: Date;
+  /** Cap on legacy (untagged) rows read into memory. */
+  limit?: number;
+};
+
+export const DEFAULT_LEGACY_LIMIT = 5000;
+
+type StatusCount = { nodeId: string | null; status: string; n: number };
+type LegacyRow = { text: string | null; status: string; payload: unknown };
+type TapCount = { payload: string | null; n: number };
+
+export async function flowStats(
+  db: PrismaClient,
+  flowId: string,
+  opts: FlowStatsOptions = {},
+): Promise<FlowStats> {
   const flow = await db.flow.findUnique({ where: { id: flowId } });
   if (!flow) return {};
 
   const graph = FlowGraph.safeParse(flow.graph);
   if (!graph.success) return {};
 
-  const sessions = await db.flowSession.findMany({
-    where: { flowId },
-    select: { contactId: true },
-  });
-  if (sessions.length === 0) return {};
+  const limit = opts.limit ?? DEFAULT_LEGACY_LIMIT;
+  const sentRange = rangeSql('"createdAt"', opts);
+  const tapRange = rangeSql('"receivedAt"', opts);
 
-  const contactIds = [...new Set(sessions.map((s) => s.contactId))];
+  const tagged = await db.$queryRaw<StatusCount[]>(Prisma.sql`
+    SELECT payload->'meta'->>'nodeId' AS "nodeId", status::text AS status, COUNT(*)::int AS n
+    FROM "Message"
+    WHERE direction = 'OUTBOUND'
+      AND payload->'meta'->>'flowId' = ${flowId}
+      ${sentRange}
+    GROUP BY 1, 2`);
 
-  const messages = await db.message.findMany({
-    where: { contactId: { in: contactIds }, direction: "OUTBOUND" },
-    select: { text: true, status: true, payload: true },
-  });
+  const legacy = await db.$queryRaw<LegacyRow[]>(Prisma.sql`
+    SELECT text, status::text AS status, payload
+    FROM "Message"
+    WHERE direction = 'OUTBOUND'
+      AND (payload IS NULL OR payload->'meta' IS NULL)
+      AND "contactId" IN (SELECT "contactId" FROM "FlowSession" WHERE "flowId" = ${flowId})
+      ${sentRange}
+    ORDER BY "createdAt" DESC
+    LIMIT ${limit}`);
 
-  const taps = await db.webhookEvent.findMany({
-    where: { kind: "postback" },
-    select: { raw: true },
-  });
+  const taps = await db.$queryRaw<TapCount[]>(Prisma.sql`
+    SELECT COALESCE(raw->'postback'->>'payload', raw->'message'->'quick_reply'->>'payload') AS payload,
+           COUNT(*)::int AS n
+    FROM "WebhookEvent"
+    WHERE kind = 'postback'
+      ${tapRange}
+    GROUP BY 1`);
 
-  // handle → tap count, keyed by the full "<nodeId>:<handle>" payload.
-  const tapsByPayload = new Map<string, number>();
-  for (const t of taps) {
-    const raw = t.raw as { postback?: { payload?: string }; message?: { quick_reply?: { payload?: string } } };
-    const p = raw?.postback?.payload ?? raw?.message?.quick_reply?.payload;
-    if (p) tapsByPayload.set(p, (tapsByPayload.get(p) ?? 0) + 1);
+  // nodeId → status → count, from the DB aggregate.
+  const byNode = new Map<string, Map<string, number>>();
+  for (const row of tagged) {
+    if (!row.nodeId) continue;
+    const m = byNode.get(row.nodeId) ?? new Map<string, number>();
+    m.set(row.status, (m.get(row.status) ?? 0) + row.n);
+    byNode.set(row.nodeId, m);
   }
+
+  const tapsByPayload = new Map<string, number>();
+  for (const t of taps) if (t.payload) tapsByPayload.set(t.payload, t.n);
 
   const stats: FlowStats = {};
 
@@ -70,16 +108,20 @@ export async function flowStats(db: PrismaClient, flowId: string): Promise<FlowS
     const text =
       d.kind === "message" || d.kind === "question" || d.kind === "quickreply" ? d.text : null;
 
-    const mine = messages.filter((m) => {
-      if (text && m.text === text) return true;
-      // Interactive payloads name the node directly.
-      const raw = JSON.stringify(m.payload ?? "");
-      return raw.includes(`"${node.id}:`);
-    });
+    const counts = new Map(byNode.get(node.id) ?? []);
 
-    const sent = mine.length;
-    const failed = mine.filter((m) => m.status === "FAILED").length;
-    const delivered = mine.filter((m) => m.status !== "FAILED" && m.status !== "PENDING").length;
+    // Legacy rows: no meta, so fall back to the old matching.
+    for (const m of legacy) {
+      const hit =
+        (text && m.text === text) || JSON.stringify(m.payload ?? "").includes(`"${node.id}:`);
+      if (hit) counts.set(m.status, (counts.get(m.status) ?? 0) + 1);
+    }
+
+    let sent = 0;
+    for (const n of counts.values()) sent += n;
+    const failed = counts.get("FAILED") ?? 0;
+    const read = counts.get("READ") ?? 0;
+    const delivered = (counts.get("DELIVERED") ?? 0) + read + (counts.get("SENT") ?? 0);
 
     const byHandle: Record<string, number> = {};
     let clicks = 0;
@@ -89,7 +131,9 @@ export async function flowStats(db: PrismaClient, flowId: string): Promise<FlowS
         : d.kind === "message"
           ? (d.buttons ?? []).filter((b) => b.type === "postback").map((b) => b.id)
           : d.kind === "carousel"
-            ? d.cards.flatMap((c) => (c.buttons ?? []).filter((b) => b.type === "postback").map((b) => b.id))
+            ? d.cards.flatMap((c) =>
+                (c.buttons ?? []).filter((b) => b.type === "postback").map((b) => b.id),
+              )
             : [];
 
     for (const h of handles) {
@@ -101,12 +145,26 @@ export async function flowStats(db: PrismaClient, flowId: string): Promise<FlowS
     stats[node.id] = {
       sent,
       delivered,
+      read,
       failed,
-      deliveredPct: sent ? Math.round((delivered / sent) * 1000) / 10 : null,
-      clickedPct: sent && handles.length ? Math.round((clicks / sent) * 1000) / 10 : null,
+      deliveredPct: pct(delivered, sent),
+      readPct: pct(read, sent),
+      clickedPct: sent && handles.length ? pct(clicks, sent) : null,
       byHandle,
     };
   }
 
   return stats;
+}
+
+function pct(part: number, whole: number): number | null {
+  return whole ? Math.round((part / whole) * 1000) / 10 : null;
+}
+
+/** `AND col >= from AND col <= to`, only for the bounds that were given. */
+function rangeSql(column: string, opts: FlowStatsOptions): Prisma.Sql {
+  const col = Prisma.raw(column);
+  return Prisma.sql`
+    ${opts.from ? Prisma.sql`AND ${col} >= ${opts.from}` : Prisma.empty}
+    ${opts.to ? Prisma.sql`AND ${col} <= ${opts.to}` : Prisma.empty}`;
 }

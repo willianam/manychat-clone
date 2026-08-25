@@ -60,14 +60,15 @@ describe("story reply parsing", () => {
   });
 
   it("ignores an ordinary DM", () => {
-    expect(
-      parseStoryReply({ sender: { id: "X" }, message: { mid: "m", text: "oi" } }),
-    ).toBeNull();
+    expect(parseStoryReply({ sender: { id: "X" }, message: { mid: "m", text: "oi" } })).toBeNull();
   });
 
   it("ignores our own echo", () => {
     expect(
-      parseStoryReply({ ...storyReplyEvent, message: { ...storyReplyEvent.message, is_echo: true } }),
+      parseStoryReply({
+        ...storyReplyEvent,
+        message: { ...storyReplyEvent.message, is_echo: true },
+      }),
     ).toBeNull();
   });
 

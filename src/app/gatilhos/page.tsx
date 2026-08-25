@@ -3,6 +3,9 @@ import { listMedia } from "../../server/ig-media-cache";
 import { mediaLabel } from "../../lib/ig-media";
 import { TriggerList, type TriggerRowData } from "./TriggerList";
 import type { TriggerView } from "./actions";
+import { METRICS } from "../../server/rollup";
+import { lastDays, totalsByKey } from "../../server/stats";
+import { PageHeader } from "@/components/ui/page-header";
 
 export const dynamic = "force-dynamic";
 
@@ -15,12 +18,16 @@ export const dynamic = "force-dynamic";
  * then priority, which is the order the dispatcher itself resolves them in,
  * so the list reads as the decision the runtime will actually make.
  *
+ * Fires in the last 7 days come from the daily rollup (server/rollup.ts),
+ * keyed by trigger id, so a busy keyword costs one aggregate row per day.
+ *
  * Media captions are resolved server-side so a post-specific trigger says
  * which post rather than showing a bare id. A failure to reach Meta degrades
  * to the id — the list must render when Instagram is down.
  */
 export default async function TriggersPage() {
-  const [triggers, flows, mediaResult] = await Promise.all([
+  const week = lastDays(7);
+  const [triggers, flows, mediaResult, fires] = await Promise.all([
     db.trigger.findMany({
       include: { flow: { select: { name: true, enabled: true } } },
       orderBy: [{ kind: "asc" }, { priority: "desc" }],
@@ -30,6 +37,7 @@ export default async function TriggersPage() {
       orderBy: { name: "asc" },
     }),
     listMedia(),
+    totalsByKey(db, METRICS.triggerFires, week.from, week.to),
   ]);
 
   const captions = new Map(mediaResult.media.map((m) => [m.id, mediaLabel(m)]));
@@ -51,29 +59,25 @@ export default async function TriggersPage() {
     return {
       trigger: view,
       mediaLabel: t.mediaId ? (captions.get(t.mediaId) ?? null) : null,
+      fires7d: fires[t.id] ?? 0,
     };
   });
 
   const live = rows.filter((r) => r.trigger.enabled && r.trigger.flowEnabled).length;
 
   return (
-    <main className="mx-auto max-w-4xl px-6 py-8">
-      <div className="flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">Gatilhos</h1>
-          <p className="mt-0.5 text-sm text-neutral-500">
-            {rows.length} {rows.length === 1 ? "gatilho" : "gatilhos"} · {live}{" "}
-            realmente no ar
-          </p>
-        </div>
-      </div>
+    <main className="mx-auto w-full max-w-4xl px-6 py-8">
+      <PageHeader
+        title="Gatilhos"
+        description={`${rows.length} ${rows.length === 1 ? "gatilho" : "gatilhos"} · ${live} realmente no ar`}
+      />
 
       <TriggerList rows={rows} flows={flows} />
 
-      <p className="mt-6 text-xs text-neutral-400">
-        Um gatilho só dispara se ele estiver ativo <em>e</em> o fluxo de destino
-        também estiver. Para comentários, um gatilho preso a uma publicação
-        específica ganha do que vale para qualquer publicação.
+      <p className="mt-6 text-xs text-muted-foreground">
+        Um gatilho só dispara se ele estiver ativo <em>e</em> o fluxo de destino também estiver.
+        Para comentários, um gatilho preso a uma publicação específica ganha do que vale para
+        qualquer publicação.
       </p>
     </main>
   );

@@ -2,16 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "../../../../server/db";
 import { verifySignature, verifyChallenge } from "../../../../lib/verify-signature";
 import {
-  handleInboundMessage,
-  handleComment,
-  handlePostback,
-  handleStoryReply,
-  handleStoryMention,
-  handleRefLink,
-  handleProfilePostback,
-} from "../../../../server/trigger-dispatch";
-import { fetchProfile, sendSenderAction } from "../../../../server/instagram";
-import { recordInboundMessage } from "../../../../server/inbound-attachments";
+  claim,
+  runClaimed,
+  processMessage,
+  processPostback,
+  processComment,
+  processStory,
+  processReferral,
+  processReceipt,
+  receiptKey,
+  type CommentValue,
+} from "../../../../server/webhook-events";
 import {
   parseStoryReply,
   parseStoryMention,
@@ -19,8 +20,16 @@ import {
   normalizeRefCode,
   type MessagingEvent,
 } from "../../../../lib/entry-events";
-import { parseFlowPayload } from "../../../../lib/messenger-profile";
-import { tickDelayedSessions, runBroadcast } from "../../../../server/broadcast-worker";
+import {
+  tickDelayedSessions,
+  sweepStaleSessions,
+  runBroadcast,
+} from "../../../../server/broadcast-worker";
+import { rollupRecent } from "../../../../server/rollup";
+import { recordError } from "../../../../server/error-events";
+import { logger } from "../../../../lib/log";
+
+const log = logger("webhook");
 
 export const runtime = "nodejs"; // crypto + Prisma need Node, not Edge
 export const dynamic = "force-dynamic";
@@ -29,10 +38,7 @@ export const maxDuration = 15;
 
 /** Meta's subscription handshake. */
 export async function GET(req: NextRequest) {
-  const challenge = verifyChallenge(
-    req.nextUrl.searchParams,
-    process.env.IG_VERIFY_TOKEN ?? "",
-  );
+  const challenge = verifyChallenge(req.nextUrl.searchParams, process.env.IG_VERIFY_TOKEN ?? "");
   if (!challenge) return new NextResponse("Forbidden", { status: 403 });
   return new NextResponse(challenge, { status: 200 });
 }
@@ -41,7 +47,9 @@ export async function POST(req: NextRequest) {
   // Raw body first — parsing then re-serializing breaks the HMAC.
   const raw = await req.text();
 
-  if (!verifySignature(raw, req.headers.get("x-hub-signature-256"), process.env.IG_APP_SECRET ?? "")) {
+  if (
+    !verifySignature(raw, req.headers.get("x-hub-signature-256"), process.env.IG_APP_SECRET ?? "")
+  ) {
     return new NextResponse("Invalid signature", { status: 401 });
   }
 
@@ -59,25 +67,53 @@ export async function POST(req: NextRequest) {
     await drainDueWork();
   } catch (err) {
     // Still ack: a 500 makes Meta retry a delivery we may have half-applied.
-    console.error("[webhook] processing failed:", err);
+    log.error("processing failed", { err });
+    await recordError(db, "webhook", err, { entries: payload.entry?.length ?? 0 });
   }
 
   return NextResponse.json({ received: true });
 }
 
+/**
+ * Every event is claimed as a WebhookEvent row (dedup) and run through
+ * runClaimed, which records success or failure on that row so the tick can
+ * retry a failed one — see server/webhook-events.ts.
+ */
 async function processPayload(payload: MetaWebhook): Promise<void> {
   for (const entry of payload.entry ?? []) {
     for (const event of entry.messaging ?? []) {
+      // Receipts carry no message and no referral; they only move statuses.
+      const receipt = receiptKey(event);
+      if (receipt) {
+        const kind = receipt.startsWith("read:") ? "read" : "delivery";
+        const id = await claim(db, receipt, kind, event);
+        if (id) await runClaimed(db, id, () => processReceipt(db, event));
+        continue;
+      }
+
       // A ref can ride along on a message, a postback, or its own event, and
       // in the first two cases the message below still needs handling. So
       // referrals are resolved first and their outcome decides whether the
       // ordinary paths should also run: a link that started a flow must not
       // then have the same message start a second one.
-      const refHandled = await processReferral(event);
+      const refHandled = await claimReferral(event);
 
       // Story replies and mentions arrive on the `messages` field too, but
       // route differently, so they are claimed before the plain-text path.
-      if (await processStoryEvent(event, refHandled)) continue;
+      const reply = parseStoryReply(event);
+      const mention = reply ? null : parseStoryMention(event);
+      if (reply || mention) {
+        const kind = reply ? "story_reply" : "story_mention";
+        const mid = reply?.mid ?? mention?.mid;
+        const id = await claim(
+          db,
+          mid ?? `${kind}:${event.sender.id}:${event.timestamp}`,
+          kind,
+          event,
+        );
+        if (id) await runClaimed(db, id, () => processStory(db, event, refHandled));
+        continue;
+      }
 
       // Media-only messages have no text. Dropping them on `!text` is what
       // silently lost every photo and audio note the account ever received.
@@ -85,40 +121,9 @@ async function processPayload(payload: MetaWebhook): Promise<void> {
       if (!event.message || event.message.is_echo) continue;
       if (!event.message.text && !hasAttachments) continue;
 
-      const mid = event.message.mid;
-      if (mid && (await seen(mid, "message", event))) continue;
-
-      const igsid = event.sender.id;
-
-      // Mark read before the slower work, so the blue tick lands while the
-      // flow is still thinking. Never throws — a failure here must not cost
-      // us the message.
-      await sendSenderAction(igsid, "mark_seen");
-
-      const profile = await fetchProfile(igsid);
-
-      const contact = await db.contact.upsert({
-        where: { igScopedId: igsid },
-        create: { igScopedId: igsid, lastInboundAt: new Date(), source: "dm", ...profile },
-        update: { lastInboundAt: new Date(), ...profile },
-      });
-
-      // Persists attachments with their expiry: Meta's media URLs die after
-      // 7 days, so the record is the only trace that survives.
-      await recordInboundMessage(db, {
-        contactId: contact.id,
-        mid,
-        text: event.message.text,
-        attachments: event.message.attachments,
-      });
-
-      // The ref link already picked the flow for this first message; running
-      // the keyword path too would start a second, competing flow.
-      if (refHandled) continue;
-
-      if (event.message.text) {
-        await handleInboundMessage(db, contact.id, event.message.text);
-      }
+      const mid = event.message.mid ?? `msg:${event.sender.id}:${event.timestamp}`;
+      const id = await claim(db, mid, "message", event);
+      if (id) await runClaimed(db, id, () => processMessage(db, event, refHandled));
     }
 
     // Button and quick-reply taps arrive as postbacks, a separate event from
@@ -128,139 +133,42 @@ async function processPayload(payload: MetaWebhook): Promise<void> {
       if (!pb?.payload) continue;
 
       const dedupId = event.postback?.mid ?? `qr:${event.message?.mid ?? ""}`;
-      if (dedupId && (await seen(dedupId, "postback", event))) continue;
-
-      const contact = await db.contact.upsert({
-        where: { igScopedId: event.sender.id },
-        create: { igScopedId: event.sender.id, lastInboundAt: new Date(), source: "dm" },
-        update: { lastInboundAt: new Date() },
-      });
-
-      // Ice breakers and menu items carry FLOW:<id> and name a flow to start.
-      // Flow buttons carry a node id and resume the running session. Sending
-      // one down the other's path silently does nothing.
-      const flowId = parseFlowPayload(pb.payload);
-      if (flowId) {
-        await handleProfilePostback(db, contact.id, flowId);
-      } else {
-        await handlePostback(db, contact.id, pb.payload);
-      }
+      const id = await claim(db, dedupId, "postback", event);
+      if (id) await runClaimed(db, id, () => processPostback(db, event));
     }
 
     for (const change of entry.changes ?? []) {
       if (change.field !== "comments") continue;
       const v = change.value;
       if (!v?.id || !v.text) continue;
-      if (await seen(v.id, "comment", v)) continue;
-
-      await handleComment(db, {
-        commentId: v.id,
-        mediaId: v.media?.id ?? "",
-        text: v.text,
-        igScopedId: v.from?.id ?? "",
-        username: v.from?.username,
-      });
+      const id = await claim(db, v.id, "comment", v);
+      if (id) await runClaimed(db, id, () => processComment(db, v));
     }
   }
 }
 
 /**
- * Story reply / story mention. Returns true if this event was one of them
- * and is fully handled — the caller must then skip the plain-message path.
- *
- * Both open the 24h window exactly like a DM: Meta treats them as inbound
- * user messages, and the private-reply carve-out does not apply.
- *
- * `refSkip` means a ref link already chose the flow for this event; we still
- * record the contact and the message, but do not route a second flow.
+ * Claim and run a referral, if the event carries one. Returns true when a
+ * tracked link started a flow — the signal the message path uses to stand
+ * down. A replayed referral returns false so the message still records.
  */
-async function processStoryEvent(event: MessagingEvent, refSkip: boolean): Promise<boolean> {
-  const reply = parseStoryReply(event);
-  const mention = reply ? null : parseStoryMention(event);
-  if (!reply && !mention) return false;
-
-  const igsid = reply?.igScopedId ?? mention?.igScopedId ?? "";
-  if (!igsid) return true; // malformed, but it was a story event — don't fall through
-
-  const kind = reply ? "story_reply" : "story_mention";
-  const mid = reply?.mid ?? mention?.mid;
-  if (mid && (await seen(mid, kind, event))) return true;
-
-  const profile = await fetchProfile(igsid);
-  const contact = await db.contact.upsert({
-    where: { igScopedId: igsid },
-    // `source` is create-only: it records where someone first arrived, and
-    // overwriting it on every visit would erase that.
-    create: { igScopedId: igsid, lastInboundAt: new Date(), source: kind, ...profile },
-    update: { lastInboundAt: new Date(), ...profile },
-  });
-
-  await db.message.create({
-    data: {
-      contactId: contact.id,
-      direction: "INBOUND",
-      // A mention has no text of its own; label it so the inbox isn't blank.
-      text: reply?.text ?? mention?.text ?? "[menção em story]",
-      status: "DELIVERED",
-      externalId: mid,
-      payload: {
-        kind,
-        storyId: reply?.storyId,
-        storyUrl: reply?.storyUrl ?? mention?.storyUrl,
-      },
-    },
-  });
-
-  if (refSkip) return true;
-
-  if (reply) await handleStoryReply(db, contact.id, reply.text);
-  else await handleStoryMention(db, contact.id);
-
-  return true;
-}
-
-/**
- * An ig.me?ref= arrival. Returns true if a tracked link started a flow.
- *
- * Clicks are counted for any known code, conversions only when a flow
- * actually ran — the gap between the two is exactly "link works, flow is
- * off", which is the failure worth seeing in the list.
- */
-async function processReferral(event: MessagingEvent): Promise<boolean> {
+async function claimReferral(event: MessagingEvent): Promise<boolean> {
   const referral = parseReferral(event);
   if (!referral) return false;
-
   const code = normalizeRefCode(referral.ref);
 
   // Dedup on the mid so a Meta replay doesn't inflate the click count. A
   // standalone referral event has no mid; fall back to sender+code, which
   // is stable for the one arrival it represents.
-  const dedupId = event.message?.mid ?? event.postback?.mid ?? `ref:${event.sender?.id ?? ""}:${code}`;
-  if (await seen(dedupId, "referral", event)) return false;
+  const dedupId =
+    event.message?.mid ?? event.postback?.mid ?? `ref:${event.sender?.id ?? ""}:${code}`;
+  const id = await claim(db, dedupId, "referral", event);
+  if (!id) return false;
 
-  const link = await db.refLink.findUnique({ where: { code } });
-  if (!link) return false;
-
-  await db.refLink.update({ where: { id: link.id }, data: { clicks: { increment: 1 } } });
-
-  const igsid = event.sender?.id ?? "";
-  if (!igsid) return false;
-
-  const profile = await fetchProfile(igsid);
-  const contact = await db.contact.upsert({
-    where: { igScopedId: igsid },
-    create: { igScopedId: igsid, lastInboundAt: new Date(), source: `ref:${code}`, ...profile },
-    update: { lastInboundAt: new Date(), ...profile },
+  let started = false;
+  await runClaimed(db, id, async () => {
+    started = await processReferral(db, event);
   });
-
-  const started = await handleRefLink(db, contact.id, code);
-  if (started) {
-    await db.refLink.update({
-      where: { id: link.id },
-      data: { conversions: { increment: 1 } },
-    });
-  }
-
   return started;
 }
 
@@ -279,6 +187,7 @@ async function processReferral(event: MessagingEvent): Promise<boolean> {
 async function drainDueWork(): Promise<void> {
   try {
     await tickDelayedSessions(db);
+    await sweepStaleSessions(db);
 
     const queued = await db.broadcast.findFirst({
       where: {
@@ -287,20 +196,11 @@ async function drainDueWork(): Promise<void> {
       },
     });
     if (queued) await runBroadcast(db, queued.id);
-  } catch (err) {
-    console.error("[webhook] background drain failed:", err);
-  }
-}
 
-/** True if we already handled this delivery. Meta replays generously. */
-async function seen(externalId: string, kind: string, raw: unknown): Promise<boolean> {
-  try {
-    await db.webhookEvent.create({
-      data: { externalId, kind, raw: raw as object },
-    });
-    return false;
-  } catch {
-    return true; // unique violation == duplicate
+    await rollupRecent(db);
+  } catch (err) {
+    log.error("background drain failed", { err });
+    await recordError(db, "drain", err);
   }
 }
 
@@ -314,12 +214,7 @@ type MetaWebhook = {
     messaging?: Array<MessagingEvent & { sender: { id: string } }>;
     changes?: Array<{
       field: string;
-      value?: {
-        id?: string;
-        text?: string;
-        media?: { id?: string };
-        from?: { id?: string; username?: string };
-      };
+      value?: CommentValue;
     }>;
   }>;
 };

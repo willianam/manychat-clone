@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "../../server/db";
 import { enqueueBroadcast } from "../../server/broadcast-worker";
+import { parseBroadcastForm } from "../../lib/broadcast-form";
 
 /**
  * Broadcast composition.
@@ -18,16 +19,42 @@ function parseWindow(raw: FormDataEntryValue | null): "in" | "out" | undefined {
   return v === "in" || v === "out" ? v : undefined;
 }
 
+/**
+ * Save the composer's post. `intent=draft` stores it; `intent=send` also
+ * enqueues it — a future `scheduledAt` makes every drainer wait, so
+ * "agendar" and "enviar agora" are the same path with a different clock.
+ */
 export async function createBroadcast(formData: FormData) {
-  const name = String(formData.get("name") ?? "").trim().slice(0, 120) || "Disparo sem nome";
-  const text = String(formData.get("text") ?? "").trim();
-  if (!text) throw new Error("A mensagem não pode ficar vazia.");
-
-  const filterTagIds = formData.getAll("tagIds").map(String).filter(Boolean);
+  const { name, text, content, flowId, tag, filterTagIds, segmentId, scheduledAt } =
+    parseBroadcastForm(formData);
+  const intent = String(formData.get("intent") ?? "draft");
 
   const b = await db.broadcast.create({
-    data: { name, text, filterTagIds, status: "DRAFT" },
+    data: {
+      name,
+      text,
+      content: content ?? undefined,
+      flowId,
+      tag,
+      filterTagIds,
+      segmentId,
+      scheduledAt,
+      status: "DRAFT",
+    },
   });
+
+  if (intent === "send") {
+    const count = await enqueueBroadcast(db, b.id, { window: parseWindow(formData.get("window")) });
+    if (count === 0) {
+      // enqueueBroadcast marks an empty audience DONE; a draft is more useful.
+      await db.broadcast.update({ where: { id: b.id }, data: { status: "DRAFT" } });
+      throw new Error(
+        "Nenhum contato se encaixa nesse filtro agora. O disparo ficou salvo como rascunho.",
+      );
+    }
+    revalidatePath("/broadcasts");
+    redirect(`/broadcasts/${b.id}`);
+  }
 
   revalidatePath("/broadcasts");
   redirect(`/broadcasts?criado=${b.id}`);

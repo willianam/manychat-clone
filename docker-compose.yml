@@ -30,11 +30,17 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://manychat:manychat@db:5432/manychat
+      # Same server; Migrate wants the direct string and the schema declares it.
+      DIRECT_URL: postgresql://manychat:manychat@db:5432/manychat
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      CRON_SECRET: ${CRON_SECRET}
       IG_APP_SECRET: ${IG_APP_SECRET}
       IG_VERIFY_TOKEN: ${IG_VERIFY_TOKEN}
-      IG_PAGE_ACCESS_TOKEN: ${IG_PAGE_ACCESS_TOKEN}
-      GRAPH_API_VERSION: ${GRAPH_API_VERSION:-v21.0}
+      IG_ACCESS_TOKEN: ${IG_ACCESS_TOKEN}
+      IG_USER_ID: ${IG_USER_ID:-}
+      GRAPH_API_VERSION: ${GRAPH_API_VERSION:-v26.0}
       BROADCAST_RATE: ${BROADCAST_RATE:-5}
+      ACCOUNT_TIMEZONE: ${ACCOUNT_TIMEZONE:-America/Sao_Paulo}
     ports:
       - "3000:3000"
     command: sh -c "npx prisma migrate deploy && npm run start"
@@ -52,9 +58,11 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://manychat:manychat@db:5432/manychat
-      IG_PAGE_ACCESS_TOKEN: ${IG_PAGE_ACCESS_TOKEN}
-      GRAPH_API_VERSION: ${GRAPH_API_VERSION:-v21.0}
+      IG_ACCESS_TOKEN: ${IG_ACCESS_TOKEN}
+      IG_USER_ID: ${IG_USER_ID:-}
+      GRAPH_API_VERSION: ${GRAPH_API_VERSION:-v26.0}
       BROADCAST_RATE: ${BROADCAST_RATE:-5}
+      ACCOUNT_TIMEZONE: ${ACCOUNT_TIMEZONE:-America/Sao_Paulo}
     command: npm run worker
 
 volumes:

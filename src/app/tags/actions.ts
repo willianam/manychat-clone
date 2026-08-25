@@ -1,7 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { Prisma } from "@prisma/client";
 import { db } from "../../server/db";
+import { graphUsesTag, renameTagInGraph } from "../../lib/tag-rename";
 
 /**
  * Tag CRUD.
@@ -14,7 +16,9 @@ import { db } from "../../server/db";
  */
 
 function cleanName(raw: FormDataEntryValue | null): string {
-  return String(raw ?? "").trim().slice(0, 60);
+  return String(raw ?? "")
+    .trim()
+    .slice(0, 60);
 }
 
 /**
@@ -33,10 +37,12 @@ async function findUsage(tagId: string, tagName: string) {
     }),
   ]);
 
-  const needle = JSON.stringify(tagName);
+  // Match tag REFERENCES, not any occurrence of the name: a substring search
+  // over the serialized graph counted a message body saying "oi" as usage of
+  // the tag "oi".
   const usedByFlows = flows
-    .filter((f) => JSON.stringify(f.graph).includes(needle))
-    .map((f) => ({ id: f.id, name: f.name }));
+    .filter((f) => graphUsesTag(f.graph, tagName))
+    .map((f) => ({ id: f.id, name: f.name, graph: f.graph }));
 
   return { flows: usedByFlows, broadcasts };
 }
@@ -54,13 +60,16 @@ export async function createTag(formData: FormData) {
   revalidatePath("/tags");
 }
 
+const COLOR_RE = /^#[0-9a-f]{6}$/i;
+
 /**
- * Rename a tag.
+ * Rename a tag and/or change its color.
  *
  * The tag id does not change, so contacts and broadcast filters follow
  * automatically. Flow graphs do NOT: they store the name. We rewrite the
  * name inside every graph that mentions it, in the same transaction, so a
  * rename can't leave an action node pointing at a tag that no longer exists.
+ * A color-only change touches nothing but the Tag row.
  */
 export async function renameTag(formData: FormData) {
   const id = String(formData.get("id") ?? "");
@@ -70,7 +79,17 @@ export async function renameTag(formData: FormData) {
 
   const tag = await db.tag.findUnique({ where: { id } });
   if (!tag) throw new Error("Etiqueta não encontrada.");
-  if (tag.name === name) return;
+
+  const rawColor = String(formData.get("color") ?? "");
+  const color = COLOR_RE.test(rawColor) ? rawColor.toLowerCase() : tag.color;
+  if (tag.name === name) {
+    if (color !== tag.color) {
+      await db.tag.update({ where: { id }, data: { color } });
+      revalidatePath("/tags");
+      revalidatePath("/contacts");
+    }
+    return;
+  }
 
   const clash = await db.tag.findUnique({ where: { name } });
   if (clash) {
@@ -80,14 +99,20 @@ export async function renameTag(formData: FormData) {
   const usage = await findUsage(id, tag.name);
 
   await db.$transaction([
-    db.tag.update({ where: { id }, data: { name } }),
+    db.tag.update({ where: { id }, data: { name, color } }),
+    // Rewrite the tag fields only. A blind REPLACE over graph::text also
+    // rewrote message copy that happened to contain the old name.
     ...usage.flows.map((f) =>
-      db.$executeRaw`UPDATE "Flow" SET graph = REPLACE(graph::text, ${JSON.stringify(tag.name)}, ${JSON.stringify(name)})::jsonb WHERE id = ${f.id}`,
+      db.flow.update({
+        where: { id: f.id },
+        data: { graph: renameTagInGraph(f.graph, tag.name, name).graph as Prisma.InputJsonValue },
+      }),
     ),
   ]);
 
   revalidatePath("/tags");
   revalidatePath("/flows");
+  revalidatePath("/contacts");
 }
 
 /**
@@ -110,7 +135,9 @@ export async function deleteTag(formData: FormData) {
 
   if (inUse && !confirmed) {
     const parts = [
-      usage.flows.length ? `${usage.flows.length} fluxo(s): ${usage.flows.map((f) => f.name).join(", ")}` : "",
+      usage.flows.length
+        ? `${usage.flows.length} fluxo(s): ${usage.flows.map((f) => f.name).join(", ")}`
+        : "",
       usage.broadcasts.length ? `${usage.broadcasts.length} disparo(s)` : "",
     ].filter(Boolean);
     throw new Error(
@@ -168,7 +195,12 @@ export async function mergeTags(formData: FormData) {
       skipDuplicates: true,
     }),
     ...usage.flows.map((f) =>
-      db.$executeRaw`UPDATE "Flow" SET graph = REPLACE(graph::text, ${JSON.stringify(source.name)}, ${JSON.stringify(target.name)})::jsonb WHERE id = ${f.id}`,
+      db.flow.update({
+        where: { id: f.id },
+        data: {
+          graph: renameTagInGraph(f.graph, source.name, target.name).graph as Prisma.InputJsonValue,
+        },
+      }),
     ),
     // Deleting the source cascades its ContactTag rows.
     db.tag.delete({ where: { id: sourceId } }),
@@ -176,9 +208,7 @@ export async function mergeTags(formData: FormData) {
 
   for (const b of usage.broadcasts) {
     const row = await db.broadcast.findUniqueOrThrow({ where: { id: b.id } });
-    const next = Array.from(
-      new Set(row.filterTagIds.map((t) => (t === sourceId ? targetId : t))),
-    );
+    const next = Array.from(new Set(row.filterTagIds.map((t) => (t === sourceId ? targetId : t))));
     await db.broadcast.update({ where: { id: b.id }, data: { filterTagIds: next } });
   }
 

@@ -9,6 +9,23 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const ORIGINAL = { ...process.env };
 
+// instagram.ts reads the token through the IgCredential store. With an empty
+// table the store seeds itself from IG_ACCESS_TOKEN, so the env-driven cases
+// below still exercise the real fallback path — against a fake, not Neon.
+vi.mock("../db", () => ({
+  db: {
+    igCredential: {
+      findUnique: vi.fn().mockResolvedValue(null),
+      upsert: vi.fn(async ({ create }: { create: object }) => ({
+        expiresAt: null,
+        refreshedAt: null,
+        lastError: null,
+        ...create,
+      })),
+    },
+  },
+}));
+
 function mockFetch(response: object, ok = true) {
   const spy = vi.fn().mockResolvedValue({
     ok,
@@ -94,11 +111,62 @@ describe("fetchProfile", () => {
   });
 });
 
+describe("sendSenderAction", () => {
+  it("posts recipient and sender_action as top-level siblings, with no message key", async () => {
+    const spy = mockFetch({ recipient_id: "IGSID-1" });
+    const { sendSenderAction } = await import("../instagram");
+
+    await sendSenderAction("IGSID-1", "mark_seen");
+
+    const [url, init] = spy.mock.calls[0];
+    expect(url).toBe("https://graph.instagram.com/v26.0/me/messages");
+    expect(JSON.parse(init.body)).toEqual({
+      recipient: { id: "IGSID-1" },
+      sender_action: "mark_seen",
+    });
+  });
+
+  it("never throws — a failed receipt must not cost the reply", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network")));
+    const { sendSenderAction } = await import("../instagram");
+    await expect(sendSenderAction("IGSID-1", "mark_seen")).resolves.toBeUndefined();
+  });
+});
+
 describe("token configuration", () => {
   it("fails loudly when IG_ACCESS_TOKEN is missing", async () => {
     delete process.env.IG_ACCESS_TOKEN;
     mockFetch({});
     const { sendPrivateReply } = await import("../instagram");
     await expect(sendPrivateReply("c1", "oi")).rejects.toThrow(/IG_ACCESS_TOKEN/);
+  });
+});
+
+describe("sendHumanAgentMessage", () => {
+  it("sends under the HUMAN_AGENT tag when the 24h window is closed", async () => {
+    const spy = mockFetch({ message_id: "mid-ha" });
+    const { sendHumanAgentMessage } = await import("../instagram");
+    const db = {
+      contact: {
+        findUniqueOrThrow: vi.fn(async () => ({
+          igScopedId: "IGSID-1",
+          lastInboundAt: new Date(Date.now() - 2 * 24 * 3_600_000),
+        })),
+      },
+      message: {
+        create: vi.fn(async () => ({ id: "m1" })),
+        update: vi.fn(async () => ({})),
+      },
+    } as never;
+
+    await sendHumanAgentMessage("c1", "olá, sou eu", db);
+
+    const body = JSON.parse(spy.mock.calls[0][1].body);
+    expect(body).toMatchObject({
+      recipient: { id: "IGSID-1" },
+      message: { text: "olá, sou eu" },
+      messaging_type: "MESSAGE_TAG",
+      tag: "HUMAN_AGENT",
+    });
   });
 });

@@ -2,8 +2,24 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { KeyRound, MessageSquare, Plus, Square, Zap, type LucideIcon } from "lucide-react";
+import { toast } from "sonner";
 import { MediaPicker } from "../../components/MediaPicker";
 import { createFlowWithObjective, type Objective } from "./actions";
+import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/ui/cn";
 
 /**
  * "New flow" as ManyChat asks it: what is this automation FOR?
@@ -22,31 +38,31 @@ const OBJECTIVES: Array<{
   key: Objective;
   title: string;
   hint: string;
-  icon: string;
+  icon: LucideIcon;
 }> = [
   {
     key: "comment",
     title: "Comentários na publicação ou Reel",
     hint: "Alguém comenta uma palavra e recebe o direct automaticamente",
-    icon: "💬",
+    icon: MessageSquare,
   },
   {
     key: "story_reply",
     title: "Resposta ao story",
     hint: "Alguém responde um story seu e o fluxo começa",
-    icon: "⚡",
+    icon: Zap,
   },
   {
     key: "keyword",
     title: "Palavra-chave no direct",
     hint: "Alguém manda uma palavra específica no direct",
-    icon: "🔑",
+    icon: KeyRound,
   },
   {
     key: "blank",
     title: "Começar do zero",
-    hint: "Sem gatilho — para um fluxo chamado por menu ou link",
-    icon: "◻︎",
+    hint: "Sem gatilho, para um fluxo chamado por menu ou link",
+    icon: Square,
   },
 ];
 
@@ -60,8 +76,7 @@ export function NewFlowButton() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const close = () => {
-    setOpen(false);
+  const reset = () => {
     setObjective(null);
     setName("");
     setPattern("");
@@ -70,8 +85,7 @@ export function NewFlowButton() {
   };
 
   const needsPattern = objective === "comment" || objective === "keyword";
-  const canSubmit =
-    objective !== null && (!needsPattern || pattern.trim() !== "") && !saving;
+  const canSubmit = objective !== null && (!needsPattern || pattern.trim() !== "") && !saving;
 
   const submit = async () => {
     if (!objective) return;
@@ -86,148 +100,127 @@ export function NewFlowButton() {
       });
       if (!result.ok) {
         setError(result.error);
+        toast.error(result.error);
         return;
       }
+      toast.success("Fluxo criado.");
       // Straight into the editor: the flow exists, the trigger exists, and
       // the only thing left is the part that needs a canvas.
       router.push(`/flows/${result.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Não foi possível criar.");
+      const message = err instanceof Error ? err.message : "Não foi possível criar.";
+      setError(message);
+      toast.error(message);
     } finally {
       setSaving(false);
     }
   };
 
-  if (!open) {
-    return (
-      <button
-        onClick={() => setOpen(true)}
-        className="whitespace-nowrap rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white transition hover:bg-indigo-700"
-      >
-        + Novo fluxo
-      </button>
-    );
-  }
-
   return (
-    <>
-      <button
-        onClick={() => setOpen(true)}
-        className="whitespace-nowrap rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white"
-      >
-        + Novo fluxo
-      </button>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) reset();
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button>
+          <Plus aria-hidden />
+          Novo fluxo
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>O que deve iniciar este fluxo?</DialogTitle>
+          <DialogDescription>
+            O gatilho nasce junto com o fluxo; você só precisa escolher o que o dispara.
+          </DialogDescription>
+        </DialogHeader>
 
-      <div
-        className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 p-4"
-        onClick={close}
-      >
-        <div
-          onClick={(e) => e.stopPropagation()}
-          className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border bg-white text-left shadow-xl"
-        >
-          <div className="flex items-center justify-between border-b px-4 py-3">
-            <h2 className="text-sm font-semibold">O que deve iniciar este fluxo?</h2>
-            <button
-              onClick={close}
-              className="rounded px-2 text-lg leading-none text-neutral-400 hover:text-neutral-700"
-              aria-label="Fechar"
-            >
-              ×
-            </button>
-          </div>
-
-          <div className="space-y-4 p-4">
-            <div className="space-y-1">
-              {OBJECTIVES.map((o) => (
+        <div className="space-y-4">
+          <div className="space-y-1" role="radiogroup" aria-label="Objetivo">
+            {OBJECTIVES.map((o) => {
+              const active = objective === o.key;
+              return (
                 <button
                   key={o.key}
                   type="button"
+                  role="radio"
+                  aria-checked={active}
                   onClick={() => {
                     setObjective(o.key);
                     setError(null);
                   }}
-                  className={`flex w-full items-start gap-2.5 rounded-lg border px-3 py-2.5 text-left transition ${
-                    objective === o.key
-                      ? "border-emerald-400 bg-emerald-50"
-                      : "border-neutral-200 hover:bg-neutral-50"
-                  }`}
+                  className={cn(
+                    "flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                    active ? "border-emerald-400 bg-emerald-50" : "border-border hover:bg-accent",
+                  )}
                 >
-                  <span className="text-base leading-none">{o.icon}</span>
+                  <o.icon
+                    className={cn(
+                      "mt-0.5 h-4 w-4 shrink-0",
+                      active ? "text-emerald-700" : "text-muted-foreground",
+                    )}
+                    aria-hidden
+                  />
                   <span className="min-w-0">
                     <span className="block text-[13px] font-semibold">{o.title}</span>
-                    <span className="block text-[11px] leading-tight text-neutral-500">
+                    <span className="block text-[11px] leading-tight text-muted-foreground">
                       {o.hint}
                     </span>
                   </span>
                 </button>
-              ))}
-            </div>
+              );
+            })}
+          </div>
 
-            {objective === "comment" && (
-              <MediaPicker value={mediaId} onChange={setMediaId} />
-            )}
+          {objective === "comment" && <MediaPicker value={mediaId} onChange={setMediaId} />}
 
-            {needsPattern && (
-              <div>
-                <label className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
-                  {objective === "comment"
-                    ? "Palavra no comentário"
-                    : "Palavra-chave no direct"}
-                </label>
-                <input
-                  value={pattern}
-                  onChange={(e) => setPattern(e.target.value)}
-                  maxLength={200}
-                  autoFocus
-                  placeholder={objective === "comment" ? "quero" : "preço"}
-                  className="mt-1.5 w-full rounded-lg border px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
-                />
-                <p className="mt-1 text-[11px] text-neutral-500">
-                  Acentos, emoji e pontuação são ignorados na comparação.
-                </p>
-              </div>
-            )}
-
-            {objective && (
-              <div>
-                <label className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
-                  Nome do fluxo (opcional)
-                </label>
-                <input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  maxLength={120}
-                  placeholder="Deixe vazio para nomear automaticamente"
-                  className="mt-1.5 w-full rounded-lg border px-3 py-1.5 text-sm outline-none focus:border-indigo-400"
-                />
-              </div>
-            )}
-
-            {error && (
-              <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-700">
-                {error}
+          {needsPattern && (
+            <div className="space-y-1.5">
+              <Label htmlFor="new-flow-pattern">
+                {objective === "comment" ? "Palavra no comentário" : "Palavra-chave no direct"}
+              </Label>
+              <Input
+                id="new-flow-pattern"
+                value={pattern}
+                onChange={(e) => setPattern(e.target.value)}
+                maxLength={200}
+                autoFocus
+                placeholder={objective === "comment" ? "quero" : "preço"}
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Acentos, emoji e pontuação são ignorados na comparação.
               </p>
-            )}
-          </div>
+            </div>
+          )}
 
-          <div className="flex items-center justify-end gap-2 border-t px-4 py-3">
-            <button
-              onClick={close}
-              className="rounded-lg border px-3 py-1.5 text-xs text-neutral-600 transition hover:bg-neutral-50"
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={submit}
-              disabled={!canSubmit}
-              className="rounded-lg bg-indigo-600 px-4 py-1.5 text-xs font-medium text-white transition hover:bg-indigo-700 disabled:opacity-40"
-            >
-              {saving ? "Criando…" : "Criar fluxo"}
-            </button>
-          </div>
+          {objective && (
+            <div className="space-y-1.5">
+              <Label htmlFor="new-flow-name">Nome do fluxo (opcional)</Label>
+              <Input
+                id="new-flow-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                maxLength={120}
+                placeholder="Deixe vazio para nomear automaticamente"
+              />
+            </div>
+          )}
+
+          {error && <Callout tone="destructive">{error}</Callout>}
         </div>
-      </div>
-    </>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>
+            Cancelar
+          </Button>
+          <Button onClick={submit} disabled={!canSubmit}>
+            {saving ? "Criando…" : "Criar fluxo"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

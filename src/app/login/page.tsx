@@ -1,11 +1,24 @@
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
+import { MessageCircle } from "lucide-react";
+import { authSecret, constantTimeEqual, signToken, SESSION_TTL_MS } from "../../lib/auth-token";
+import { loginRateLimiter } from "../../lib/login-rate-limit";
+import { clientIp } from "../../lib/client-ip";
+import { Callout } from "@/components/ui/callout";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { SubmitButton } from "@/components/ui/submit-button";
 
 export const dynamic = "force-dynamic";
 
 /**
  * Single-password login. Server action only — the password never reaches
- * the client bundle.
+ * the client bundle, and never reaches the cookie either: a successful
+ * login sets a signed token that expires in 30 days (lib/auth-token.ts).
+ *
+ * Five wrong passwords from one IP lock that IP out for 15 minutes
+ * (lib/login-rate-limit.ts).
  */
 export default async function LoginPage({
   searchParams,
@@ -19,17 +32,25 @@ export default async function LoginPage({
     const submitted = String(formData.get("password") ?? "");
     const expected = process.env.ADMIN_PASSWORD;
     const target = String(formData.get("next") ?? "/");
+    const ip = clientIp(await headers());
 
-    if (!expected || submitted !== expected) {
-      redirect(`/login?next=${encodeURIComponent(target)}&error=1`);
+    if (!loginRateLimiter.allows(ip)) {
+      redirect(`/login?next=${encodeURIComponent(target)}&error=rate`);
     }
 
-    (await cookies()).set("mc_auth", expected, {
+    const secret = authSecret();
+    if (!expected || !secret || !(await constantTimeEqual(submitted, expected))) {
+      loginRateLimiter.recordFailure(ip);
+      redirect(`/login?next=${encodeURIComponent(target)}&error=1`);
+    }
+    loginRateLimiter.reset(ip);
+
+    (await cookies()).set("mc_auth", await signToken(secret, Date.now() + SESSION_TTL_MS), {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
       path: "/",
-      maxAge: 60 * 60 * 24 * 30,
+      maxAge: SESSION_TTL_MS / 1000,
     });
 
     redirect(target);
@@ -37,29 +58,45 @@ export default async function LoginPage({
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-neutral-50 px-6">
-      <form action={login} className="w-full max-w-sm rounded-xl border bg-white p-6 shadow-sm">
-        <h1 className="text-lg font-semibold">ManyChat Clone</h1>
-        <p className="mt-1 text-sm text-neutral-600">Painel privado. Informe a senha.</p>
+      <Card className="w-full max-w-sm">
+        <CardHeader>
+          <span className="mb-2 flex h-9 w-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
+            <MessageCircle className="h-5 w-5" aria-hidden />
+          </span>
+          <CardTitle>ManyChat Clone</CardTitle>
+          <CardDescription>Painel privado. Informe a senha.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form action={login} className="space-y-4">
+            <input type="hidden" name="next" value={next} />
+            <div className="space-y-1.5">
+              <Label htmlFor="password">Senha</Label>
+              <Input
+                id="password"
+                type="password"
+                name="password"
+                autoFocus
+                required
+                autoComplete="current-password"
+                aria-invalid={error ? true : undefined}
+                aria-describedby={error ? "login-error" : undefined}
+              />
+            </div>
 
-        <input type="hidden" name="next" value={next} />
-        <input
-          type="password"
-          name="password"
-          autoFocus
-          required
-          className="mt-4 w-full rounded-lg border px-3 py-2 text-sm"
-          placeholder="senha"
-        />
+            {error && (
+              <Callout tone="destructive" id="login-error">
+                {error === "rate"
+                  ? "Muitas tentativas. Aguarde 15 minutos e tente de novo."
+                  : "Senha incorreta."}
+              </Callout>
+            )}
 
-        {error && <p className="mt-2 text-sm text-rose-600">Senha incorreta.</p>}
-
-        <button
-          type="submit"
-          className="mt-4 w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white"
-        >
-          Entrar
-        </button>
-      </form>
+            <SubmitButton className="w-full" pendingLabel="Entrando…">
+              Entrar
+            </SubmitButton>
+          </form>
+        </CardContent>
+      </Card>
     </main>
   );
 }

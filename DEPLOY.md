@@ -59,6 +59,7 @@ gravar o vídeo que eles exigem.
    | `IG_ACCESS_TOKEN` | preencha na Parte 4 |
    | `GRAPH_API_VERSION` | `v26.0` |
    | `BROADCAST_RATE` | `5` |
+   | `ACCOUNT_TIMEZONE` | `America/Sao_Paulo` (janelas de delay e agendamentos são lidos neste fuso) |
 
    As três da Meta podem ficar vazias por ora — o painel sobe sem elas.
    `ADMIN_PASSWORD` **não** pode: sem ela o painel se tranca com 503.
@@ -66,7 +67,10 @@ gravar o vídeo que eles exigem.
 4. **Deploy**. Ao terminar você recebe `https://manychat-clone-xxx.vercel.app`.
 
 5. Abra a URL: deve pedir a senha. Entre e confira o painel.
-   O Vercel Cron já está ativo via `vercel.json` (a cada minuto).
+   O Vercel Cron já está ativo via `vercel.json` (uma vez por dia, às 09:00
+   UTC — o limite do plano Hobby). No dia a dia quem drena a fila é o
+   próprio webhook, a cada mensagem recebida; veja "Deploy em produção" no
+   README.
 
 ---
 
@@ -108,8 +112,10 @@ curl -G "https://graph.instagram.com/access_token" \
 Coloque os valores na Vercel (**Settings → Environment Variables**) e
 **redeploy** — variáveis novas só valem no build seguinte.
 
-> **Anote a data.** O token de longa duração expira em ~60 dias e as
-> mensagens param de sair sem aviso claro. Renove antes disso.
+> O token de longa duração expira em ~60 dias. O app o guarda no banco e
+> renova sozinho no tick do cron/worker quando faltam menos de 10 dias; se a
+> renovação falhar, a página **Configurações** avisa. Só nesse caso gere um
+> token novo e atualize `IG_ACCESS_TOKEN`.
 
 ---
 
@@ -176,8 +182,9 @@ problema no código.
 | Meta APIs | grátis |
 
 Vercel Hobby limita funções a 60s — por isso o cron processa em fatias e
-retoma no minuto seguinte. Para listas grandes de broadcast, isso apenas
-distribui o envio ao longo de alguns minutos.
+retoma na chamada seguinte (o próximo webhook, ou o cron do dia seguinte).
+Para listas grandes de broadcast, prefira o worker (`bun run worker`) numa
+máquina sua; na Vercel o envio se espalha ao longo das mensagens recebidas.
 
 ## Se algo falhar
 

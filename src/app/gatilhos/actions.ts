@@ -25,9 +25,7 @@ import {
  * which trigger it collided with — not an error screen.
  */
 
-export type TriggerResult =
-  | { ok: true; id: string }
-  | { ok: false; error: string };
+export type TriggerResult = { ok: true; id: string } | { ok: false; error: string };
 
 /** Everything the trigger UI needs about one row. */
 export type TriggerView = {
@@ -187,10 +185,7 @@ export async function updateTrigger(
   return { ok: true, id: triggerId };
 }
 
-export async function setTriggerEnabled(
-  id: string,
-  enabled: boolean,
-): Promise<TriggerResult> {
+export async function setTriggerEnabled(id: string, enabled: boolean): Promise<TriggerResult> {
   const triggerId = String(id ?? "").trim();
   if (!triggerId) return { ok: false, error: "Gatilho não informado." };
 

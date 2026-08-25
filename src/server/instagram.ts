@@ -1,5 +1,11 @@
 import type { PrismaClient } from "@prisma/client";
 import { canSend, type MessageTag } from "../lib/messaging-window";
+import { db as defaultDb } from "./db";
+import { getAccessToken } from "./token-refresh";
+import { logger } from "../lib/log";
+import { touchLastMessage } from "./last-message";
+
+const log = logger("instagram");
 
 /**
  * Instagram API with Instagram Login (graph.instagram.com).
@@ -30,8 +36,7 @@ const SELF = process.env.IG_USER_ID ?? "me";
  * deploy. `SENDER_ACTIONS=off` disables it; anything else (including unset)
  * leaves it on, since the perception win is the point of the feature.
  */
-export const SENDER_ACTIONS_ENABLED =
-  (process.env.SENDER_ACTIONS ?? "on").toLowerCase() !== "off";
+export const SENDER_ACTIONS_ENABLED = (process.env.SENDER_ACTIONS ?? "on").toLowerCase() !== "off";
 
 export type SenderAction = "typing_on" | "typing_off" | "mark_seen";
 
@@ -44,7 +49,7 @@ export type SenderAction = "typing_on" | "typing_off" | "mark_seen";
  *
  *   {"recipient":{"id":"<IGSID>"},"sender_action":"typing_on"}
  *
- * Three properties make this safe to call from the webhook path:
+ * Three properties make this safe to call from the reply path:
  *
  *  - **Never throws.** A failed typing bubble must not abort the reply the
  *    contact is actually waiting for. Failures are swallowed and logged.
@@ -54,30 +59,29 @@ export type SenderAction = "typing_on" | "typing_off" | "mark_seen";
  *    message, so it is legal exactly when there is something to acknowledge,
  *    and the window rules apply to sends, not acknowledgements.
  *
- * The caller passes the IGSID directly rather than a contact id, so this can
- * run before any Contact row exists — the whole point of `mark_seen` is that
- * it lands immediately, not after a profile lookup.
+ * `mark_seen` is NOT sent by the webhook for every inbound DM. The flow-runner
+ * sends it right before the first reply of a flow run (see `advance`), so a
+ * message no flow answers stays unread for the account owner in the
+ * Instagram app. Both actions therefore go through `sendSenderActionToContact`
+ * in practice; this IGSID-level function is the primitive underneath it.
  */
-export async function sendSenderAction(
-  igScopedId: string,
-  action: SenderAction,
-): Promise<void> {
+export async function sendSenderAction(igScopedId: string, action: SenderAction): Promise<void> {
   if (!SENDER_ACTIONS_ENABLED || !igScopedId) return;
 
   try {
     const res = await fetch(`${BASE}/${SELF}/messages`, {
       method: "POST",
-      headers: authHeaders(),
+      headers: await authHeaders(defaultDb),
       body: JSON.stringify({
         recipient: { id: igScopedId },
         sender_action: action,
       }),
     });
     if (!res.ok) {
-      console.warn(`[instagram] sender_action ${action} failed: HTTP ${res.status}`);
+      log.warn("sender_action failed", { action, status: res.status });
     }
   } catch (err) {
-    console.warn(`[instagram] sender_action ${action} failed:`, err);
+    log.warn("sender_action failed", { action, err });
   }
 }
 
@@ -92,6 +96,13 @@ export async function sendSenderActionToContact(
   if (contact) await sendSenderAction(contact.igScopedId, action);
 }
 
+/**
+ * Where a send came from. Stored under `Message.payload.meta` (never sent
+ * to Meta) so per-node metrics and the flow funnel can attribute the row
+ * exactly, instead of matching it back by text.
+ */
+export type SendMeta = { flowId: string; nodeId: string; sessionId: string };
+
 export class SendBlocked extends Error {
   constructor(public readonly reason: string) {
     super(reason);
@@ -99,10 +110,14 @@ export class SendBlocked extends Error {
   }
 }
 
-function authHeaders(): Record<string, string> {
+/**
+ * The token comes from the IgCredential row (seeded from IG_ACCESS_TOKEN),
+ * so a refreshed token is picked up without a deploy — see token-refresh.ts.
+ */
+async function authHeaders(db: PrismaClient): Promise<Record<string, string>> {
   return {
     "Content-Type": "application/json",
-    Authorization: `Bearer ${requireEnv("IG_ACCESS_TOKEN")}`,
+    Authorization: `Bearer ${await getAccessToken(db)}`,
   };
 }
 
@@ -111,9 +126,26 @@ export async function sendText(
   db: PrismaClient,
   contactId: string,
   text: string,
-  opts: { tag?: MessageTag } = {},
+  opts: { tag?: MessageTag; meta?: SendMeta } = {},
 ): Promise<void> {
   return sendMessage(db, contactId, { text }, { ...opts, preview: text });
+}
+
+/**
+ * A message typed by a human in the inbox.
+ *
+ * Sent under the HUMAN_AGENT tag, which extends the window to 7 days for a
+ * real person replying. Meta grants that tag per app (the human_agent
+ * permission); without it the API rejects the send and the failure is
+ * recorded on the Message row like any other. Automations must never call
+ * this — the tag is for people, and misuse gets the app flagged.
+ */
+export async function sendHumanAgentMessage(
+  contactId: string,
+  text: string,
+  db: PrismaClient = defaultDb,
+): Promise<void> {
+  return sendText(db, contactId, text, { tag: "HUMAN_AGENT" });
 }
 
 /**
@@ -125,21 +157,33 @@ export async function sendText(
  *
  * Every attempt is persisted as a Message row — including failures — so the
  * inbox reflects reality rather than only what succeeded.
+ *
+ * `meta` is stored alongside the wire payload (`payload.meta`) and stripped
+ * from what goes to Meta.
  */
 export async function sendMessage(
   db: PrismaClient,
   contactId: string,
   payload: Record<string, unknown>,
-  opts: { tag?: MessageTag; preview?: string } = {},
+  opts: { tag?: MessageTag; preview?: string; meta?: SendMeta } = {},
 ): Promise<void> {
   const text = opts.preview ?? "";
   const contact = await db.contact.findUniqueOrThrow({ where: { id: contactId } });
+  const stored = (opts.meta ? { ...payload, meta: opts.meta } : payload) as never;
 
   const decision = canSend(contact.lastInboundAt, { tag: opts.tag });
   if (!decision.allowed) {
     await db.message.create({
-      data: { contactId, direction: "OUTBOUND", text, status: "FAILED", error: decision.reason },
+      data: {
+        contactId,
+        direction: "OUTBOUND",
+        text,
+        status: "FAILED",
+        error: decision.reason,
+        payload: stored,
+      },
     });
+    await touchLastMessage(db, contactId);
     throw new SendBlocked(decision.reason);
   }
 
@@ -149,14 +193,16 @@ export async function sendMessage(
       direction: "OUTBOUND",
       text,
       status: "PENDING",
-      payload: payload as never,
+      payload: stored,
     },
   });
+  // Every attempt is a row in the thread, so every attempt orders the inbox.
+  await touchLastMessage(db, contactId);
 
   try {
     const res = await fetch(`${BASE}/${SELF}/messages`, {
       method: "POST",
-      headers: authHeaders(),
+      headers: await authHeaders(db),
       body: JSON.stringify({
         recipient: { id: contact.igScopedId },
         message: payload,
@@ -203,7 +249,7 @@ export async function sendPrivateReply(
 ): Promise<{ recipientId: string; messageId: string }> {
   const res = await fetch(`${BASE}/${SELF}/messages`, {
     method: "POST",
-    headers: authHeaders(),
+    headers: await authHeaders(defaultDb),
     body: JSON.stringify({
       recipient: { comment_id: commentId },
       message: { text },
@@ -233,10 +279,9 @@ export async function fetchProfile(
   igScopedId: string,
 ): Promise<{ name?: string; username?: string; profilePic?: string }> {
   try {
-    const res = await fetch(
-      `${BASE}/${igScopedId}?fields=name,username,profile_pic`,
-      { headers: { Authorization: `Bearer ${requireEnv("IG_ACCESS_TOKEN")}` } },
-    );
+    const res = await fetch(`${BASE}/${igScopedId}?fields=name,username,profile_pic`, {
+      headers: { Authorization: `Bearer ${await getAccessToken(defaultDb)}` },
+    });
     if (!res.ok) return {};
     const b = (await res.json()) as {
       name?: string;
@@ -265,15 +310,12 @@ export async function uploadAttachment(
   type: "image" | "audio" | "video" | "file",
 ): Promise<string> {
   const form = new FormData();
-  form.append(
-    "message",
-    JSON.stringify({ attachment: { type, payload: { is_reusable: true } } }),
-  );
+  form.append("message", JSON.stringify({ attachment: { type, payload: { is_reusable: true } } }));
   form.append("filedata", file);
 
   const res = await fetch(`${BASE}/${SELF}/message_attachments`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${requireEnv("IG_ACCESS_TOKEN")}` },
+    headers: { Authorization: `Bearer ${await getAccessToken(defaultDb)}` },
     body: form,
   });
 
@@ -285,10 +327,4 @@ export async function uploadAttachment(
     throw new Error(body.error?.message ?? `Falha no upload (HTTP ${res.status})`);
   }
   return body.attachment_id;
-}
-
-function requireEnv(key: string): string {
-  const v = process.env[key];
-  if (!v) throw new Error(`Missing required env var ${key}`);
-  return v;
 }

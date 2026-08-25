@@ -15,28 +15,24 @@ import {
   type IceBreakerInput,
   type MenuItemInput,
 } from "../lib/messenger-profile";
+import { db } from "./db";
+import { getAccessToken } from "./token-refresh";
 
 const GRAPH_VERSION = process.env.GRAPH_API_VERSION ?? "v26.0";
 const BASE = `https://graph.instagram.com/${GRAPH_VERSION}`;
 const SELF = process.env.IG_USER_ID ?? "me";
 
-function requireEnv(key: string): string {
-  const v = process.env[key];
-  if (!v) throw new Error(`Missing required env var ${key}`);
-  return v;
-}
-
-function authHeaders(): Record<string, string> {
+async function authHeaders(): Promise<Record<string, string>> {
   return {
     "Content-Type": "application/json",
-    Authorization: `Bearer ${requireEnv("IG_ACCESS_TOKEN")}`,
+    Authorization: `Bearer ${await getAccessToken(db)}`,
   };
 }
 
 async function postProfile(body: Record<string, unknown>): Promise<void> {
   const res = await fetch(`${BASE}/${SELF}/messenger_profile`, {
     method: "POST",
-    headers: authHeaders(),
+    headers: await authHeaders(),
     body: JSON.stringify(body),
   });
   const parsed = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
@@ -56,7 +52,7 @@ async function postProfile(body: Record<string, unknown>): Promise<void> {
 async function deleteProfileFields(fields: string[]): Promise<void> {
   const res = await fetch(`${BASE}/${SELF}/messenger_profile`, {
     method: "DELETE",
-    headers: authHeaders(),
+    headers: await authHeaders(),
     body: JSON.stringify({ platform: "instagram", fields }),
   });
   const parsed = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
