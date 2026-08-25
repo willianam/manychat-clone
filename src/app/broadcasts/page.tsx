@@ -2,10 +2,12 @@ import { db } from "../../server/db";
 import { previewAudience } from "../../server/broadcast-worker";
 import { createBroadcast, queueBroadcast, deleteBroadcast } from "./actions";
 import { AudiencePicker } from "./AudiencePicker";
+import { accountTimeZone, formatInTimeZone } from "../../lib/timezone";
 
 export const dynamic = "force-dynamic";
 
 export default async function BroadcastsPage() {
+  const timeZone = accountTimeZone();
   const [tags, broadcasts] = await Promise.all([
     db.tag.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, color: true } }),
     db.broadcast.findMany({
@@ -60,6 +62,18 @@ export default async function BroadcastsPage() {
 
         <AudiencePicker tags={tags} />
 
+        <div>
+          <label className="block text-xs text-neutral-500">Agendar para (opcional)</label>
+          <input
+            type="datetime-local"
+            name="scheduledAt"
+            className="mt-1 rounded border px-2 py-1.5 text-sm"
+          />
+          <p className="mt-1 text-xs text-neutral-500">
+            Horário de {timeZone}. Depois de enfileirado, o disparo espera até esse momento.
+          </p>
+        </div>
+
         <button className="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white">
           Salvar rascunho
         </button>
@@ -81,6 +95,11 @@ export default async function BroadcastsPage() {
                 {b._count.recipients > 0 && (
                   <span className="text-xs text-neutral-500">
                     {b._count.recipients} destinatário(s)
+                  </span>
+                )}
+                {b.scheduledAt && (
+                  <span className="text-xs text-neutral-500">
+                    agendado para {formatInTimeZone(b.scheduledAt, timeZone)}
                   </span>
                 )}
               </div>

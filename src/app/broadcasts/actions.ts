@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "../../server/db";
 import { enqueueBroadcast } from "../../server/broadcast-worker";
+import { parseBroadcastForm } from "../../lib/broadcast-form";
 
 /**
  * Broadcast composition.
@@ -18,15 +19,16 @@ function parseWindow(raw: FormDataEntryValue | null): "in" | "out" | undefined {
   return v === "in" || v === "out" ? v : undefined;
 }
 
+/**
+ * A scheduled draft is queued like any other ("Enfileirar" materializes the
+ * recipients); every drainer already skips a broadcast whose `scheduledAt`
+ * is still in the future, so nothing else is needed for it to wait.
+ */
 export async function createBroadcast(formData: FormData) {
-  const name = String(formData.get("name") ?? "").trim().slice(0, 120) || "Disparo sem nome";
-  const text = String(formData.get("text") ?? "").trim();
-  if (!text) throw new Error("A mensagem não pode ficar vazia.");
-
-  const filterTagIds = formData.getAll("tagIds").map(String).filter(Boolean);
+  const { name, text, filterTagIds, scheduledAt } = parseBroadcastForm(formData);
 
   const b = await db.broadcast.create({
-    data: { name, text, filterTagIds, status: "DRAFT" },
+    data: { name, text, filterTagIds, scheduledAt, status: "DRAFT" },
   });
 
   revalidatePath("/broadcasts");
