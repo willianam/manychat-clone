@@ -159,3 +159,31 @@ describe("auto-registration", () => {
     );
   });
 });
+
+describe("updateCustomField / contactCountsByField", () => {
+  it("edits label, type and default together, and refuses an empty label", async () => {
+    const { updateCustomField, contactCountsByField } = await import("../custom-fields");
+    const db = {
+      customField: { update: vi.fn(async ({ data }: { data: object }) => ({ id: "f1", ...data })) },
+      contactField: {
+        groupBy: vi.fn(async () => [
+          { key: "cidade", _count: { _all: 3 } },
+          { key: "total", _count: { _all: 1 } },
+        ]),
+      },
+    } as unknown as PrismaClient;
+
+    await updateCustomField(db, "f1", { label: " Cidade ", type: "date", defaultValue: "" });
+    expect((db.customField.update as ReturnType<typeof vi.fn>).mock.calls[0]![0]).toEqual({
+      where: { id: "f1" },
+      data: { label: "Cidade", type: "DATE", defaultValue: null },
+    });
+    await expect(
+      updateCustomField(db, "f1", { label: "  ", type: "text", defaultValue: null }),
+    ).rejects.toThrow(/vazio/);
+
+    const counts = await contactCountsByField(db);
+    expect(counts.get("cidade")).toBe(3);
+    expect(counts.get("nada")).toBeUndefined();
+  });
+});
