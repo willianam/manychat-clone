@@ -1,5 +1,5 @@
 import { db } from "../../server/db";
-import { previewAudience } from "../../server/broadcast-worker";
+import { previewAudience, audienceOf } from "../../server/broadcast-worker";
 import { createBroadcast, queueBroadcast, deleteBroadcast } from "./actions";
 import { AudiencePicker } from "./AudiencePicker";
 import { accountTimeZone, formatInTimeZone } from "../../lib/timezone";
@@ -8,12 +8,18 @@ export const dynamic = "force-dynamic";
 
 export default async function BroadcastsPage() {
   const timeZone = accountTimeZone();
-  const [tags, broadcasts] = await Promise.all([
+  const [tags, segments, flows, broadcasts] = await Promise.all([
     db.tag.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, color: true } }),
+    db.segment.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    db.flow.findMany({
+      where: { enabled: true },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
     db.broadcast.findMany({
       orderBy: { createdAt: "desc" },
       take: 20,
-      include: { _count: { select: { recipients: true } } },
+      include: { _count: { select: { recipients: true } }, segment: true, flow: true },
     }),
   ]);
 
@@ -23,7 +29,7 @@ export default async function BroadcastsPage() {
     await Promise.all(
       broadcasts
         .filter((b) => b.status === "DRAFT")
-        .map(async (b) => [b.id, await previewAudience(db, { tagIds: b.filterTagIds })] as const),
+        .map(async (b) => [b.id, await previewAudience(db, audienceOf(b))] as const),
     ),
   );
 
@@ -50,14 +56,53 @@ export default async function BroadcastsPage() {
           <label className="block text-xs text-neutral-500">Mensagem</label>
           <textarea
             name="text"
-            required
             rows={4}
             maxLength={1000}
             className="mt-1 w-full rounded border px-2 py-1.5 text-sm"
           />
         </div>
 
+        {flows.length > 0 && (
+          <div>
+            <label className="block text-xs text-neutral-500">
+              Ou enviar um fluxo (ignora a mensagem acima)
+            </label>
+            <select
+              name="flowId"
+              defaultValue=""
+              className="mt-1 rounded border px-2 py-1.5 text-sm"
+            >
+              <option value="">nenhum</option>
+              {flows.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         <AudiencePicker tags={tags} />
+
+        {segments.length > 0 && (
+          <div>
+            <label className="block text-xs text-neutral-500">
+              Segmento (opcional; substitui as etiquetas)
+            </label>
+            <select
+              name="segmentId"
+              defaultValue=""
+              className="mt-1 rounded border px-2 py-1.5 text-sm"
+            >
+              <option value="">nenhum</option>
+              {segments.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div>
           <label className="block text-xs text-neutral-500">Agendar para (opcional)</label>
@@ -94,13 +139,18 @@ export default async function BroadcastsPage() {
                     {b._count.recipients} destinatário(s)
                   </span>
                 )}
+                {b.segment && (
+                  <span className="text-xs text-neutral-500">segmento: {b.segment.name}</span>
+                )}
                 {b.scheduledAt && (
                   <span className="text-xs text-neutral-500">
                     agendado para {formatInTimeZone(b.scheduledAt, timeZone)}
                   </span>
                 )}
               </div>
-              <p className="mt-2 whitespace-pre-wrap text-sm text-neutral-700">{b.text}</p>
+              <p className="mt-2 whitespace-pre-wrap text-sm text-neutral-700">
+                {b.flow ? `[fluxo: ${b.flow.name}]` : b.content ? "[bloco]" : b.text}
+              </p>
 
               {p && (
                 <div

@@ -39,6 +39,7 @@ async function tick(): Promise<void> {
   for (const b of queued) {
     console.log(`[worker] sending broadcast "${b.name}"`);
     const report = await runBroadcast(db, b.id);
+    if (!report.claimed) continue; // another drainer has it
     console.log(
       `[worker] "${b.name}": ${report.sent} sent, ${report.skipped} skipped (window), ${report.failed} failed`,
     );

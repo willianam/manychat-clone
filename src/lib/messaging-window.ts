@@ -15,6 +15,16 @@ export const WINDOW_MS = 24 * 60 * 60 * 1000;
 export const HUMAN_AGENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 export type MessageTag = "HUMAN_AGENT" | "ACCOUNT_UPDATE" | "POST_PURCHASE_UPDATE";
+export const MESSAGE_TAGS: readonly MessageTag[] = [
+  "HUMAN_AGENT",
+  "ACCOUNT_UPDATE",
+  "POST_PURCHASE_UPDATE",
+];
+
+/** A stored/posted tag string, or undefined when it is not one we know. */
+export function parseMessageTag(raw: string | null | undefined): MessageTag | undefined {
+  return MESSAGE_TAGS.find((t) => t === raw);
+}
 
 export type SendDecision = { allowed: true; tag?: MessageTag } | { allowed: false; reason: string };
 

@@ -67,8 +67,13 @@ function fakeDb() {
       findMany: vi.fn().mockResolvedValue([]),
       upsert: vi.fn().mockResolvedValue({}),
     },
+    customField: { upsert: vi.fn().mockResolvedValue({}) },
+    contactEvent: { create: vi.fn().mockResolvedValue({}) },
     tag: { upsert: vi.fn().mockResolvedValue({ id: "tag-vip", name: "vip" }) },
-    contactTag: { upsert: vi.fn().mockResolvedValue({}) },
+    contactTag: {
+      findUnique: vi.fn().mockResolvedValue(null),
+      create: vi.fn().mockResolvedValue({}),
+    },
   };
   return { db: db as unknown as PrismaClient, raw: db, session };
 }
@@ -84,6 +89,6 @@ describe("typed fields in the runner", () => {
     );
     expect((session.context as Record<string, unknown>).total).toBe("1500");
     // As text, "1.500,00" > "1499" would have been false ("1" < "1"... then "." < "4").
-    expect(raw.contactTag.upsert).toHaveBeenCalledTimes(1);
+    expect(raw.contactTag.create).toHaveBeenCalledTimes(1);
   });
 });

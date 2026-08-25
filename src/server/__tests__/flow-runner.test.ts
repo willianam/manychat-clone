@@ -116,23 +116,21 @@ function fakeDb(opts: { graph?: object; trigger?: boolean } = {}) {
       update: vi.fn(write),
     },
     trigger: {
-      findMany: vi
-        .fn()
-        .mockResolvedValue(
-          opts.trigger
-            ? [
-                {
-                  id: "trg-1",
-                  flowId: FLOW,
-                  kind: "KEYWORD",
-                  pattern: "preço",
-                  match: "CONTAINS",
-                  enabled: true,
-                  priority: 0,
-                },
-              ]
-            : [],
-        ),
+      findMany: vi.fn().mockResolvedValue(
+        opts.trigger
+          ? [
+              {
+                id: "trg-1",
+                flowId: FLOW,
+                kind: "KEYWORD",
+                pattern: "preço",
+                match: "CONTAINS",
+                enabled: true,
+                priority: 0,
+              },
+            ]
+          : [],
+      ),
       findFirst: vi.fn().mockResolvedValue(null), // no DEFAULT fallback trigger
     },
     unmatchedMessage: { upsert: vi.fn().mockResolvedValue({}) },
@@ -141,8 +139,14 @@ function fakeDb(opts: { graph?: object; trigger?: boolean } = {}) {
       findMany: vi.fn().mockResolvedValue([]),
       upsert: vi.fn().mockResolvedValue({}),
     },
+    customField: { upsert: vi.fn().mockResolvedValue({}) },
+    contactEvent: { create: vi.fn().mockResolvedValue({}) },
     tag: { upsert: vi.fn().mockResolvedValue({ id: "tag-1", name: "lead" }) },
-    contactTag: { upsert: vi.fn().mockResolvedValue({}), delete: vi.fn().mockResolvedValue({}) },
+    contactTag: {
+      findUnique: vi.fn().mockResolvedValue(null),
+      create: vi.fn().mockResolvedValue({}),
+      deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+    },
   } as unknown as PrismaClient;
 
   return { db, session };

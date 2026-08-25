@@ -2,6 +2,8 @@ import type { PrismaClient, FlowSession, Prisma } from "@prisma/client";
 import { FlowGraph, findEntryNode, type FlowNodeData } from "../lib/flow-schema";
 import { coerceFieldValue, compareValues } from "../lib/field-values";
 import { sendText, sendMessage, sendSenderActionToContact } from "./instagram";
+import { saveContactField } from "./contact-fields";
+import { addTagToContact, removeTagFromContact, setContactSubscribed } from "./contact-events";
 import {
   buildMessage,
   buildQuickReply,
@@ -100,11 +102,7 @@ export async function resumeWithInput(
   const node = graph.nodes.find((n) => n.id === session.currentNodeId);
   if (node?.data.kind === "question") {
     const ctx: Ctx = { ...(session.context as Ctx), [node.data.saveAs]: input };
-    await db.contactField.upsert({
-      where: { contactId_key: { contactId: session.contactId, key: node.data.saveAs } },
-      create: { contactId: session.contactId, key: node.data.saveAs, value: input },
-      update: { value: input },
-    });
+    await saveContactField(db, session.contactId, node.data.saveAs, input);
     session = await db.flowSession.update({
       where: { id: session.id },
       data: { context: asJson(ctx), status: "ACTIVE", currentNodeId: nextOf(graph, node.id) },
@@ -143,11 +141,7 @@ export async function resumeWithPostback(
     if (opt) {
       const value = opt.value ?? opt.title;
       ctx[node.data.saveAs] = value;
-      await db.contactField.upsert({
-        where: { contactId_key: { contactId: session.contactId, key: node.data.saveAs } },
-        create: { contactId: session.contactId, key: node.data.saveAs, value },
-        update: { value },
-      });
+      await saveContactField(db, session.contactId, node.data.saveAs, value);
     }
   }
 
@@ -368,22 +362,8 @@ async function advance(
     }
 
     if (d.kind === "tag") {
-      const tag = await db.tag.upsert({
-        where: { name: d.tagName },
-        create: { name: d.tagName },
-        update: {},
-      });
-      if (d.action === "add") {
-        await db.contactTag.upsert({
-          where: { contactId_tagId: { contactId: session.contactId, tagId: tag.id } },
-          create: { contactId: session.contactId, tagId: tag.id },
-          update: {},
-        });
-      } else {
-        await db.contactTag
-          .delete({ where: { contactId_tagId: { contactId: session.contactId, tagId: tag.id } } })
-          .catch(() => {}); // already absent is fine
-      }
+      if (d.action === "add") await addTagToContact(db, session.contactId, d.tagName, "flow");
+      else await removeTagFromContact(db, session.contactId, d.tagName, "flow");
       current = nextOf(graph, node.id);
       await db.flowSession.update({ where: { id: session.id }, data: { currentNodeId: current } });
       continue;
@@ -413,23 +393,12 @@ async function applyOps(
   ctx: Ctx,
 ): Promise<void> {
   for (const op of ops) {
-    if (op.op === "addTag" || op.op === "removeTag") {
-      const tag = await db.tag.upsert({
-        where: { name: op.tagName },
-        create: { name: op.tagName },
-        update: {},
-      });
-      if (op.op === "addTag") {
-        await db.contactTag.upsert({
-          where: { contactId_tagId: { contactId, tagId: tag.id } },
-          create: { contactId, tagId: tag.id },
-          update: {},
-        });
-      } else {
-        await db.contactTag
-          .delete({ where: { contactId_tagId: { contactId, tagId: tag.id } } })
-          .catch(() => {}); // already absent is fine
-      }
+    if (op.op === "addTag") {
+      await addTagToContact(db, contactId, op.tagName, "flow");
+      continue;
+    }
+    if (op.op === "removeTag") {
+      await removeTagFromContact(db, contactId, op.tagName, "flow");
       continue;
     }
 
@@ -438,21 +407,14 @@ async function applyOps(
       // compares "1500" with "1499" as numbers — see lib/field-values.ts.
       const value = coerceFieldValue(op.value, op.valueType);
       ctx[op.key] = value;
-      await db.contactField.upsert({
-        where: { contactId_key: { contactId, key: op.key } },
-        create: { contactId, key: op.key, value },
-        update: { value },
-      });
+      await saveContactField(db, contactId, op.key, value, op.valueType);
       continue;
     }
 
     if (op.op === "unsubscribe" || op.op === "resubscribe") {
       // The running flow continues: the author decides what, if anything, is
       // said after this. Only future broadcasts and flow starts are affected.
-      await db.contact.update({
-        where: { id: contactId },
-        data: { subscribed: op.op === "resubscribe" },
-      });
+      await setContactSubscribed(db, contactId, op.op === "resubscribe", "flow");
       continue;
     }
 

@@ -89,6 +89,8 @@ function fakeDb(opts: { menuTrigger?: boolean } = {}) {
       findMany: vi.fn().mockResolvedValue([]),
       upsert: vi.fn().mockResolvedValue({}),
     },
+    customField: { upsert: vi.fn().mockResolvedValue({}) },
+    contactEvent: { create: vi.fn().mockResolvedValue({}) },
   };
 
   return db;

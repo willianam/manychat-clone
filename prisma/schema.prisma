@@ -42,6 +42,8 @@ model Contact {
   flowSessions  FlowSession[]
   broadcastJobs BroadcastRecipient[]
   fields        ContactField[]
+  notes         ContactNote[]
+  events        ContactEvent[]
 
   @@index([lastInboundAt])
   @@index([subscribed])
@@ -58,6 +60,76 @@ model ContactField {
   contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
   @@unique([contactId, key])
+}
+
+enum FieldType {
+  TEXT
+  NUMBER
+  DATE
+  BOOLEAN
+}
+
+/// The registry of known contact field keys.
+///
+/// ContactField rows are free-form so a flow can save any key; this table is
+/// what the UI lists and what gives a key a label and a type. Rows are
+/// created explicitly on /campos or automatically the first time a flow
+/// saves a key that is not here yet — see server/custom-fields.ts.
+model CustomField {
+  id           String    @id @default(cuid())
+  key          String    @unique
+  label        String
+  type         FieldType @default(TEXT)
+  defaultValue String?
+  createdAt    DateTime  @default(now())
+}
+
+/// A saved audience. `rules` is the JSON shape validated by
+/// lib/segment-rules.ts; server/segments.ts turns it into a Prisma where.
+model Segment {
+  id        String   @id @default(cuid())
+  name      String
+  rules     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  broadcasts Broadcast[]
+}
+
+/// Free text the owner writes about a contact. Shown on the timeline.
+model ContactNote {
+  id        String   @id @default(cuid())
+  contactId String
+  text      String
+  createdAt DateTime @default(now())
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([contactId, createdAt])
+}
+
+enum ContactEventKind {
+  TAG_ADDED
+  TAG_REMOVED
+  SUBSCRIBED
+  UNSUBSCRIBED
+  FIELD_SET
+}
+
+/// A mutation on a contact worth showing on the timeline: tag changes,
+/// opt-in/out and field writes. Written at the mutation sites themselves
+/// (flow-runner, opt-out keyword, contact page), never derived after the fact.
+model ContactEvent {
+  id        String           @id @default(cuid())
+  contactId String
+  kind      ContactEventKind
+  /// { tagId, tagName } · { key, value } · { via: "keyword" | "flow" | "panel" }
+  payload   Json?
+  createdAt DateTime         @default(now())
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([contactId, createdAt])
 }
 
 model Tag {
@@ -122,9 +194,10 @@ model Flow {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  triggers Trigger[]
-  sessions FlowSession[]
-  refLinks RefLink[]
+  triggers   Trigger[]
+  sessions   FlowSession[]
+  refLinks   RefLink[]
+  broadcasts Broadcast[]
 }
 
 /// A trackable ig.me entry point: ig.me/m/<username>?ref=<code>.
@@ -263,13 +336,30 @@ enum BroadcastStatus {
 model Broadcast {
   id           String          @id @default(cuid())
   name         String
-  text         String
+  /// Plain-text body. Null when `content` or `flowId` carries the message.
+  text         String?
+  /// One sending node in the flow-schema shape (message with buttons, image,
+  /// quickreply, carousel, video, audio, file, album) — see
+  /// lib/broadcast-content.ts. Wins over `text` when present.
+  content      Json?
+  /// "Send a flow": every recipient is started into this flow instead of
+  /// receiving one message. Wins over `content` and `text`.
+  flowId       String?
+  /// Message tag to send under (HUMAN_AGENT etc.); null = standard message.
+  tag          String?
   status       BroadcastStatus @default(DRAFT)
+  /// Set when a drainer claims the QUEUED row (status SENDING). A claim
+  /// older than BROADCAST_LOCK_MS is considered dead and may be re-taken.
+  lockedAt     DateTime?
   /// Tag ids the recipient must have. Empty = everyone subscribed.
+  /// Ignored when `segmentId` is set — a segment replaces the tag filter.
   filterTagIds String[]        @default([])
+  segmentId    String?
   scheduledAt  DateTime?
   createdAt    DateTime        @default(now())
 
+  segment    Segment?             @relation(fields: [segmentId], references: [id], onDelete: SetNull)
+  flow       Flow?                @relation(fields: [flowId], references: [id], onDelete: SetNull)
   recipients BroadcastRecipient[]
 }
 
