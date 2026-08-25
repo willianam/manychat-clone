@@ -23,6 +23,10 @@ import {
 } from "../../../../lib/entry-events";
 import { applyReadReceipt, applyDelivery } from "../../../../server/receipts";
 import { rollupRecent } from "../../../../server/rollup";
+import { recordError } from "../../../../server/error-events";
+import { logger } from "../../../../lib/log";
+
+const log = logger("webhook");
 import { parseFlowPayload } from "../../../../lib/messenger-profile";
 import {
   tickDelayedSessions,
@@ -66,7 +70,8 @@ export async function POST(req: NextRequest) {
     await drainDueWork();
   } catch (err) {
     // Still ack: a 500 makes Meta retry a delivery we may have half-applied.
-    console.error("[webhook] processing failed:", err);
+    log.error("processing failed", { err });
+    await recordError(db, "webhook", err, { entries: payload.entry?.length ?? 0 });
   }
 
   return NextResponse.json({ received: true });
@@ -328,7 +333,8 @@ async function drainDueWork(): Promise<void> {
 
     await rollupRecent(db);
   } catch (err) {
-    console.error("[webhook] background drain failed:", err);
+    log.error("background drain failed", { err });
+    await recordError(db, "drain", err);
   }
 }
 

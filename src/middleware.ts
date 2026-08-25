@@ -17,9 +17,11 @@ import { authSecret, verifyToken } from "./lib/auth-token";
 
 // Meta fetches /privacidade unauthenticated while reviewing the app, so a
 // login wall there reads as a missing policy and blocks publishing.
+// /api/health is public for uptime monitors; it returns statuses, no values.
 const PUBLIC_PREFIXES = [
   "/api/webhook",
   "/api/cron",
+  "/api/health",
   "/login",
   "/privacidade",
   "/_next",

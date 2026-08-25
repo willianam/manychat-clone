@@ -2,6 +2,9 @@ import type { PrismaClient } from "@prisma/client";
 import { canSend, type MessageTag } from "../lib/messaging-window";
 import { db as defaultDb } from "./db";
 import { getAccessToken } from "./token-refresh";
+import { logger } from "../lib/log";
+
+const log = logger("instagram");
 
 /**
  * Instagram API with Instagram Login (graph.instagram.com).
@@ -74,10 +77,10 @@ export async function sendSenderAction(igScopedId: string, action: SenderAction)
       }),
     });
     if (!res.ok) {
-      console.warn(`[instagram] sender_action ${action} failed: HTTP ${res.status}`);
+      log.warn("sender_action failed", { action, status: res.status });
     }
   } catch (err) {
-    console.warn(`[instagram] sender_action ${action} failed:`, err);
+    log.warn("sender_action failed", { action, err });
   }
 }
 

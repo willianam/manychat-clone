@@ -1,6 +1,9 @@
 import type { PrismaClient } from "@prisma/client";
 import { sendText, SendBlocked } from "./instagram";
 import { canSend, WINDOW_MS } from "../lib/messaging-window";
+import { logger } from "../lib/log";
+
+const log = logger("worker");
 
 /**
  * Broadcast sender.
@@ -192,7 +195,7 @@ export async function tickDelayedSessions(db: PrismaClient): Promise<number> {
   for (const s of due) {
     await db.flowSession.update({ where: { id: s.id }, data: { resumeAt: null } });
     await resumeDelayed(db, s).catch((err) => {
-      console.warn(`[worker] delayed session ${s.id} failed to resume:`, err);
+      log.warn("delayed session failed to resume", { sessionId: s.id, err });
     });
     resumed++;
   }

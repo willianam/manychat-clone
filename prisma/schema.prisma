@@ -367,3 +367,16 @@ model TriggerFire {
   @@index([at])
   @@index([triggerId, at])
 }
+
+/// A caught failure worth remembering: the webhook handler, the background
+/// drain, the worker tick. Read by /api/health ("errors in the last 24h").
+model ErrorEvent {
+  id      String   @id @default(cuid())
+  at      DateTime @default(now())
+  scope   String
+  message String
+  stack   String?
+  payload Json?
+
+  @@index([at])
+}

@@ -56,6 +56,13 @@ O webhook precisa continuar aberto: a Meta se autentica assinando o corpo
 (HMAC), não carregando a nossa senha. O cron valida `CRON_SECRET` por conta
 própria, porque o Vercel Cron não envia cookie.
 
+`/api/health` também é público, pensado para monitor de uptime: responde
+`db`, status do token (dias restantes, se o último refresh falhou — nunca o
+valor), a última chamada à Meta e a contagem de erros das últimas 24 h
+(tabela `ErrorEvent`, gravada pelos `catch` do webhook, do drain e do
+worker). 503 quando o banco não responde. Logs são JSON em produção
+(`src/lib/log.ts`; nível via `LOG_LEVEL`).
+
 ---
 
 ## Passo a passo na Meta
