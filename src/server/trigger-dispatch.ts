@@ -1,6 +1,7 @@
 import type { PrismaClient, Trigger } from "@prisma/client";
 import { startFlow, resumeWithInput, resumeWithPostback } from "./flow-runner";
 import { sendPrivateReply, sendText } from "./instagram";
+import { setContactSubscribed } from "./contact-events";
 import { normalizeText, containsWord, normalizeForGrouping } from "../lib/text-normalize";
 import {
   classifyGlobalKeyword,
@@ -81,9 +82,8 @@ async function handleGlobalKeyword(
   }
 
   const subscribed = command === "opt_in";
-  await db.contact.update({ where: { id: contactId }, data: { subscribed } });
-
-  if (!subscribed) await abandonSessions(db, contactId);
+  // Also abandons open sessions on opt-out and records the timeline event.
+  await setContactSubscribed(db, contactId, subscribed, "keyword");
 
   await sendText(db, contactId, subscribed ? OPT_IN_CONFIRMATION : OPT_OUT_CONFIRMATION).catch(
     (err) => console.warn("[dispatch] opt-out confirmation failed:", err),

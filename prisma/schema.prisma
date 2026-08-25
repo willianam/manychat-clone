@@ -42,6 +42,8 @@ model Contact {
   flowSessions  FlowSession[]
   broadcastJobs BroadcastRecipient[]
   fields        ContactField[]
+  notes         ContactNote[]
+  events        ContactEvent[]
 
   @@index([lastInboundAt])
   @@index([subscribed])
@@ -92,6 +94,42 @@ model Segment {
   updatedAt DateTime @updatedAt
 
   broadcasts Broadcast[]
+}
+
+/// Free text the owner writes about a contact. Shown on the timeline.
+model ContactNote {
+  id        String   @id @default(cuid())
+  contactId String
+  text      String
+  createdAt DateTime @default(now())
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([contactId, createdAt])
+}
+
+enum ContactEventKind {
+  TAG_ADDED
+  TAG_REMOVED
+  SUBSCRIBED
+  UNSUBSCRIBED
+  FIELD_SET
+}
+
+/// A mutation on a contact worth showing on the timeline: tag changes,
+/// opt-in/out and field writes. Written at the mutation sites themselves
+/// (flow-runner, opt-out keyword, contact page), never derived after the fact.
+model ContactEvent {
+  id        String           @id @default(cuid())
+  contactId String
+  kind      ContactEventKind
+  /// { tagId, tagName } · { key, value } · { via: "keyword" | "flow" | "panel" }
+  payload   Json?
+  createdAt DateTime         @default(now())
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([contactId, createdAt])
 }
 
 model Tag {

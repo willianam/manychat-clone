@@ -57,6 +57,7 @@ function fakeDb(opts: { fields?: Array<{ id: string; key: string }>; flows?: obj
     },
     flow: { findMany: vi.fn(async () => opts.flows ?? []) },
     contactField: { upsert: vi.fn(async () => ({})) },
+    contactEvent: { create: vi.fn(async () => ({})) },
   };
   return { db: db as unknown as PrismaClient, raw: db };
 }
