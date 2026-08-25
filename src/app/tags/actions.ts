@@ -1,7 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { Prisma } from "@prisma/client";
 import { db } from "../../server/db";
+import { graphUsesTag, renameTagInGraph } from "../../lib/tag-rename";
 
 /**
  * Tag CRUD.
@@ -35,10 +37,12 @@ async function findUsage(tagId: string, tagName: string) {
     }),
   ]);
 
-  const needle = JSON.stringify(tagName);
+  // Match tag REFERENCES, not any occurrence of the name: a substring search
+  // over the serialized graph counted a message body saying "oi" as usage of
+  // the tag "oi".
   const usedByFlows = flows
-    .filter((f) => JSON.stringify(f.graph).includes(needle))
-    .map((f) => ({ id: f.id, name: f.name }));
+    .filter((f) => graphUsesTag(f.graph, tagName))
+    .map((f) => ({ id: f.id, name: f.name, graph: f.graph }));
 
   return { flows: usedByFlows, broadcasts };
 }
@@ -96,9 +100,13 @@ export async function renameTag(formData: FormData) {
 
   await db.$transaction([
     db.tag.update({ where: { id }, data: { name, color } }),
-    ...usage.flows.map(
-      (f) =>
-        db.$executeRaw`UPDATE "Flow" SET graph = REPLACE(graph::text, ${JSON.stringify(tag.name)}, ${JSON.stringify(name)})::jsonb WHERE id = ${f.id}`,
+    // Rewrite the tag fields only. A blind REPLACE over graph::text also
+    // rewrote message copy that happened to contain the old name.
+    ...usage.flows.map((f) =>
+      db.flow.update({
+        where: { id: f.id },
+        data: { graph: renameTagInGraph(f.graph, tag.name, name).graph as Prisma.InputJsonValue },
+      }),
     ),
   ]);
 
@@ -186,9 +194,13 @@ export async function mergeTags(formData: FormData) {
       data: links.map((l) => ({ contactId: l.contactId, tagId: targetId })),
       skipDuplicates: true,
     }),
-    ...usage.flows.map(
-      (f) =>
-        db.$executeRaw`UPDATE "Flow" SET graph = REPLACE(graph::text, ${JSON.stringify(source.name)}, ${JSON.stringify(target.name)})::jsonb WHERE id = ${f.id}`,
+    ...usage.flows.map((f) =>
+      db.flow.update({
+        where: { id: f.id },
+        data: {
+          graph: renameTagInGraph(f.graph, source.name, target.name).graph as Prisma.InputJsonValue,
+        },
+      }),
     ),
     // Deleting the source cascades its ContactTag rows.
     db.tag.delete({ where: { id: sourceId } }),
