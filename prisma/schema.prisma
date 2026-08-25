@@ -267,6 +267,21 @@ model FlowGoalHit {
   @@index([sessionId])
 }
 
+/// Which arm of a randomizer a session was sent down. One row per
+/// (session, node); joined with FlowGoalHit by sessionId for A/B rates.
+model AbAssignment {
+  id        String   @id @default(cuid())
+  sessionId String
+  flowId    String
+  nodeId    String
+  /// The edge handle taken: "0", "1", …
+  handle    String
+  at        DateTime @default(now())
+
+  @@unique([sessionId, nodeId])
+  @@index([flowId, nodeId])
+}
+
 enum BroadcastStatus {
   DRAFT
   QUEUED

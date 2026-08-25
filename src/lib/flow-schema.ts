@@ -384,7 +384,14 @@ const RandomData = z.object({
   kind: z.literal("random"),
   /** Percentages per branch; must sum to 100. Handles are "0", "1", … */
   weights: z.array(z.number().int().min(1).max(100)).min(2).max(4),
+  /** Optional name per arm ("Versão A"), parallel to `weights`, for reports. */
+  labels: z.array(z.string().max(40)).max(4).optional(),
 });
+
+/** The display name of a randomizer arm: its label, or "Saída N". */
+export function armLabel(d: { labels?: string[] }, i: number): string {
+  return d.labels?.[i]?.trim() || `Saída ${i + 1}`;
+}
 
 /** Superseded by `action`, kept so flows built before it keep running. */
 const TagData = z.object({
@@ -482,7 +489,10 @@ export function outputsOf(
         { handle: "false", label: "não" },
       ];
     case "random":
-      return d.weights.map((w, i) => ({ handle: String(i), label: `${w}%` }));
+      return d.weights.map((w, i) => ({
+        handle: String(i),
+        label: d.labels?.[i]?.trim() ? `${armLabel(d, i)} · ${w}%` : `${w}%`,
+      }));
     case "quickreply":
       return d.options.map((o) => ({ handle: o.id, label: o.title }));
     case "message":

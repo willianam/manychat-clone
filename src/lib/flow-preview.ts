@@ -1,4 +1,4 @@
-import { FlowGraph, findEntryNode, type FlowNodeData } from "./flow-schema";
+import { FlowGraph, findEntryNode, armLabel, type FlowNodeData } from "./flow-schema";
 
 /**
  * Flow preview: the graph rendered as the conversation it produces.
@@ -218,7 +218,7 @@ export function previewFrom(
     if (d.kind === "random") {
       const choicesHere = d.weights.map<PreviewChoice>((w, i) => ({
         handle: String(i),
-        label: `Saída ${i + 1} · ${w}%`,
+        label: `${armLabel(d, i)} · ${w}%`,
         target: targetOf(graph, id, String(i)),
       }));
       items.push({ kind: "fork", nodeId: id, label: "Randomizador", choices: choicesHere });

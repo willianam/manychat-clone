@@ -57,6 +57,8 @@ const SEEN_KEY = "_markSeenSent";
 
 /** Reserved: invalid-answer counts per question node, `{ [nodeId]: n }`. */
 const ATTEMPTS_KEY = "_attempts";
+/** Reserved: randomizer arm chosen per node, `{ [nodeId]: handle }`. */
+const AB_KEY = "_ab";
 const DEFAULT_MAX_ATTEMPTS = 3;
 
 export type StepResult = { status: "waiting" | "completed" | "delayed"; nodeId?: string };
@@ -505,8 +507,23 @@ async function advance(
           break;
         }
       }
-      current = nextOf(graph, node.id, String(chosen));
-      await db.flowSession.update({ where: { id: session.id }, data: { currentNodeId: current } });
+      const handle = String(chosen);
+      // Remember the arm on the session and in its own table, so abStats can
+      // join arms to goals without parsing every session's context.
+      ctx[AB_KEY] = {
+        ...((ctx[AB_KEY] as Record<string, string> | undefined) ?? {}),
+        [node.id]: handle,
+      };
+      await db.abAssignment
+        .create({
+          data: { sessionId: session.id, flowId: session.flowId, nodeId: node.id, handle },
+        })
+        .catch((err) => console.warn("[runner] A/B assignment not recorded:", err));
+      current = nextOf(graph, node.id, handle);
+      await db.flowSession.update({
+        where: { id: session.id },
+        data: { currentNodeId: current, context: asJson(ctx) },
+      });
       continue;
     }
 
