@@ -8,7 +8,7 @@ import { TriggerDialog } from "../../../components/TriggerDialog";
 import type { FlowGraph } from "../../../lib/flow-schema";
 import type { FlowStats } from "../../../server/flow-metrics";
 import type { TriggerView } from "../../gatilhos/actions";
-import { saveFlow } from "./actions";
+import { discardDraft, publishFlow, saveFlow } from "./actions";
 
 /**
  * Client boundary for the editor; saving goes through a server action.
@@ -27,13 +27,20 @@ export function EditorShell({
   initial,
   stats,
   triggers,
+  hasDraft,
+  publishedAt,
 }: {
   flowId: string;
   initial: FlowGraph;
   stats?: FlowStats;
   triggers: TriggerView[];
+  hasDraft: boolean;
+  publishedAt: string | null;
 }) {
   const router = useRouter();
+  // Bumped when the draft is discarded: the editor remounts on the graph
+  // the refreshed server component hands back.
+  const [generation, setGeneration] = useState(0);
   const [dialog, setDialog] = useState<
     { mode: "closed" } | { mode: "new" } | { mode: "edit"; trigger: TriggerView }
   >({ mode: "closed" });
@@ -41,6 +48,7 @@ export function EditorShell({
   return (
     <>
       <FlowEditor
+        key={generation}
         initial={initial}
         stats={stats}
         triggers={triggers}
@@ -49,13 +57,43 @@ export function EditorShell({
         onSave={async (graph) => {
           try {
             await saveFlow(flowId, graph);
-            toast.success("Fluxo salvo.");
+            toast.success("Rascunho salvo.");
+            router.refresh();
           } catch (err) {
             toast.error("Não foi possível salvar.", {
               description: err instanceof Error ? err.message : undefined,
             });
             throw err;
           }
+        }}
+        draft={{
+          hasDraft,
+          publishedAt,
+          onPublish: async () => {
+            try {
+              await publishFlow(flowId);
+              toast.success("Fluxo publicado.");
+              router.refresh();
+            } catch (err) {
+              toast.error("Não foi possível publicar.", {
+                description: err instanceof Error ? err.message : undefined,
+              });
+              throw err;
+            }
+          },
+          onDiscard: async () => {
+            try {
+              await discardDraft(flowId);
+              toast.success("Rascunho descartado.");
+              router.refresh();
+              setGeneration((g) => g + 1);
+            } catch (err) {
+              toast.error("Não foi possível descartar.", {
+                description: err instanceof Error ? err.message : undefined,
+              });
+              throw err;
+            }
+          },
         }}
       />
 

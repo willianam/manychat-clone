@@ -25,9 +25,13 @@ import {
   Redo2,
   Save,
   Undo2,
+  Upload,
   XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { StatusPill } from "@/components/ui/status-pill";
+import { setUnsaved } from "@/lib/ui/unsaved";
 import { FlowGraph, validateGraph, type FlowIssue, type FlowNodeData } from "../lib/flow-schema";
 import {
   duplicateNode,
@@ -223,7 +227,18 @@ type FlowEditorProps = {
   triggers?: TriggerView[];
   onAddTrigger?: () => void;
   onEditTrigger?: (trigger: TriggerView) => void;
+  /** Persist the graph as the draft. */
   onSave: (graph: FlowGraph) => Promise<void>;
+  /**
+   * Draft/published controls. Absent for callers that have no such notion
+   * (the preview).
+   */
+  draft?: {
+    hasDraft: boolean;
+    publishedAt: string | null;
+    onPublish: () => Promise<void>;
+    onDiscard: () => Promise<void>;
+  };
 };
 
 function FlowEditorInner({
@@ -233,12 +248,39 @@ function FlowEditorInner({
   onAddTrigger,
   onEditTrigger,
   onSave,
+  draft,
 }: FlowEditorProps) {
   const { screenToFlowPosition, fitView } = useReactFlow();
   const [nodes, setNodes, onNodesChange] = useNodesState(initial.nodes as Node[]);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initial.edges as Edge[]);
   const [saving, setSaving] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [discarding, setDiscarding] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
+  /** Edits since the last successful save. */
+  const [dirty, setDirty] = useState(false);
+  const touch = useCallback(() => {
+    touch();
+    setDirty(true);
+  }, []);
+
+  // The shell's links and the browser both ask before leaving unsaved work.
+  useEffect(() => {
+    setUnsaved(dirty);
+    return () => setUnsaved(false);
+  }, [dirty]);
+
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      // Legacy browsers need a value; the text itself is not shown.
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [panel, setPanel] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -274,10 +316,10 @@ function FlowEditorInner({
       setNodes(s.nodes);
       setEdges(s.edges);
       setSelectedId(null);
-      setSavedAt(null);
+      touch();
       setHistoryTick((t) => t + 1);
     },
-    [setNodes, setEdges],
+    [setNodes, setEdges, touch],
   );
 
   const undoNow = useCallback(() => {
@@ -303,9 +345,9 @@ function FlowEditorInner({
       snap(`data:${nodeId}`);
       setNodes((ns) => ns.map((n) => (n.id === nodeId ? { ...n, data } : n)));
       setPendingPrune((n) => n + 1);
-      setSavedAt(null);
+      touch();
     },
-    [setNodes, snap],
+    [setNodes, snap, touch],
   );
 
   useEffect(() => {
@@ -335,9 +377,9 @@ function FlowEditorInner({
       const added = next.nodes[next.nodes.length - 1];
       setNodes(next.nodes as Node[]);
       if (added) setSelectedId(added.id);
-      setSavedAt(null);
+      touch();
     },
-    [nodes, edges, setNodes, snap],
+    [nodes, edges, setNodes, snap, touch],
   );
 
   const deleteNode = useCallback(
@@ -346,9 +388,9 @@ function FlowEditorInner({
       setNodes((ns) => ns.filter((n) => n.id !== nodeId));
       setEdges((es) => es.filter((e) => e.source !== nodeId && e.target !== nodeId));
       setSelectedId((id) => (id === nodeId ? null : id));
-      setSavedAt(null);
+      touch();
     },
-    [setNodes, setEdges, snap],
+    [setNodes, setEdges, snap, touch],
   );
 
   /**
@@ -406,9 +448,9 @@ function FlowEditorInner({
     (c: Connection) => {
       snap();
       setEdges((eds) => addEdge({ ...c, animated: true }, eds));
-      setSavedAt(null);
+      touch();
     },
-    [setEdges, snap],
+    [setEdges, snap, touch],
   );
 
   /**
@@ -431,9 +473,9 @@ function FlowEditorInner({
         ];
       });
       setSelectedId(id);
-      setSavedAt(null);
+      touch();
     },
-    [setNodes, edges, selectedId, snap],
+    [setNodes, edges, selectedId, snap, touch],
   );
 
   const onDrop = useCallback(
@@ -490,8 +532,8 @@ function FlowEditorInner({
     setNodes(graph.nodes.map((n) => ({ ...n, selected: pasted.has(n.id) })) as Node[]);
     setEdges(graph.edges as Edge[]);
     setSelectedId(added[0] ?? null);
-    setSavedAt(null);
-  }, [clean, setNodes, setEdges, snap]);
+    touch();
+  }, [clean, setNodes, setEdges, snap, touch]);
 
   /** "Organizar": dagre positions, everything else untouched. */
   const organize = useCallback(() => {
@@ -499,10 +541,10 @@ function FlowEditorInner({
     const laid = layoutGraph(clean as FlowGraph);
     const at = new Map(laid.nodes.map((n) => [n.id, n.position]));
     setNodes((ns) => ns.map((n) => ({ ...n, position: at.get(n.id) ?? n.position })));
-    setSavedAt(null);
+    touch();
     // Positions land on the next frame; fit the view once they have.
     window.requestAnimationFrame(() => fitView({ padding: 0.2, duration: 300 }));
-  }, [clean, setNodes, snap, fitView]);
+  }, [clean, setNodes, snap, touch, fitView]);
 
   /**
    * Keyboard. React Flow ships its own delete key handling, but it does not
@@ -549,7 +591,7 @@ function FlowEditorInner({
         snap();
         const gone = new Set(selectedEdges.map((x) => x.id));
         setEdges((es) => es.filter((x) => !gone.has(x.id)));
-        setSavedAt(null);
+        touch();
         return;
       }
 
@@ -570,6 +612,7 @@ function FlowEditorInner({
     duplicate,
     setEdges,
     snap,
+    touch,
     undoNow,
     redoNow,
     copy,
@@ -590,19 +633,53 @@ function FlowEditorInner({
 
   const errors = issues.filter((i) => i.level === "error");
 
-  const save = async () => {
-    if (errors.length) return;
+  /** Save the draft. Resolves true when it went through. */
+  const save = async (): Promise<boolean> => {
+    if (errors.length) return false;
     setSaving(true);
     setSaveError(null);
     try {
       await onSave(FlowGraph.parse(clean));
       setSavedAt(new Date());
+      setDirty(false);
+      return true;
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Não foi possível salvar.");
+      return false;
     } finally {
       setSaving(false);
     }
   };
+
+  /** Publish = save whatever is unsaved, then promote the draft. */
+  const publish = async () => {
+    if (!draft || errors.length) return;
+    setPublishing(true);
+    try {
+      if (dirty && !(await save())) return;
+      await draft.onPublish();
+    } catch {
+      // The caller already toasted.
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  const discard = async () => {
+    if (!draft) return;
+    setDiscarding(true);
+    try {
+      await draft.onDiscard();
+      setDirty(false);
+      setConfirmDiscard(false);
+    } catch {
+      // The caller already toasted.
+    } finally {
+      setDiscarding(false);
+    }
+  };
+
+  const draftPending = Boolean(draft && (draft.hasDraft || dirty));
 
   const selected = useMemo(
     () => nodes.find((n) => n.id === selectedId) ?? null,
@@ -700,10 +777,50 @@ function FlowEditorInner({
                 {errors.length} {errors.length === 1 ? "erro" : "erros"}
               </span>
             )}
-            <Button size="sm" onClick={save} disabled={saving || errors.length > 0}>
+            {draft && draftPending && (
+              <StatusPill tone="warning">rascunho com alterações</StatusPill>
+            )}
+            {draft && !draftPending && draft.publishedAt && (
+              <span className="hidden text-xs text-neutral-500 lg:inline">
+                Publicado em {dateOf(draft.publishedAt)}
+              </span>
+            )}
+            {draft && draftPending && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setConfirmDiscard(true)}
+                disabled={saving || publishing || discarding}
+              >
+                Descartar rascunho
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant={draft ? "outline" : "default"}
+              onClick={save}
+              disabled={saving || publishing || errors.length > 0}
+            >
               {saving ? <Loader2 className="animate-spin" aria-hidden /> : <Save aria-hidden />}
-              {saving ? "Salvando…" : "Salvar"}
+              {saving ? "Salvando…" : draft ? "Salvar rascunho" : "Salvar"}
             </Button>
+            {draft && (
+              <Button
+                size="sm"
+                onClick={publish}
+                disabled={saving || publishing || errors.length > 0 || !draftPending}
+                title={
+                  draftPending ? "Copia o rascunho para o fluxo que roda" : "Nada para publicar"
+                }
+              >
+                {publishing ? (
+                  <Loader2 className="animate-spin" aria-hidden />
+                ) : (
+                  <Upload aria-hidden />
+                )}
+                {publishing ? "Publicando…" : "Publicar"}
+              </Button>
+            )}
           </div>
         </div>
 
@@ -752,7 +869,7 @@ function FlowEditorInner({
             onEdgesDelete={() => setSavedAt(null)}
             onNodesDelete={(deleted) => {
               setSelectedId((id) => (deleted.some((n) => n.id === id) ? null : id));
-              setSavedAt(null);
+              touch();
             }}
             nodeTypes={canvasNodeTypes}
             // We own Delete/Backspace so it can respect focused text fields.
@@ -777,9 +894,28 @@ function FlowEditorInner({
         onDuplicate={() => selected && duplicate(selected.id)}
         onClose={() => setSelectedId(null)}
       />
+
+      <ConfirmDialog
+        open={confirmDiscard}
+        onOpenChange={setConfirmDiscard}
+        title="Descartar o rascunho?"
+        description="O editor volta para a versão publicada. As alterações não publicadas são perdidas."
+        confirmLabel="Descartar"
+        destructive
+        pending={discarding}
+        onConfirm={discard}
+      />
     </div>
   );
 }
+
+const dateOf = (iso: string) =>
+  new Date(iso).toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 
 const timeOf = (d: Date) =>
   d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });

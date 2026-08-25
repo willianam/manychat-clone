@@ -193,7 +193,11 @@ model Flow {
   id        String   @id @default(cuid())
   name      String
   enabled   Boolean  @default(false)
+  /// The published graph — the only one the runner reads.
   graph     Json
+  /// Unpublished edits from the editor. Null means the draft equals `graph`.
+  draftGraph  Json?
+  publishedAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

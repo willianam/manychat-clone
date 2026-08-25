@@ -26,6 +26,8 @@ export type FlowRowData = {
   name: string;
   enabled: boolean;
   broken: boolean;
+  /** Has edits saved in the editor that are not published yet. */
+  hasDraft: boolean;
   steps: number;
   updatedAt: string;
   triggers: string[];
@@ -83,6 +85,7 @@ export function FlowRow({ flow }: { flow: FlowRowData }) {
                     {flow.name}
                   </Link>
                   <FlowStatus enabled={flow.enabled} broken={flow.broken} />
+                  {flow.hasDraft && <StatusPill tone="warning">rascunho</StatusPill>}
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">
                   {flow.steps} {flow.steps === 1 ? "passo" : "passos"}

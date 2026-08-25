@@ -6,7 +6,10 @@ afterEach(cleanup);
 import { isActive, isBareRoute, titleFor } from "../shell/nav";
 
 const pathname = vi.hoisted(() => ({ current: "/" }));
-vi.mock("next/navigation", () => ({ usePathname: () => pathname.current }));
+vi.mock("next/navigation", () => ({
+  usePathname: () => pathname.current,
+  useRouter: () => ({ push: () => {} }),
+}));
 
 import { SidebarNav } from "../shell/sidebar-nav";
 

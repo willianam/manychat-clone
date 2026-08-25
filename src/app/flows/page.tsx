@@ -29,6 +29,7 @@ export default async function FlowsPage() {
       name: f.name,
       enabled: f.enabled,
       broken,
+      hasDraft: f.draftGraph !== null,
       steps: parsed.success ? parsed.data.nodes.length : 0,
       updatedAt: f.updatedAt.toISOString(),
       triggers: f.triggers.map((t) =>
