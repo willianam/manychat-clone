@@ -5,9 +5,11 @@ import ReactFlow, {
   Background,
   Controls,
   MiniMap,
+  ReactFlowProvider,
   addEdge,
   useNodesState,
   useEdgesState,
+  useReactFlow,
   type Connection,
   type Edge,
   type Node,
@@ -24,7 +26,13 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { FlowGraph, validateGraph, type FlowIssue, type FlowNodeData } from "../lib/flow-schema";
-import { duplicateNode, pruneOrphanEdges, uid, withInlineText } from "../lib/flow-edit";
+import {
+  duplicateNode,
+  insertPosition,
+  pruneOrphanEdges,
+  uid,
+  withInlineText,
+} from "../lib/flow-edit";
 import type { FlowStats } from "../server/flow-metrics";
 import { nodeTypes } from "./nodes";
 import { PropertiesPanel } from "./PropertiesPanel";
@@ -94,8 +102,24 @@ const BLOCKS: Array<{
     hint: "Divide o tráfego para testar",
     tone: "text-slate-600",
   },
+  {
+    kind: "goto",
+    label: "Ir para",
+    hint: "Salta para outro passo ou fluxo",
+    tone: "text-violet-600",
+  },
+  { kind: "goal", label: "Meta", hint: "Marca uma conversão", tone: "text-emerald-600" },
+  {
+    kind: "request",
+    label: "Requisição externa",
+    hint: "Chama uma API e grava a resposta",
+    tone: "text-orange-600",
+  },
   { kind: "end", label: "Fim", hint: "Encerra a conversa", tone: "text-neutral-600" },
 ];
+
+/** MIME type of a palette drag, so a stray file drop is ignored. */
+const DRAG_TYPE = "application/x-flow-block";
 
 const DEFAULTS: Record<string, () => object> = {
   message: () => ({ kind: "message", text: "Olá!" }),
@@ -138,6 +162,11 @@ const DEFAULTS: Record<string, () => object> = {
   condition: () => ({ kind: "condition", key: "nome", op: "exists" }),
   action: () => ({ kind: "action", ops: [{ op: "addTag", tagName: "lead" }] }),
   random: () => ({ kind: "random", weights: [50, 50] }),
+  // The target is patched to the flow's entry node on insert (see addNode):
+  // a goto pointing nowhere would fail validation before it could be edited.
+  goto: () => ({ kind: "goto", target: { nodeId: "" } }),
+  goal: () => ({ kind: "goal", name: "Conversão" }),
+  request: () => ({ kind: "request", method: "GET", url: "https://api.exemplo.com/consulta" }),
   end: () => ({ kind: "end" }),
 };
 
@@ -149,14 +178,16 @@ const DEFAULTS: Record<string, () => object> = {
  */
 const canvasNodeTypes = { ...nodeTypes, __trigger__: TriggerNode };
 
-export function FlowEditor({
-  initial,
-  stats,
-  triggers,
-  onAddTrigger,
-  onEditTrigger,
-  onSave,
-}: {
+export function FlowEditor(props: FlowEditorProps) {
+  // `useReactFlow` (drop positioning) needs the provider above the canvas.
+  return (
+    <ReactFlowProvider>
+      <FlowEditorInner {...props} />
+    </ReactFlowProvider>
+  );
+}
+
+type FlowEditorProps = {
   initial: FlowGraph;
   stats?: FlowStats;
   /**
@@ -168,7 +199,17 @@ export function FlowEditor({
   onAddTrigger?: () => void;
   onEditTrigger?: (trigger: TriggerView) => void;
   onSave: (graph: FlowGraph) => Promise<void>;
-}) {
+};
+
+function FlowEditorInner({
+  initial,
+  stats,
+  triggers,
+  onAddTrigger,
+  onEditTrigger,
+  onSave,
+}: FlowEditorProps) {
+  const { screenToFlowPosition } = useReactFlow();
   const [nodes, setNodes, onNodesChange] = useNodesState(initial.nodes as Node[]);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initial.edges as Edge[]);
   const [saving, setSaving] = useState(false);
@@ -295,22 +336,38 @@ export function FlowEditor({
     [setEdges],
   );
 
+  /**
+   * Insert a block. Click lands it below the selection (or the last node);
+   * a drop lands it where the pointer let go.
+   */
   const addNode = useCallback(
-    (kind: string) => {
+    (kind: string, at?: { x: number; y: number }) => {
       const id = uid(kind);
-      setNodes((ns) => [
-        ...ns,
-        {
-          id,
-          type: kind,
-          position: { x: 160 + Math.random() * 220, y: 80 + ns.length * 130 },
-          data: DEFAULTS[kind]!(),
-        } as Node,
-      ]);
+      setNodes((ns) => {
+        const data = DEFAULTS[kind]!() as Record<string, unknown>;
+        if (kind === "goto") {
+          const entry = ns.find((n) => !edges.some((e) => e.target === n.id)) ?? ns[0];
+          data.target = { nodeId: entry?.id ?? "" };
+        }
+        return [
+          ...ns,
+          { id, type: kind, position: at ?? insertPosition(ns, selectedId), data } as Node,
+        ];
+      });
       setSelectedId(id);
       setSavedAt(null);
     },
-    [setNodes],
+    [setNodes, edges, selectedId],
+  );
+
+  const onDrop = useCallback(
+    (e: React.DragEvent) => {
+      const kind = e.dataTransfer.getData(DRAG_TYPE);
+      if (!kind || !(kind in DEFAULTS)) return;
+      e.preventDefault();
+      addNode(kind, screenToFlowPosition({ x: e.clientX, y: e.clientY }));
+    },
+    [addNode, screenToFlowPosition],
   );
 
   /**
@@ -417,14 +474,19 @@ export function FlowEditor({
         <aside className="hidden w-64 shrink-0 overflow-y-auto border-r bg-card md:block">
           <div className="border-b px-4 py-3">
             <h2 className="text-sm font-semibold">Adicionar bloco</h2>
-            <p className="mt-0.5 text-xs text-neutral-500">Clique para inserir no fluxo</p>
+            <p className="mt-0.5 text-xs text-neutral-500">Clique ou arraste para o canvas</p>
           </div>
           <div className="space-y-1 p-2">
             {BLOCKS.map((b) => (
               <button
                 key={b.kind}
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData(DRAG_TYPE, b.kind);
+                  e.dataTransfer.effectAllowed = "move";
+                }}
                 onClick={() => addNode(b.kind)}
-                className="w-full rounded-lg border border-transparent px-3 py-2 text-left transition hover:border-border hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                className="w-full cursor-grab rounded-lg border border-transparent px-3 py-2 text-left transition hover:border-border hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
               >
                 <div className={`text-[13px] font-semibold ${b.tone}`}>{b.label}</div>
                 <div className="text-[11px] leading-tight text-neutral-500">{b.hint}</div>
@@ -492,7 +554,15 @@ export function FlowEditor({
           </ul>
         )}
 
-        <div className="min-h-0 flex-1">
+        <div
+          className="min-h-0 flex-1"
+          onDragOver={(e) => {
+            if (!e.dataTransfer.types.includes(DRAG_TYPE)) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+          }}
+          onDrop={onDrop}
+        >
           <ReactFlow
             nodes={rendered}
             edges={edges}

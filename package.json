@@ -22,6 +22,7 @@
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@dagrejs/dagre": "^1.1.8",
     "@prisma/client": "^5.22.0",
     "@radix-ui/react-alert-dialog": "^1.1.23",
     "@radix-ui/react-checkbox": "^1.3.11",

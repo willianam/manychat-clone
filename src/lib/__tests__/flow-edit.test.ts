@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   duplicateNode,
+  insertPosition,
   inlineLimitOf,
   inlineTextOf,
   pruneOrphanEdges,
@@ -322,5 +323,22 @@ describe("duplicateNode", () => {
 
   it("devolve o grafo intacto quando o nó não existe", () => {
     expect(duplicateNode(graph, "fantasma")).toEqual(graph);
+  });
+});
+
+describe("insertPosition", () => {
+  const nodes = [
+    { id: "a", position: { x: 10, y: 20 } },
+    { id: "b", position: { x: 300, y: 400 } },
+  ];
+
+  it("lands below the selected node", () => {
+    expect(insertPosition(nodes, "a")).toEqual({ x: 10, y: 200 });
+  });
+
+  it("falls back to the last node, then to the canvas origin", () => {
+    expect(insertPosition(nodes, null)).toEqual({ x: 300, y: 580 });
+    expect(insertPosition(nodes, "missing")).toEqual({ x: 300, y: 580 });
+    expect(insertPosition([], null)).toEqual({ x: 240, y: 80 });
   });
 });
