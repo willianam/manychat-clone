@@ -29,7 +29,16 @@ type Segment = { id: string; name: string };
  * They are exclusive on purpose — the send resolves a segment INSTEAD of the
  * tags, so offering both at once would show a count the send never uses.
  */
-export function AudiencePicker({ tags, segments = [] }: { tags: Tag[]; segments?: Segment[] }) {
+export function AudiencePicker({
+  tags,
+  segments = [],
+  onTargetedChange,
+}: {
+  tags: Tag[];
+  segments?: Segment[];
+  /** Reports the count the send will target, so the confirm dialog can name it. */
+  onTargetedChange?: (n: number | null) => void;
+}) {
   const [mode, setMode] = useState<"tags" | "segment">("tags");
   const [tagIds, setTagIds] = useState<string[]>([]);
   const [segmentId, setSegmentId] = useState<string>(segments[0]?.id ?? "");
@@ -60,6 +69,13 @@ export function AudiencePicker({ tags, segments = [] }: { tags: Tag[]; segments?
         : window === "out"
           ? preview.outOfWindow
           : preview.total;
+
+  useEffect(() => {
+    onTargetedChange?.(targeted);
+    // onTargetedChange is a setState from the parent: stable, and including
+    // it would re-fire on every parent render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targeted]);
 
   return (
     <div className="space-y-4">

@@ -3,11 +3,7 @@
 import { useMemo, useState } from "react";
 import { CalendarClock, Save, Send } from "lucide-react";
 import type { FlowGraph } from "../../lib/flow-schema";
-import {
-  MESSAGE_TAGS,
-  MESSAGE_TAG_LABELS,
-  type MessageTag,
-} from "../../lib/messaging-window";
+import { MESSAGE_TAGS, MESSAGE_TAG_LABELS, type MessageTag } from "../../lib/messaging-window";
 import { contentIssues, previewGraph, type ComposerBody } from "../../lib/broadcast-preview";
 import { PreviewPhone } from "../flows/[id]/preview/PreviewPhone";
 import { AudiencePicker } from "./AudiencePicker";
@@ -23,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ConfirmSubmitButton } from "@/components/ui/confirm-submit-button";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { Textarea } from "@/components/ui/textarea";
 import { withToast } from "@/lib/ui/action-toast";
@@ -64,6 +61,9 @@ export function Composer({
   const [flowId, setFlowId] = useState(flows[0]?.id ?? "");
   const [tag, setTag] = useState<string>(NO_TAG);
   const [when, setWhen] = useState<"now" | "later">("now");
+  // Reported by the AudiencePicker so the send confirmation can name the
+  // number of people about to be messaged. Null while the count is loading.
+  const [targeted, setTargeted] = useState<number | null>(null);
 
   const body = useMemo<ComposerBody>(() => {
     if (mode === "text") return { mode: "text", text };
@@ -166,7 +166,7 @@ export function Composer({
             <CardTitle className="text-base">Público</CardTitle>
           </CardHeader>
           <CardContent>
-            <AudiencePicker tags={tags} segments={segments} />
+            <AudiencePicker tags={tags} segments={segments} onTargetedChange={setTargeted} />
           </CardContent>
         </Card>
 
@@ -232,15 +232,31 @@ export function Composer({
             <Save aria-hidden />
             Salvar rascunho
           </SubmitButton>
-          <SubmitButton
+          {/*
+            A broadcast is the least reversible action in the app: once the
+            messages leave, nothing brings them back. Deleting a tag already
+            asks for confirmation, so sending to everyone certainly should.
+          */}
+          <ConfirmSubmitButton
             name="intent"
             value="send"
             disabled={emptyBody}
-            pendingLabel={when === "later" ? "Agendando…" : "Enfileirando…"}
+            title={when === "later" ? "Agendar este disparo?" : "Enviar este disparo agora?"}
+            description={
+              <>
+                {targeted === null
+                  ? "O disparo vai para o público selecionado."
+                  : `O disparo vai para ${targeted} contato${targeted === 1 ? "" : "s"}.`}{" "}
+                {when === "later"
+                  ? "Você ainda pode cancelar antes da hora marcada."
+                  : "As mensagens saem imediatamente e não há como recolhê-las."}
+              </>
+            }
+            confirmLabel={when === "later" ? "Agendar" : "Enviar agora"}
           >
             {when === "later" ? <CalendarClock aria-hidden /> : <Send aria-hidden />}
             {when === "later" ? "Agendar" : "Enviar agora"}
-          </SubmitButton>
+          </ConfirmSubmitButton>
         </div>
       </div>
 
