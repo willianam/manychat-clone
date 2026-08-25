@@ -150,7 +150,7 @@ describe("goto flow", () => {
     await startFlow(db, "flow-a", CONTACT);
     expect(raw.flowSession.updateMany).toHaveBeenCalledWith({
       where: { contactId: CONTACT, flowId: "flow-b", status: { in: ["ACTIVE", "WAITING_INPUT"] } },
-      data: { status: "ABANDONED" },
+      data: { status: "ABANDONED", abandonedAt: expect.any(Date) },
     });
     expect(texts()).toEqual(["A", "B"]);
   });

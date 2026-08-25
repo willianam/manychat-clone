@@ -113,7 +113,7 @@ export async function startFlow(
     if (!opts.takeover) return { status: "waiting", nodeId: existing.currentNodeId ?? undefined };
     await db.flowSession.updateMany({
       where: { contactId, flowId, status: { in: ["ACTIVE", "WAITING_INPUT"] } },
-      data: { status: "ABANDONED" },
+      data: { status: "ABANDONED", abandonedAt: new Date() },
     });
   }
 
