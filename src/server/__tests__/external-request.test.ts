@@ -97,6 +97,38 @@ describe("runRequest", () => {
     expect(init.redirect).toBe("manual");
   });
 
+  it("refuses a secret in the URL, and never fetches", async () => {
+    const f = fetchJson({ ok: 1 });
+    const r = await runRequest(
+      node({ url: "https://api.exemplo.com/x?key={{secret.T}}" }),
+      raw,
+      f,
+      { FLOW_SECRET_T: "tok" },
+    );
+    // A query-string secret leaks into access logs, proxy logs and Referer.
+    expect(r.ok).toBe(false);
+    expect(f).not.toHaveBeenCalled();
+    expect(JSON.stringify(r)).not.toContain("tok");
+  });
+
+  it("still allows the same secret in a header or the body", async () => {
+    const f = fetchJson({ ok: 1 });
+    const r = await runRequest(
+      node({
+        method: "POST",
+        body: '{"k":"{{secret.T}}"}',
+        headers: [{ name: "X-Key", value: "{{secret.T}}" }],
+      }),
+      raw,
+      f,
+      { FLOW_SECRET_T: "tok" },
+    );
+    expect(r.ok).toBe(true);
+    const [, init] = f.mock.calls[0] as unknown as [string, RequestInit];
+    expect((init.headers as Record<string, string>)["X-Key"]).toBe("tok");
+    expect(init.body).toBe('{"k":"tok"}');
+  });
+
   it("POST sends the rendered body as JSON", async () => {
     const f = fetchJson({});
     const render = (t: string, m: RenderMode) => (m === "json" ? t.replace("{{n}}", "Ana") : t);

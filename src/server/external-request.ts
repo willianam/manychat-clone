@@ -15,7 +15,10 @@ import type { FlowNodeData } from "../lib/flow-schema";
  *
  * Secrets: `{{secret.NOME}}` is replaced from env `FLOW_SECRET_NOME` before
  * the ordinary `{{campo}}` pass, so a contact's answer that happens to
- * contain "{{secret.X}}" is never expanded.
+ * contain "{{secret.X}}" is never expanded. Secrets are allowed in headers
+ * and in the body ONLY — never in the URL, where they would be written to
+ * every proxy log, the server access log and the Referer of whatever the
+ * target page loads next. A secret placeholder in the URL fails the node.
  */
 
 export const REQUEST_TIMEOUT_MS = 10_000;
@@ -63,12 +66,18 @@ export function isBlockedHost(hostname: string): boolean {
   return false;
 }
 
+/** Matches a `{{secret.NAME}}` placeholder. */
+const SECRET_RE = /\{\{\s*secret\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g;
+
+/** True when the text carries at least one secret placeholder. */
+export function hasSecretRef(text: string): boolean {
+  SECRET_RE.lastIndex = 0;
+  return SECRET_RE.test(text);
+}
+
 /** Replace `{{secret.NAME}}` from env. Unknown secrets render as "". */
 export function applySecrets(text: string, env: NodeJS.ProcessEnv = process.env): string {
-  return text.replace(
-    /\{\{\s*secret\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g,
-    (_m, name: string) => env[`FLOW_SECRET_${name}`] ?? "",
-  );
+  return text.replace(SECRET_RE, (_m, name: string) => env[`FLOW_SECRET_${name}`] ?? "");
 }
 
 /**
@@ -126,7 +135,15 @@ export async function runRequest(
   fetchImpl: typeof fetch = fetch,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<RequestOutcome> {
-  const url = render(applySecrets(d.url, env), "url");
+  // A secret in the URL ends up in access logs, proxy logs and the Referer
+  // header. Headers and the body are the only places it may go.
+  if (hasSecretRef(d.url)) {
+    return {
+      ok: false,
+      reason: "Um segredo não pode ir na URL. Use um cabeçalho ou o corpo da requisição.",
+    };
+  }
+  const url = render(d.url, "url");
   let parsed: URL;
   try {
     parsed = new URL(url);
