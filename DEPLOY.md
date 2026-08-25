@@ -67,7 +67,10 @@ gravar o vídeo que eles exigem.
 4. **Deploy**. Ao terminar você recebe `https://manychat-clone-xxx.vercel.app`.
 
 5. Abra a URL: deve pedir a senha. Entre e confira o painel.
-   O Vercel Cron já está ativo via `vercel.json` (a cada minuto).
+   O Vercel Cron já está ativo via `vercel.json` (uma vez por dia, às 09:00
+   UTC — o limite do plano Hobby). No dia a dia quem drena a fila é o
+   próprio webhook, a cada mensagem recebida; veja "Deploy em produção" no
+   README.
 
 ---
 
@@ -179,8 +182,9 @@ problema no código.
 | Meta APIs | grátis |
 
 Vercel Hobby limita funções a 60s — por isso o cron processa em fatias e
-retoma no minuto seguinte. Para listas grandes de broadcast, isso apenas
-distribui o envio ao longo de alguns minutos.
+retoma na chamada seguinte (o próximo webhook, ou o cron do dia seguinte).
+Para listas grandes de broadcast, prefira o worker (`bun run worker`) numa
+máquina sua; na Vercel o envio se espalha ao longo das mensagens recebidas.
 
 ## Se algo falhar
 

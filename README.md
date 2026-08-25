@@ -23,9 +23,19 @@ npm run dev
 Ver **DEPLOY.md** para o passo a passo completo.
 
 Na Vercel o `worker` do docker-compose não roda — funções serverless não
-mantêm loop. O mesmo trabalho acontece em `/api/cron/tick`, chamado a cada
-minuto pelo Vercel Cron (`vercel.json`). O docker-compose segue válido para
-VPS ou uso local.
+mantêm loop. O trabalho de fundo (retomar delays vencidos, varrer sessões
+paradas, avançar um disparo, renovar o token) acontece por três caminhos:
+
+1. **Webhook** — o caminho principal. Cada mensagem recebida também chama
+   `drainDueWork()` (`src/app/api/webhook/instagram/route.ts`), então uma
+   conta que recebe mensagens drena a própria fila.
+2. **Cron** — `/api/cron/tick`, chamado pelo Vercel Cron **uma vez por dia**
+   (`0 9 * * *` em `vercel.json`; o plano Hobby não permite mais que isso).
+   É o piso para uma conta parada.
+3. **Worker** — `bun run worker` (`src/server/worker-entry.ts`), um loop de
+   5 s. É o caminho para delays curtos confiáveis: um delay de 30 s só
+   retoma no horário se algo chama o tick nesse intervalo. Roda no
+   docker-compose (VPS ou local), não na Vercel.
 
 ## Segurança
 

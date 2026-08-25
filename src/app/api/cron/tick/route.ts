@@ -14,13 +14,19 @@ export const maxDuration = 60; // Vercel Hobby caps at 60s
 /**
  * Serverless replacement for worker-entry.ts.
  *
- * Vercel functions can't hold a loop, so the same two jobs — resuming
- * delayed sessions and draining broadcasts — run once per invocation and
- * Vercel Cron calls this on a schedule (see vercel.json).
+ * Vercel functions can't hold a loop, so the same jobs — refreshing the
+ * token, resuming delayed sessions, sweeping stale ones, draining a
+ * broadcast — run once per invocation. Vercel Cron calls this ONCE A DAY
+ * (`0 9 * * *` in vercel.json; the Hobby plan allows no more), so this is
+ * the floor for an idle account, not the main path. The main path is
+ * drainDueWork() in the webhook route, which runs the same jobs on every
+ * inbound message. Short delays that must resume on time need the worker
+ * (`bun run worker`) on a machine that can hold a loop.
  *
  * Because a run is capped at 60s, one tick sends at most what the rate
- * limiter allows in that window; the rest is picked up next minute. That's
- * why runBroadcast is safe to re-enter: it only ever reads PENDING rows.
+ * limiter allows in that window; the rest is picked up by the next call.
+ * That's why runBroadcast is safe to re-enter: it only ever reads PENDING
+ * rows.
  */
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
