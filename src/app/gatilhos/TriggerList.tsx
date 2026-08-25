@@ -18,6 +18,8 @@ export type TriggerRowData = {
   trigger: TriggerView;
   /** Caption of the post this trigger is pinned to, when it is pinned. */
   mediaLabel: string | null;
+  /** How many times it started (or tried to start) a flow in the last 7 days. */
+  fires7d: number;
 };
 
 /**
@@ -150,6 +152,12 @@ function TriggerRow({ row, onEdit }: { row: TriggerRowData; onEdit: () => void }
                 </>
               )}
               {t.priority > 0 && ` · prioridade ${t.priority}`}
+              {" · "}
+              <span className="tabular-nums" data-testid="fires7d">
+                {row.fires7d === 0
+                  ? "sem disparos em 7 dias"
+                  : `${row.fires7d} disparo${row.fires7d === 1 ? "" : "s"} em 7 dias`}
+              </span>
             </div>
           </div>
 

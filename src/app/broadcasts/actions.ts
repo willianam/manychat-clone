@@ -20,13 +20,14 @@ function parseWindow(raw: FormDataEntryValue | null): "in" | "out" | undefined {
 }
 
 /**
- * A scheduled draft is queued like any other ("Enfileirar" materializes the
- * recipients); every drainer already skips a broadcast whose `scheduledAt`
- * is still in the future, so nothing else is needed for it to wait.
+ * Save the composer's post. `intent=draft` stores it; `intent=send` also
+ * enqueues it — a future `scheduledAt` makes every drainer wait, so
+ * "agendar" and "enviar agora" are the same path with a different clock.
  */
 export async function createBroadcast(formData: FormData) {
   const { name, text, content, flowId, tag, filterTagIds, segmentId, scheduledAt } =
     parseBroadcastForm(formData);
+  const intent = String(formData.get("intent") ?? "draft");
 
   const b = await db.broadcast.create({
     data: {
@@ -41,6 +42,19 @@ export async function createBroadcast(formData: FormData) {
       status: "DRAFT",
     },
   });
+
+  if (intent === "send") {
+    const count = await enqueueBroadcast(db, b.id, { window: parseWindow(formData.get("window")) });
+    if (count === 0) {
+      // enqueueBroadcast marks an empty audience DONE; a draft is more useful.
+      await db.broadcast.update({ where: { id: b.id }, data: { status: "DRAFT" } });
+      throw new Error(
+        "Nenhum contato se encaixa nesse filtro agora. O disparo ficou salvo como rascunho.",
+      );
+    }
+    revalidatePath("/broadcasts");
+    redirect(`/broadcasts/${b.id}`);
+  }
 
   revalidatePath("/broadcasts");
   redirect(`/broadcasts?criado=${b.id}`);

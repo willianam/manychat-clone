@@ -15,6 +15,7 @@ import { TagChip } from "@/components/ui/tag-chip";
 import { cn } from "@/lib/ui/cn";
 
 type Tag = { id: string; name: string; color: string };
+type Segment = { id: string; name: string };
 
 /**
  * Audience selection with a live "who can I actually reach right now" count.
@@ -23,19 +24,29 @@ type Tag = { id: string; name: string; color: string };
  * contact list is mostly unreachable at any given moment, and the old
  * behaviour only revealed that in the report AFTER the broadcast ran. Here
  * it is visible while composing, and it recounts whenever the filter changes.
+ *
+ * Two ways to pick: tags (empty = everyone subscribed) or one saved segment.
+ * They are exclusive on purpose — the send resolves a segment INSTEAD of the
+ * tags, so offering both at once would show a count the send never uses.
  */
-export function AudiencePicker({ tags }: { tags: Tag[] }) {
+export function AudiencePicker({ tags, segments = [] }: { tags: Tag[]; segments?: Segment[] }) {
+  const [mode, setMode] = useState<"tags" | "segment">("tags");
   const [tagIds, setTagIds] = useState<string[]>([]);
-  const [window, setWindow] = useState<"all" | "in" | "out">("all");
+  const [segmentId, setSegmentId] = useState<string>(segments[0]?.id ?? "");
+  const [window, setWindow] = useState<"all" | "in" | "out">("in");
   const [preview, setPreview] = useState<WindowPreview | null>(null);
   const [pending, start] = useTransition();
   const windowId = useId();
+  const segmentSelectId = useId();
+  const modeId = useId();
+
+  const activeSegment = mode === "segment" ? segmentId : null;
 
   useEffect(() => {
     start(async () => {
-      setPreview(await countAudience(tagIds));
+      setPreview(await countAudience({ tagIds, segmentId: activeSegment }));
     });
-  }, [tagIds]);
+  }, [tagIds, activeSegment]);
 
   const toggle = (id: string) =>
     setTagIds((prev) => (prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]));
@@ -52,31 +63,83 @@ export function AudiencePicker({ tags }: { tags: Tag[] }) {
 
   return (
     <div className="space-y-4">
-      <fieldset>
-        <legend className="text-sm font-medium leading-none">Etiquetas (vazio = todos)</legend>
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {tags.map((t) => {
-            const on = tagIds.includes(t.id);
-            return (
+      {segments.length > 0 && (
+        <fieldset>
+          <legend className="text-sm font-medium leading-none">Público</legend>
+          <div
+            role="radiogroup"
+            aria-labelledby={modeId}
+            className="mt-2 inline-flex items-center rounded-lg bg-muted p-1 text-sm"
+          >
+            <span id={modeId} className="sr-only">
+              Escolher público por
+            </span>
+            {(["tags", "segment"] as const).map((m) => (
               <button
-                key={t.id}
+                key={m}
                 type="button"
-                aria-pressed={on}
-                onClick={() => toggle(t.id)}
-                className="rounded-full focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                role="radio"
+                aria-checked={mode === m}
+                onClick={() => setMode(m)}
+                className={cn(
+                  "rounded-md px-3 py-1 font-medium transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                  mode === m ? "bg-background text-foreground shadow-sm" : "text-muted-foreground",
+                )}
               >
-                <TagChip name={t.name} color={t.color} selected={on} />
+                {m === "tags" ? "Etiquetas" : "Segmento salvo"}
               </button>
-            );
-          })}
-          {tags.length === 0 && (
-            <span className="text-xs text-muted-foreground">Nenhuma etiqueta criada.</span>
-          )}
+            ))}
+          </div>
+        </fieldset>
+      )}
+
+      {mode === "tags" ? (
+        <fieldset>
+          <legend className="text-sm font-medium leading-none">Etiquetas (vazio = todos)</legend>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {tags.map((t) => {
+              const on = tagIds.includes(t.id);
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => toggle(t.id)}
+                  className="rounded-full focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                >
+                  <TagChip name={t.name} color={t.color} selected={on} />
+                </button>
+              );
+            })}
+            {tags.length === 0 && (
+              <span className="text-xs text-muted-foreground">Nenhuma etiqueta criada.</span>
+            )}
+          </div>
+          {tagIds.map((id) => (
+            <input key={id} type="hidden" name="tagIds" value={id} />
+          ))}
+        </fieldset>
+      ) : (
+        <div className="space-y-1.5">
+          <Label htmlFor={segmentSelectId}>Segmento</Label>
+          <input type="hidden" name="segmentId" value={segmentId} />
+          <Select value={segmentId} onValueChange={setSegmentId}>
+            <SelectTrigger id={segmentSelectId} className="w-72">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {segments.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {s.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            As regras do segmento substituem as etiquetas.
+          </p>
         </div>
-        {tagIds.map((id) => (
-          <input key={id} type="hidden" name="tagIds" value={id} />
-        ))}
-      </fieldset>
+      )}
 
       <div className="space-y-1.5">
         <Label htmlFor={windowId}>Janela de 24h</Label>
@@ -87,8 +150,8 @@ export function AudiencePicker({ tags }: { tags: Tag[] }) {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Todos os contatos</SelectItem>
             <SelectItem value="in">Só quem está dentro da janela</SelectItem>
+            <SelectItem value="all">Todos os contatos</SelectItem>
             <SelectItem value="out">Só quem está fora da janela</SelectItem>
           </SelectContent>
         </Select>

@@ -110,6 +110,18 @@ describe("maybeRefreshToken", () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
+  it("refreshes anyway when forced, even far from expiry", async () => {
+    const { db, row } = fakeDb({ expiresAt: new Date(NOW.getTime() + 30 * DAY) });
+    const spy = mockFetch({ access_token: "forced", expires_in: (60 * DAY) / 1000 });
+    const { maybeRefreshToken } = await import("../token-refresh");
+
+    const out = await maybeRefreshToken(db, NOW, { force: true });
+
+    expect(out.action).toBe("refreshed");
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(row()?.accessToken).toBe("forced");
+  });
+
   it("seeds from the env when the table is empty and refreshes to learn the real expiry", async () => {
     process.env.IG_ACCESS_TOKEN = "env-token";
     const { db, row } = fakeDb(null);

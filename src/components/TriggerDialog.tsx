@@ -193,6 +193,15 @@ function TriggerForm({ flowId, flows, existing, onClose, onSaved }: Omit<Props, 
           </div>
         </div>
 
+        {kind === "WELCOME" && (
+          <Callout tone="info">
+            Dispara uma única vez por contato, na primeira DM de alguém que nunca escreveu, e só se
+            nenhuma palavra-chave casar. A ordem é: palavra-chave, depois boas-vindas, depois
+            &quot;qualquer outra mensagem&quot;. O Instagram não tem botão &quot;Começar&quot;; as
+            perguntas iniciais em Configurações fazem esse papel.
+          </Callout>
+        )}
+
         {allowsMedia(kind) && <MediaPicker value={mediaId} onChange={setMediaId} />}
 
         {allowsPattern(kind) && (
