@@ -1,6 +1,8 @@
-import { Tag } from "lucide-react";
+import Link from "next/link";
+import { Tag, Users } from "lucide-react";
 import { db } from "../../server/db";
 import { createTag, renameTag, deleteTag, mergeTags } from "./actions";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ConfirmSubmitButton } from "@/components/ui/confirm-submit-button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -94,9 +96,12 @@ export default async function TagsPage() {
               <CardContent className="p-4">
                 <div className="flex flex-wrap items-center gap-3">
                   <TagChip name={t.name} color={t.color} />
-                  <span className="text-sm tabular-nums text-neutral-600">
-                    {t._count.contacts} contato{t._count.contacts === 1 ? "" : "s"}
-                  </span>
+                  <Button asChild variant="link" size="sm" className="h-auto p-0 tabular-nums">
+                    <Link href={`/contacts?tag=${t.id}`}>
+                      <Users aria-hidden />
+                      {t._count.contacts} contato{t._count.contacts === 1 ? "" : "s"}
+                    </Link>
+                  </Button>
                   {inUse && (
                     <span className="text-xs text-amber-800" title={inFlows.join(", ")}>
                       usada por {inFlows.length} fluxo{inFlows.length === 1 ? "" : "s"}
@@ -117,8 +122,18 @@ export default async function TagsPage() {
                       maxLength={60}
                       className="h-8 w-48"
                     />
-                    <SubmitButton variant="outline" size="sm" pendingLabel="Renomeando…">
-                      Renomear
+                    <Label htmlFor={`color-${t.id}`} className="sr-only">
+                      Cor de {t.name}
+                    </Label>
+                    <Input
+                      id={`color-${t.id}`}
+                      name="color"
+                      type="color"
+                      defaultValue={t.color}
+                      className="h-8 w-12 cursor-pointer p-1"
+                    />
+                    <SubmitButton variant="outline" size="sm" pendingLabel="Salvando…">
+                      Salvar
                     </SubmitButton>
                   </form>
 
@@ -194,9 +209,14 @@ export default async function TagsPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <SubmitButton variant="secondary" pendingLabel="Mesclando…">
+              <ConfirmSubmitButton
+                variant="secondary"
+                title="Mesclar as duas etiquetas?"
+                description="Os contatos da primeira passam a ter a segunda, fluxos e disparos passam a citar a segunda, e a primeira é excluída. Isso não pode ser desfeito."
+                confirmLabel="Mesclar"
+              >
                 Mesclar
-              </SubmitButton>
+              </ConfirmSubmitButton>
               <p className="w-full text-xs text-muted-foreground">
                 Os contatos da primeira passam a ter a segunda, os fluxos e disparos são
                 atualizados, e a primeira é excluída.

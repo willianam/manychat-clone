@@ -56,13 +56,16 @@ export async function createTag(formData: FormData) {
   revalidatePath("/tags");
 }
 
+const COLOR_RE = /^#[0-9a-f]{6}$/i;
+
 /**
- * Rename a tag.
+ * Rename a tag and/or change its color.
  *
  * The tag id does not change, so contacts and broadcast filters follow
  * automatically. Flow graphs do NOT: they store the name. We rewrite the
  * name inside every graph that mentions it, in the same transaction, so a
  * rename can't leave an action node pointing at a tag that no longer exists.
+ * A color-only change touches nothing but the Tag row.
  */
 export async function renameTag(formData: FormData) {
   const id = String(formData.get("id") ?? "");
@@ -72,7 +75,17 @@ export async function renameTag(formData: FormData) {
 
   const tag = await db.tag.findUnique({ where: { id } });
   if (!tag) throw new Error("Etiqueta não encontrada.");
-  if (tag.name === name) return;
+
+  const rawColor = String(formData.get("color") ?? "");
+  const color = COLOR_RE.test(rawColor) ? rawColor.toLowerCase() : tag.color;
+  if (tag.name === name) {
+    if (color !== tag.color) {
+      await db.tag.update({ where: { id }, data: { color } });
+      revalidatePath("/tags");
+      revalidatePath("/contacts");
+    }
+    return;
+  }
 
   const clash = await db.tag.findUnique({ where: { name } });
   if (clash) {
@@ -82,7 +95,7 @@ export async function renameTag(formData: FormData) {
   const usage = await findUsage(id, tag.name);
 
   await db.$transaction([
-    db.tag.update({ where: { id }, data: { name } }),
+    db.tag.update({ where: { id }, data: { name, color } }),
     ...usage.flows.map(
       (f) =>
         db.$executeRaw`UPDATE "Flow" SET graph = REPLACE(graph::text, ${JSON.stringify(tag.name)}, ${JSON.stringify(name)})::jsonb WHERE id = ${f.id}`,
@@ -91,6 +104,7 @@ export async function renameTag(formData: FormData) {
 
   revalidatePath("/tags");
   revalidatePath("/flows");
+  revalidatePath("/contacts");
 }
 
 /**
