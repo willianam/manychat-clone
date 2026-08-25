@@ -1,11 +1,17 @@
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
+import { authSecret, constantTimeEqual, signToken, SESSION_TTL_MS } from "../../lib/auth-token";
+import { loginRateLimiter } from "../../lib/login-rate-limit";
 
 export const dynamic = "force-dynamic";
 
 /**
  * Single-password login. Server action only — the password never reaches
- * the client bundle.
+ * the client bundle, and never reaches the cookie either: a successful
+ * login sets a signed token that expires in 30 days (lib/auth-token.ts).
+ *
+ * Five wrong passwords from one IP lock that IP out for 15 minutes
+ * (lib/login-rate-limit.ts).
  */
 export default async function LoginPage({
   searchParams,
@@ -19,17 +25,25 @@ export default async function LoginPage({
     const submitted = String(formData.get("password") ?? "");
     const expected = process.env.ADMIN_PASSWORD;
     const target = String(formData.get("next") ?? "/");
+    const ip = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
 
-    if (!expected || submitted !== expected) {
-      redirect(`/login?next=${encodeURIComponent(target)}&error=1`);
+    if (!loginRateLimiter.allows(ip)) {
+      redirect(`/login?next=${encodeURIComponent(target)}&error=rate`);
     }
 
-    (await cookies()).set("mc_auth", expected, {
+    const secret = authSecret();
+    if (!expected || !secret || !(await constantTimeEqual(submitted, expected))) {
+      loginRateLimiter.recordFailure(ip);
+      redirect(`/login?next=${encodeURIComponent(target)}&error=1`);
+    }
+    loginRateLimiter.reset(ip);
+
+    (await cookies()).set("mc_auth", await signToken(secret, Date.now() + SESSION_TTL_MS), {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
       path: "/",
-      maxAge: 60 * 60 * 24 * 30,
+      maxAge: SESSION_TTL_MS / 1000,
     });
 
     redirect(target);
@@ -51,7 +65,13 @@ export default async function LoginPage({
           placeholder="senha"
         />
 
-        {error && <p className="mt-2 text-sm text-rose-600">Senha incorreta.</p>}
+        {error === "rate" ? (
+          <p className="mt-2 text-sm text-rose-600">
+            Muitas tentativas. Aguarde 15 minutos e tente de novo.
+          </p>
+        ) : (
+          error && <p className="mt-2 text-sm text-rose-600">Senha incorreta.</p>
+        )}
 
         <button
           type="submit"

@@ -44,6 +44,14 @@ Tudo exceto `/api/webhook/*` e `/api/cron/*` fica atrás de uma senha única
 estiver definida em produção, o painel responde 503 e se tranca — o padrão
 oposto exporia todos os contatos silenciosamente.
 
+O cookie de sessão não é a senha: é um token `exp.hmac` assinado com
+HMAC-SHA256 (`src/lib/auth-token.ts`, Web Crypto, roda no Edge) que expira
+em 30 dias. A chave é `AUTH_SECRET` ou, se ausente, derivada de
+`ADMIN_PASSWORD` com um salt fixo. O login aceita 5 tentativas erradas por
+IP a cada 15 minutos (`src/lib/login-rate-limit.ts`); o contador é em
+memória, por processo — suficiente para um painel de uma pessoa, não uma
+defesa contra ataque distribuído.
+
 O webhook precisa continuar aberto: a Meta se autentica assinando o corpo
 (HMAC), não carregando a nossa senha. O cron valida `CRON_SECRET` por conta
 própria, porque o Vercel Cron não envia cookie.
