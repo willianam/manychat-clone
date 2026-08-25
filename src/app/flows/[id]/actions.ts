@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { db } from "../../../server/db";
 import { FlowGraph, validateGraph } from "../../../lib/flow-schema";
+import { isStatsPeriod } from "../../../lib/stats-period";
+import { editorMetrics, type EditorMetrics } from "../../../server/flow-editor-metrics";
 
 /**
  * Draft vs published.
@@ -63,4 +65,10 @@ export async function discardDraft(flowId: string) {
 
   revalidatePath(`/flows/${flowId}`);
   revalidatePath("/flows");
+}
+
+/** Numbers for the canvas over a chosen period (see flow-editor-metrics.ts). */
+export async function loadFlowMetrics(flowId: string, period: unknown): Promise<EditorMetrics> {
+  if (!isStatsPeriod(period)) throw new Error("Período inválido.");
+  return editorMetrics(db, flowId, period);
 }

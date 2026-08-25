@@ -14,6 +14,7 @@ import {
 import { armLabel, rulesOf, type FlowNodeData } from "../lib/flow-schema";
 import { inlineLimitOf } from "../lib/flow-edit";
 import type { NodeStats } from "../server/flow-metrics";
+import type { ArmStats } from "../server/ab-stats";
 
 /**
  * Canvas nodes.
@@ -50,6 +51,8 @@ type WithStats = FlowNodeData & {
   _onText?: (text: string) => void;
   /** Flow id → name, so a "Ir para" can say where it goes. */
   _names?: Record<string, string>;
+  /** A/B results per arm, for randomizers. */
+  _ab?: ArmStats[];
 };
 
 /**
@@ -87,6 +90,7 @@ function Stats({ s }: { s?: NodeStats }) {
       {s.deliveredPct !== null && (
         <Metric value={`${s.deliveredPct}%`} label="Entregue" tone="text-emerald-600" />
       )}
+      {s.readPct !== null && <Metric value={`${s.readPct}%`} label="Lido" tone="text-sky-600" />}
       {s.clickedPct !== null && (
         <Metric value={`${s.clickedPct}%`} label="Clicado" tone="text-indigo-600" />
       )}
@@ -745,6 +749,7 @@ export function ActionNode({ data }: NodeProps<WithStats>) {
 
 export function RandomNode({ data }: NodeProps<WithStats>) {
   const d = data as Extract<FlowNodeData, { kind: "random" }>;
+  const ab = data._ab;
   return (
     <div className={`${SHELL} w-[224px]`}>
       <Handle type="target" position={T} className={`${HANDLE} !top-[-8px] !bg-neutral-400`} />
@@ -759,6 +764,14 @@ export function RandomNode({ data }: NodeProps<WithStats>) {
               <div className="h-full bg-slate-400" style={{ width: `${w}%` }} />
             </div>
             <span className="w-8 text-right text-[11px] tabular-nums text-neutral-500">{w}%</span>
+            {ab?.[i] && ab[i]!.sessions > 0 && (
+              <span
+                className="text-[9px] tabular-nums text-neutral-400"
+                title={`${ab[i]!.sessions} contatos, ${ab[i]!.goals} metas`}
+              >
+                {ab[i]!.sessions} · {ab[i]!.rate ?? 0}%
+              </span>
+            )}
             <Handle
               type="source"
               position={Position.Right}

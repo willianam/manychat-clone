@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { ArrowLeft, Eye } from "lucide-react";
 import { db } from "../../../server/db";
-import { flowStats } from "../../../server/flow-metrics";
+import { editorMetrics } from "../../../server/flow-editor-metrics";
 import { FlowGraph } from "../../../lib/flow-schema";
 import { triggersOfFlow } from "../../gatilhos/actions";
 import { EditorShell } from "./EditorShell";
@@ -20,7 +20,7 @@ export default async function FlowPage({ params }: { params: Promise<{ id: strin
   // The editor opens on the draft when there is one; the runner keeps
   // reading `graph` until the draft is published.
   const graph = FlowGraph.parse(flow.draftGraph ?? flow.graph);
-  const stats = await flowStats(db, flow.id);
+  const metrics = await editorMetrics(db, flow.id, "30d");
   // Triggers are table rows, not graph nodes — the editor draws them as the
   // synthetic "Quando…" card at the top of the canvas.
   const triggers = await triggersOfFlow(flow.id);
@@ -65,7 +65,7 @@ export default async function FlowPage({ params }: { params: Promise<{ id: strin
         <EditorShell
           flowId={flow.id}
           initial={graph}
-          stats={stats}
+          metrics={metrics}
           triggers={triggers}
           flows={flows}
           hasDraft={flow.draftGraph !== null}

@@ -1,14 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { FlowEditor } from "../../../components/FlowEditor";
 import { TriggerDialog } from "../../../components/TriggerDialog";
 import type { FlowGraph } from "../../../lib/flow-schema";
-import type { FlowStats } from "../../../server/flow-metrics";
+import type { EditorMetrics } from "../../../server/flow-editor-metrics";
+import type { StatsPeriod } from "../../../lib/stats-period";
 import type { TriggerView } from "../../gatilhos/actions";
-import { discardDraft, publishFlow, saveFlow } from "./actions";
+import { discardDraft, loadFlowMetrics, publishFlow, saveFlow } from "./actions";
 
 /**
  * Client boundary for the editor; saving goes through a server action.
@@ -25,7 +26,7 @@ import { discardDraft, publishFlow, saveFlow } from "./actions";
 export function EditorShell({
   flowId,
   initial,
-  stats,
+  metrics: initialMetrics,
   triggers,
   flows,
   hasDraft,
@@ -33,7 +34,7 @@ export function EditorShell({
 }: {
   flowId: string;
   initial: FlowGraph;
-  stats?: FlowStats;
+  metrics: EditorMetrics;
   triggers: TriggerView[];
   flows: Array<{ id: string; name: string }>;
   hasDraft: boolean;
@@ -43,6 +44,20 @@ export function EditorShell({
   // Bumped when the draft is discarded: the editor remounts on the graph
   // the refreshed server component hands back.
   const [generation, setGeneration] = useState(0);
+  // The period picker re-queries through a server action; the page's own
+  // numbers (30 days) are the starting point.
+  const [metrics, setMetrics] = useState(initialMetrics);
+  const [loadingMetrics, startMetrics] = useTransition();
+  const changePeriod = (period: StatsPeriod) =>
+    startMetrics(async () => {
+      try {
+        setMetrics(await loadFlowMetrics(flowId, period));
+      } catch (err) {
+        toast.error("Não foi possível carregar as métricas.", {
+          description: err instanceof Error ? err.message : undefined,
+        });
+      }
+    });
   const [dialog, setDialog] = useState<
     { mode: "closed" } | { mode: "new" } | { mode: "edit"; trigger: TriggerView }
   >({ mode: "closed" });
@@ -52,7 +67,9 @@ export function EditorShell({
       <FlowEditor
         key={generation}
         initial={initial}
-        stats={stats}
+        metrics={metrics}
+        metricsLoading={loadingMetrics}
+        onPeriodChange={changePeriod}
         flows={flows}
         triggers={triggers}
         onAddTrigger={() => setDialog({ mode: "new" })}

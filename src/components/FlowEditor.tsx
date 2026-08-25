@@ -17,6 +17,7 @@ import ReactFlow, {
 import "reactflow/dist/style.css";
 import {
   AlertTriangle,
+  BarChart3,
   Check,
   LayoutGrid,
   Loader2,
@@ -29,6 +30,13 @@ import {
   XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { StatusPill } from "@/components/ui/status-pill";
 import { setUnsaved } from "@/lib/ui/unsaved";
@@ -43,7 +51,9 @@ import {
 import { clipSelection, parseClip, pasteClip, serializeClip } from "../lib/flow-clipboard";
 import { emptyHistory, record, redo, undo } from "../lib/flow-history";
 import { layoutGraph } from "../lib/flow-layout";
-import type { FlowStats } from "../server/flow-metrics";
+import type { EditorMetrics } from "../server/flow-editor-metrics";
+import { PERIOD_LABEL, STATS_PERIODS, type StatsPeriod } from "../lib/stats-period";
+import { FunnelPanel } from "./FunnelPanel";
 import { nodeTypes } from "./nodes";
 import { PropertiesPanel, type GotoTargets } from "./PropertiesPanel";
 import { TriggerNode, TRIGGER_NODE_ID, type TriggerNodeData } from "./TriggerNode";
@@ -218,7 +228,10 @@ export function FlowEditor(props: FlowEditorProps) {
 
 type FlowEditorProps = {
   initial: FlowGraph;
-  stats?: FlowStats;
+  /** Numbers for the canvas; absent for callers without them (the preview). */
+  metrics?: EditorMetrics;
+  metricsLoading?: boolean;
+  onPeriodChange?: (period: StatsPeriod) => void;
   /** Every flow, for "Ir para outro fluxo". Absent = the selector is empty. */
   flows?: Array<{ id: string; name: string }>;
   /**
@@ -245,7 +258,9 @@ type FlowEditorProps = {
 
 function FlowEditorInner({
   initial,
-  stats,
+  metrics,
+  metricsLoading,
+  onPeriodChange,
   flows,
   triggers,
   onAddTrigger,
@@ -286,7 +301,9 @@ function FlowEditorInner({
   }, [dirty]);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [panel, setPanel] = useState(true);
+  const [funnelOpen, setFunnelOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const stats = metrics?.stats;
 
   /**
    * Replace one node's data, then reap any edge the change orphaned.
@@ -412,6 +429,7 @@ function FlowEditorInner({
       data: {
         ...n.data,
         _stats: stats?.[n.id],
+        _ab: metrics?.ab[n.id],
         _names: flowNames,
         _onText: (text: string) =>
           updateNodeData(n.id, withInlineText(n.data as FlowNodeData, text)),
@@ -451,7 +469,17 @@ function FlowEditorInner({
     };
 
     return [card as Node, ...real];
-  }, [nodes, edges, stats, flowNames, updateNodeData, triggers, onAddTrigger, onEditTrigger]);
+  }, [
+    nodes,
+    edges,
+    stats,
+    metrics?.ab,
+    flowNames,
+    updateNodeData,
+    triggers,
+    onAddTrigger,
+    onEditTrigger,
+  ]);
 
   const onConnect = useCallback(
     (c: Connection) => {
@@ -505,6 +533,7 @@ function FlowEditorInner({
         delete rest._stats;
         delete rest._onText;
         delete rest._names;
+        delete rest._ab;
         return { ...n, data: rest };
       }),
       edges,
@@ -779,9 +808,42 @@ function FlowEditorInner({
           <span className="text-xs text-neutral-500">
             {nodes.length} {nodes.length === 1 ? "passo" : "passos"}
           </span>
-          <span className="hidden text-xs text-neutral-400 sm:inline">
+          <span className="hidden text-xs text-neutral-400 xl:inline">
             Duplo clique edita o texto · ⌘D duplica · ⌘C/⌘V copia e cola · Delete remove
           </span>
+          {metrics && (
+            <>
+              <Select
+                value={metrics.period}
+                onValueChange={(v) => onPeriodChange?.(v as StatsPeriod)}
+                disabled={!onPeriodChange}
+              >
+                <SelectTrigger
+                  className="h-8 w-[150px] text-xs"
+                  aria-label="Período das métricas"
+                  aria-busy={metricsLoading}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {STATS_PERIODS.map((p) => (
+                    <SelectItem key={p} value={p}>
+                      {PERIOD_LABEL[p]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setFunnelOpen((v) => !v)}
+                aria-pressed={funnelOpen}
+              >
+                <BarChart3 aria-hidden />
+                Funil
+              </Button>
+            </>
+          )}
           <div className="ml-auto flex items-center gap-3">
             <span aria-live="polite" className="text-xs font-medium">
               {saveError && <span className="text-rose-600">{saveError}</span>}
@@ -906,6 +968,15 @@ function FlowEditorInner({
           </ReactFlow>
         </div>
       </div>
+
+      {metrics && funnelOpen && (
+        <FunnelPanel
+          funnel={metrics.funnel}
+          labels={Object.fromEntries(gotoTargets.nodes.map((n) => [n.id, n.label]))}
+          loading={metricsLoading}
+          onClose={() => setFunnelOpen(false)}
+        />
+      )}
 
       <PropertiesPanel
         node={selected}
