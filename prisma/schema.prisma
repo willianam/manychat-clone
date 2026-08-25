@@ -82,6 +82,18 @@ model CustomField {
   createdAt    DateTime  @default(now())
 }
 
+/// A saved audience. `rules` is the JSON shape validated by
+/// lib/segment-rules.ts; server/segments.ts turns it into a Prisma where.
+model Segment {
+  id        String   @id @default(cuid())
+  name      String
+  rules     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  broadcasts Broadcast[]
+}
+
 model Tag {
   id        String       @id @default(cuid())
   name      String       @unique
@@ -288,10 +300,13 @@ model Broadcast {
   text         String
   status       BroadcastStatus @default(DRAFT)
   /// Tag ids the recipient must have. Empty = everyone subscribed.
+  /// Ignored when `segmentId` is set — a segment replaces the tag filter.
   filterTagIds String[]        @default([])
+  segmentId    String?
   scheduledAt  DateTime?
   createdAt    DateTime        @default(now())
 
+  segment    Segment?             @relation(fields: [segmentId], references: [id], onDelete: SetNull)
   recipients BroadcastRecipient[]
 }
 

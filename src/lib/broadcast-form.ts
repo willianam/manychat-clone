@@ -9,6 +9,8 @@ export type BroadcastDraft = {
   name: string;
   text: string;
   filterTagIds: string[];
+  /** A saved segment; replaces `filterTagIds` when set. */
+  segmentId: string | null;
   /** Instant to send at, or null to send as soon as it is queued. */
   scheduledAt: Date | null;
 };
@@ -28,6 +30,7 @@ export function parseBroadcastForm(
   if (!text) throw new Error("A mensagem não pode ficar vazia.");
 
   const filterTagIds = formData.getAll("tagIds").map(String).filter(Boolean);
+  const segmentId = String(formData.get("segmentId") ?? "").trim() || null;
 
   // The input is a wall-clock time in the owner's zone, not the server's.
   const raw = String(formData.get("scheduledAt") ?? "").trim();
@@ -40,5 +43,5 @@ export function parseBroadcastForm(
     }
   }
 
-  return { name, text, filterTagIds, scheduledAt };
+  return { name, text, filterTagIds, segmentId, scheduledAt };
 }

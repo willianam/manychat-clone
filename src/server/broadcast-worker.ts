@@ -1,6 +1,14 @@
 import type { PrismaClient } from "@prisma/client";
 import { sendText, SendBlocked } from "./instagram";
 import { canSend, WINDOW_MS } from "../lib/messaging-window";
+import {
+  parseSegmentRules,
+  segmentWhere,
+  filterSegment,
+  needsFilter,
+  SEGMENT_CONTACT_SELECT,
+} from "./segments";
+import type { SegmentRules } from "../lib/segment-rules";
 
 /**
  * Broadcast sender.
@@ -33,12 +41,12 @@ export async function enqueueBroadcast(
   broadcastId: string,
   opts: { window?: "in" | "out" } = {},
 ): Promise<number> {
-  const b = await db.broadcast.findUniqueOrThrow({ where: { id: broadcastId } });
-
-  const contacts = await db.contact.findMany({
-    where: audienceWhere({ tagIds: b.filterTagIds, window: opts.window }),
-    select: { id: true },
+  const b = await db.broadcast.findUniqueOrThrow({
+    where: { id: broadcastId },
+    include: { segment: true },
   });
+
+  const contacts = await resolveAudience(db, { ...audienceOf(b), window: opts.window });
 
   if (contacts.length === 0) {
     await db.broadcast.update({ where: { id: b.id }, data: { status: "DONE" } });
@@ -76,9 +84,25 @@ export type WindowPreview = {
 
 export type AudienceFilter = {
   tagIds?: string[];
+  /** A saved segment's rules. When present, `tagIds` is ignored. */
+  rules?: SegmentRules;
   /** Restrict to contacts inside / outside the window. Undefined = both. */
   window?: "in" | "out";
 };
+
+/**
+ * The audience a broadcast row describes: its segment when it has one,
+ * otherwise its tag filter. Segments win because they can say everything
+ * tags can and more, and combining the two would mean two sets of rules
+ * for one send.
+ */
+export function audienceOf(b: {
+  filterTagIds: string[];
+  segment?: { rules: unknown } | null;
+}): AudienceFilter {
+  if (b.segment) return { rules: parseSegmentRules(b.segment.rules) };
+  return { tagIds: b.filterTagIds };
+}
 
 /** Prisma `where` for an audience selection. Shared so the preview counts
  *  exactly the rows the send will later walk. */
@@ -86,13 +110,31 @@ export function audienceWhere(filter: AudienceFilter, now = new Date()) {
   const cutoff = new Date(now.getTime() - WINDOW_MS);
   return {
     subscribed: true,
-    ...(filter.tagIds?.length ? { tags: { some: { tagId: { in: filter.tagIds } } } } : {}),
+    ...(filter.rules ? segmentWhere(filter.rules) : {}),
+    ...(!filter.rules && filter.tagIds?.length
+      ? { tags: { some: { tagId: { in: filter.tagIds } } } }
+      : {}),
     ...(filter.window === "in" ? { lastInboundAt: { gt: cutoff } } : {}),
     // Outside the window includes contacts who never wrote at all (null).
     ...(filter.window === "out"
       ? { OR: [{ lastInboundAt: null }, { lastInboundAt: { lte: cutoff } }] }
       : {}),
   };
+}
+
+/**
+ * The contacts an audience filter selects right now.
+ *
+ * A segment may carry rules Postgres cannot evaluate (see segments.ts), so
+ * the rows are fetched with what the in-memory pass needs and filtered
+ * once more. Tag-only audiences pay nothing extra: the filter is a no-op.
+ */
+export async function resolveAudience(db: PrismaClient, filter: AudienceFilter, now = new Date()) {
+  const rows = await db.contact.findMany({
+    where: audienceWhere(filter, now),
+    select: SEGMENT_CONTACT_SELECT,
+  });
+  return filter.rules ? filterSegment(rows, filter.rules, now) : rows;
 }
 
 /** Count how much of a prospective audience is reachable right now. */
@@ -102,15 +144,22 @@ export async function previewAudience(
   now = new Date(),
 ): Promise<WindowPreview> {
   // Ignore any window restriction for the totals — the preview's job is to
-  // report the split, so it must look at the whole tag-selected audience.
-  const base = audienceWhere({ tagIds: filter.tagIds }, now);
+  // report the split, so it must look at the whole selected audience.
+  const base: AudienceFilter = { tagIds: filter.tagIds, rules: filter.rules };
 
-  const [total, inWindow] = await Promise.all([
-    db.contact.count({ where: base }),
-    db.contact.count({
-      where: audienceWhere({ tagIds: filter.tagIds, window: "in" }, now),
-    }),
-  ]);
+  let total: number;
+  let inWindow: number;
+  if (filter.rules && needsFilter(filter.rules)) {
+    // Counting in the database would miss the in-memory rules; walk the rows.
+    const rows = await resolveAudience(db, base, now);
+    total = rows.length;
+    inWindow = rows.filter((c) => canSend(c.lastInboundAt, { now }).allowed).length;
+  } else {
+    [total, inWindow] = await Promise.all([
+      db.contact.count({ where: audienceWhere(base, now) }),
+      db.contact.count({ where: audienceWhere({ ...base, window: "in" }, now) }),
+    ]);
+  }
 
   const outOfWindow = total - inWindow;
   return {

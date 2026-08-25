@@ -1,5 +1,5 @@
 import { db } from "../../server/db";
-import { previewAudience } from "../../server/broadcast-worker";
+import { previewAudience, audienceOf } from "../../server/broadcast-worker";
 import { createBroadcast, queueBroadcast, deleteBroadcast } from "./actions";
 import { AudiencePicker } from "./AudiencePicker";
 import { accountTimeZone, formatInTimeZone } from "../../lib/timezone";
@@ -8,12 +8,13 @@ export const dynamic = "force-dynamic";
 
 export default async function BroadcastsPage() {
   const timeZone = accountTimeZone();
-  const [tags, broadcasts] = await Promise.all([
+  const [tags, segments, broadcasts] = await Promise.all([
     db.tag.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, color: true } }),
+    db.segment.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     db.broadcast.findMany({
       orderBy: { createdAt: "desc" },
       take: 20,
-      include: { _count: { select: { recipients: true } } },
+      include: { _count: { select: { recipients: true } }, segment: true },
     }),
   ]);
 
@@ -23,7 +24,7 @@ export default async function BroadcastsPage() {
     await Promise.all(
       broadcasts
         .filter((b) => b.status === "DRAFT")
-        .map(async (b) => [b.id, await previewAudience(db, { tagIds: b.filterTagIds })] as const),
+        .map(async (b) => [b.id, await previewAudience(db, audienceOf(b))] as const),
     ),
   );
 
@@ -59,6 +60,26 @@ export default async function BroadcastsPage() {
 
         <AudiencePicker tags={tags} />
 
+        {segments.length > 0 && (
+          <div>
+            <label className="block text-xs text-neutral-500">
+              Segmento (opcional; substitui as etiquetas)
+            </label>
+            <select
+              name="segmentId"
+              defaultValue=""
+              className="mt-1 rounded border px-2 py-1.5 text-sm"
+            >
+              <option value="">nenhum</option>
+              {segments.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         <div>
           <label className="block text-xs text-neutral-500">Agendar para (opcional)</label>
           <input
@@ -93,6 +114,9 @@ export default async function BroadcastsPage() {
                   <span className="text-xs text-neutral-500">
                     {b._count.recipients} destinatário(s)
                   </span>
+                )}
+                {b.segment && (
+                  <span className="text-xs text-neutral-500">segmento: {b.segment.name}</span>
                 )}
                 {b.scheduledAt && (
                   <span className="text-xs text-neutral-500">
