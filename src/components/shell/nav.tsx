@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  Filter,
   Home,
   Link2,
   Megaphone,
@@ -22,6 +23,7 @@ export const NAV: NavItem[] = [
   { href: "/contacts", label: "Contatos", icon: Users },
   { href: "/tags", label: "Etiquetas", icon: Tag },
   { href: "/campos", label: "Campos", icon: SlidersHorizontal },
+  { href: "/segmentos", label: "Segmentos", icon: Filter },
   { href: "/broadcasts", label: "Disparos", icon: Megaphone },
   { href: "/insights", label: "Insights", icon: BarChart3 },
   { href: "/ref-links", label: "Links", icon: Link2 },
