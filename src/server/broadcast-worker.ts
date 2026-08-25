@@ -405,8 +405,9 @@ async function deliver(
  * as waiting; its `resumeAt` is the timeout.
  */
 export async function tickDelayedSessions(db: PrismaClient): Promise<number> {
+  const now = new Date();
   const due = await db.flowSession.findMany({
-    where: { status: { in: ["ACTIVE", "WAITING_INPUT"] }, resumeAt: { lte: new Date() } },
+    where: { status: { in: ["ACTIVE", "WAITING_INPUT"] }, resumeAt: { lte: now } },
     take: 100,
   });
 
@@ -414,8 +415,21 @@ export async function tickDelayedSessions(db: PrismaClient): Promise<number> {
   let resumed = 0;
 
   for (const s of due) {
-    await db.flowSession.update({ where: { id: s.id }, data: { resumeAt: null } });
-    await resumeDelayed(db, s).catch((err) => {
+    // Claim the session by clearing resumeAt ONLY if it is still due. Two
+    // ticks racing on the same row: exactly one updateMany reports count 1,
+    // and the loser skips instead of resuming the flow a second time.
+    //
+    // The claim keeps `resumeAt` set until the row is ours, so a crash
+    // BEFORE this point leaves the session due and the next tick retries it.
+    // (A crash after the claim still drops it — resuming is not idempotent,
+    // so retrying it blindly would double-send. The sweep is the backstop.)
+    const { count } = await db.flowSession.updateMany({
+      where: { id: s.id, resumeAt: { lte: now } },
+      data: { resumeAt: null },
+    });
+    if (count !== 1) continue;
+
+    await resumeDelayed(db, { ...s, resumeAt: null }).catch((err) => {
       log.warn("delayed session failed to resume", { sessionId: s.id, err });
     });
     resumed++;

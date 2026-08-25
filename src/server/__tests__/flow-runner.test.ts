@@ -112,6 +112,12 @@ function fakeDb(opts: { graph?: object; trigger?: boolean } = {}) {
     flowSession: {
       findFirst: vi.fn().mockResolvedValue(null),
       findMany: vi.fn(() => Promise.resolve([{ ...session }])),
+      // The delay tick claims a due session with updateMany; a due row is
+      // claimed by exactly one caller, so this reports a single hit.
+      updateMany: vi.fn(({ data }: { data: object }) => {
+        Object.assign(session, data);
+        return Promise.resolve({ count: 1 });
+      }),
       create: vi.fn(write),
       update: vi.fn(write),
     },
@@ -229,14 +235,31 @@ describe("mark_seen across a delay", () => {
     const resumed = await tickDelayedSessions(db);
 
     expect(resumed).toBe(1);
-    expect(db.flowSession.update).toHaveBeenCalledWith({
-      where: { id: "session-1" },
+    // The session is claimed atomically: resumeAt is cleared only if it is
+    // still due, so two concurrent ticks cannot both resume this session.
+    expect(db.flowSession.updateMany).toHaveBeenCalledWith({
+      where: { id: "session-1", resumeAt: { lte: expect.any(Date) } },
       data: { resumeAt: null },
     });
     expect(textsSent()).toHaveLength(1);
     expect(textsSent()[0]).toContain("depois");
     expect(actionsSent()).toEqual(["mark_seen", "typing_on"]);
     expect(session.status).toBe("COMPLETED");
+  });
+
+  it("a tick that loses the claim resumes nothing", async () => {
+    const { db, session } = fakeDb({ graph: DELAY_MESSAGE_GRAPH });
+
+    await startFlow(db, FLOW, CONTACT);
+    vi.mocked(sendMessage).mockClear();
+    senderAction.mockClear();
+
+    // Another tick got there first: the claim matches no row.
+    vi.mocked(db.flowSession.updateMany).mockResolvedValueOnce({ count: 0 });
+
+    expect(await tickDelayedSessions(db)).toBe(0);
+    expect(vi.mocked(sendMessage)).not.toHaveBeenCalled();
+    expect(session.status).not.toBe("COMPLETED");
   });
 
   it("question → reply: a fresh inbound message gets its own mark_seen", async () => {

@@ -73,7 +73,11 @@ function fakeDb(graph: object) {
     flowSession: {
       findFirst: vi.fn().mockResolvedValue(null),
       findMany: vi.fn(() => Promise.resolve([{ ...session }])),
-      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      // A due session is claimed by exactly one tick: count 1.
+      updateMany: vi.fn(({ data }: { data: object }) => {
+        Object.assign(session, data);
+        return Promise.resolve({ count: 1 });
+      }),
       create: vi.fn(write),
       update: vi.fn(write),
     },
