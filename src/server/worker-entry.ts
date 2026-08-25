@@ -1,5 +1,6 @@
 import { db } from "./db";
 import { runBroadcast, tickDelayedSessions, sweepStaleSessions } from "./broadcast-worker";
+import { purgeOldDiagnostics } from "./retention";
 import { maybeRefreshToken } from "./token-refresh";
 import { rollupRecent } from "./rollup";
 import { recordError } from "./error-events";
@@ -57,6 +58,12 @@ async function tick(): Promise<void> {
     const { retried, recovered } = await reprocessFailed(db);
     if (retried) log.info("reprocessed failed webhook events", { retried, recovered });
     await rollupRecent(db);
+
+    // Raw webhook payloads and error stacks expire; see server/retention.ts.
+    const purged = await purgeOldDiagnostics(db);
+    if (purged.webhookEvents || purged.errorEvents) {
+      log.info("purged expired diagnostics", purged);
+    }
   }
 }
 

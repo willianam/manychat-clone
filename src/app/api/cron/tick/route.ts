@@ -8,6 +8,7 @@ import {
 import { maybeRefreshToken } from "../../../../server/token-refresh";
 import { rollupRecent } from "../../../../server/rollup";
 import { reprocessFailed } from "../../../../server/webhook-events";
+import { purgeOldDiagnostics } from "../../../../server/retention";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -69,6 +70,9 @@ export async function GET(req: NextRequest) {
   // Daily aggregates last: they read what the jobs above just wrote.
   const rolled = await rollupRecent(db);
 
+  // Raw webhook payloads and error stacks expire; see server/retention.ts.
+  const purged = await purgeOldDiagnostics(db);
+
   return NextResponse.json({
     ok: true,
     token: token.action,
@@ -77,5 +81,6 @@ export async function GET(req: NextRequest) {
     broadcast,
     reprocessed,
     rolled,
+    purged,
   });
 }

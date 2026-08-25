@@ -37,6 +37,16 @@ paradas, avançar um disparo, renovar o token) acontece por três caminhos:
    retoma no horário se algo chama o tick nesse intervalo. Roda no
    docker-compose (VPS ou local), não na Vercel.
 
+> **Uma vez por dia é decisão de plano, não limitação do código.** No Hobby
+> da Vercel o cron só roda diariamente, então **numa conta parada um delay
+> pode atrasar até 24 h**. Para tempo confiável, escolha um dos dois: plano
+> Vercel pago (cron de minuto em minuto, basta editar `vercel.json`) ou o
+> worker num host que segure um loop. O código não muda em nenhum dos casos.
+
+O tick também expira dados de diagnóstico: payloads brutos de webhook (7
+dias, 30 quando o processamento falhou) e registros de erro (30 dias) —
+`src/server/retention.ts`.
+
 ## Segurança
 
 Tudo exceto `/api/webhook/*` e `/api/cron/*` fica atrás de uma senha única

@@ -11,7 +11,7 @@ export default function PrivacyPage() {
   return (
     <main className="mx-auto max-w-3xl px-6 py-16">
       <h1 className="text-3xl font-semibold tracking-tight">Política de Privacidade</h1>
-      <p className="mt-2 text-sm text-muted-foreground">Última atualização: 17 de agosto de 2026</p>
+      <p className="mt-2 text-sm text-muted-foreground">Última atualização: 25 de agosto de 2026</p>
 
       <div className="mt-8 space-y-8 text-[15px] leading-relaxed text-neutral-700">
         <section>
@@ -37,6 +37,15 @@ export default function PrivacyPage() {
             <li>Nome de usuário, nome de exibição e foto de perfil públicos</li>
             <li>O conteúdo das mensagens trocadas na conversa</li>
             <li>Etiquetas e campos que o próprio operador registra para organizar seus contatos</li>
+            <li>
+              Anotações que o operador escreve sobre um contato e um histórico de eventos do
+              atendimento (etiqueta aplicada, descadastro, entrada em um fluxo)
+            </li>
+            <li>
+              Por até 7 dias, o conteúdo bruto das notificações que a API do Instagram nos envia, e
+              por até 30 dias registros técnicos de erro, ambos para diagnóstico. Depois desse prazo
+              são apagados automaticamente
+            </li>
           </ul>
           <p className="mt-3">
             Não coletamos e não solicitamos senhas, dados de pagamento, documentos, localização ou
@@ -66,10 +75,13 @@ export default function PrivacyPage() {
         <section>
           <h2 className="mb-2 text-lg font-semibold text-neutral-900">Retenção e exclusão</h2>
           <p>
-            As conversas ficam armazenadas enquanto forem úteis ao atendimento. Qualquer pessoa pode
-            solicitar a exclusão dos seus dados enviando uma mensagem à conta do Instagram
-            conectada, e a remoção é feita no banco de dados da aplicação. A desconexão do
-            aplicativo pelo Instagram também interrompe imediatamente qualquer novo tratamento.
+            As conversas ficam armazenadas enquanto forem úteis ao atendimento. Os registros
+            técnicos têm prazo fixo: notificações brutas do Instagram são apagadas em 7 dias (30
+            dias quando o processamento falhou e o registro é a única evidência do ocorrido) e
+            registros de erro em 30 dias, por uma rotina automática. Qualquer pessoa pode solicitar
+            a exclusão dos seus dados enviando uma mensagem à conta do Instagram conectada, e a
+            remoção é feita no banco de dados da aplicação. A desconexão do aplicativo pelo
+            Instagram também interrompe imediatamente qualquer novo tratamento.
           </p>
         </section>
 
@@ -78,8 +90,9 @@ export default function PrivacyPage() {
           <p>
             O acesso ao painel é protegido por autenticação. As requisições recebidas do Instagram
             são verificadas por assinatura criptográfica (HMAC-SHA256), de modo que apenas
-            notificações legítimas da Meta são processadas. As credenciais ficam em variáveis de
-            ambiente e nunca no código-fonte.
+            notificações legítimas da Meta são processadas. As credenciais de configuração ficam em
+            variáveis de ambiente e nunca no código-fonte; o token de acesso ao Instagram é guardado
+            no banco de dados da aplicação, porque é renovado automaticamente antes de expirar.
           </p>
         </section>
 
