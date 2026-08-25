@@ -3,6 +3,7 @@ import { runBroadcast, tickDelayedSessions, sweepStaleSessions } from "./broadca
 import { maybeRefreshToken } from "./token-refresh";
 import { rollupRecent } from "./rollup";
 import { recordError } from "./error-events";
+import { reprocessFailed } from "./webhook-events";
 import { logger } from "../lib/log";
 
 const log = logger("worker");
@@ -52,6 +53,8 @@ async function tick(): Promise<void> {
 
   if (Date.now() - lastRollup >= ROLLUP_MS) {
     lastRollup = Date.now();
+    const { retried, recovered } = await reprocessFailed(db);
+    if (retried) log.info("reprocessed failed webhook events", { retried, recovered });
     await rollupRecent(db);
   }
 }

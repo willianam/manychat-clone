@@ -306,7 +306,16 @@ model WebhookEvent {
   raw        Json
   receivedAt DateTime @default(now())
 
+  /// Set once the handler for this event ran to completion.
+  processedAt DateTime?
+  /// Message of the last failure. Cleared when a retry succeeds.
+  error       String?
+  /// Handler runs so far (the inline one counts). reprocessFailed retries
+  /// a failed row once, so this tops out at 2.
+  attempts    Int       @default(0)
+
   @@index([receivedAt])
+  @@index([processedAt, attempts])
 }
 
 /// An inbound message that matched no trigger.

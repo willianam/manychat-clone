@@ -177,7 +177,11 @@ isso a rota lê `await req.text()` primeiro. A comparação é constant-time.
 
 **Retry agressivo**. A Meta reenvia qualquer webhook que demore mais que
 ~20s. A rota responde 200 na hora e processa em background; a tabela
-`WebhookEvent` deduplica por id de entrega.
+`WebhookEvent` deduplica por id de entrega. Cada evento é reivindicado
+como uma linha dessa tabela e o handler grava `processedAt` (sucesso) ou
+`error` + `attempts` (falha). `reprocessFailed()` (`src/server/webhook-events.ts`),
+chamado pelo tick e pelo worker, roda uma segunda vez os eventos que
+falharam — uma falha transitória (banco, Meta 5xx) não perde a mensagem.
 
 **Rate limit**. Broadcasts são paced em `BROADCAST_RATE` msg/s (padrão 5).
 Rajada leva a throttle (erro 613) ou flag na conta.
