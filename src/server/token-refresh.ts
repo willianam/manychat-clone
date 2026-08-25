@@ -124,10 +124,15 @@ export type RefreshOutcome =
  *
  * Never throws: a refresh failure is recorded on the row and must not stop
  * the rest of the tick (delays, broadcasts) from running.
+ *
+ * `force` skips the due check — the settings page's "renovar agora". Meta
+ * still refuses a token younger than 24h; that lands in `lastError` like
+ * any other failure.
  */
 export async function maybeRefreshToken(
   db: PrismaClient,
   now = new Date(),
+  opts: { force?: boolean } = {},
 ): Promise<RefreshOutcome> {
   let cred: Credential | null;
   try {
@@ -140,7 +145,9 @@ export async function maybeRefreshToken(
   if (!cred) return { action: "unconfigured" };
 
   const dueAt = cred.expiresAt ? cred.expiresAt.getTime() - REFRESH_AHEAD_DAYS * DAY_MS : 0;
-  if (now.getTime() < dueAt) return { action: "skipped", expiresAt: cred.expiresAt };
+  if (!opts.force && now.getTime() < dueAt) {
+    return { action: "skipped", expiresAt: cred.expiresAt };
+  }
 
   try {
     const url =

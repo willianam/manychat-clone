@@ -9,6 +9,7 @@ import {
   type MenuItemInput,
 } from "../../lib/messenger-profile";
 import { pushIceBreakers, pushPersistentMenu } from "../../server/messenger-profile-api";
+import { maybeRefreshToken } from "../../server/token-refresh";
 
 /**
  * Ice breakers and persistent menu.
@@ -137,4 +138,18 @@ async function syncAndStore(
   });
 
   revalidatePath("/configuracoes");
+}
+
+/**
+ * "Renovar agora" on the connection tab. Forces the refresh the tick would
+ * otherwise wait for; the outcome is what the page shows next.
+ */
+export async function refreshTokenNow() {
+  const out = await maybeRefreshToken(db, new Date(), { force: true });
+  revalidatePath("/configuracoes");
+  revalidatePath("/", "layout");
+  if (out.action === "failed") throw new Error(`A Meta recusou a renovação: ${out.error}`);
+  if (out.action === "unconfigured") {
+    throw new Error("Não há token para renovar: defina IG_ACCESS_TOKEN.");
+  }
 }
