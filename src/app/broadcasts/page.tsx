@@ -1,8 +1,26 @@
+import { Megaphone } from "lucide-react";
 import { db } from "../../server/db";
 import { previewAudience } from "../../server/broadcast-worker";
 import { createBroadcast, queueBroadcast, deleteBroadcast } from "./actions";
 import { AudiencePicker } from "./AudiencePicker";
 import { accountTimeZone, formatInTimeZone } from "../../lib/timezone";
+import { Card, CardContent } from "@/components/ui/card";
+import { ConfirmSubmitButton } from "@/components/ui/confirm-submit-button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/ui/page-header";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { StatusPill } from "@/components/ui/status-pill";
+import { SubmitButton } from "@/components/ui/submit-button";
+import { Textarea } from "@/components/ui/textarea";
+import { broadcastStatusLabel, broadcastStatusTone } from "@/lib/ui/labels";
 
 export const dynamic = "force-dynamic";
 
@@ -28,53 +46,48 @@ export default async function BroadcastsPage() {
   );
 
   return (
-    <main className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="text-2xl font-semibold">Disparos</h1>
-      <p className="mt-1 text-sm text-neutral-600">
-        Uma mensagem para muitos contatos. Só chega em quem escreveu nas últimas 24 horas — por isso
-        o número aparece antes de você disparar, e não só no relatório.
-      </p>
+    <main className="mx-auto w-full max-w-4xl px-6 py-8">
+      <PageHeader
+        title="Disparos"
+        description="Uma mensagem para muitos contatos. Só chega em quem escreveu nas últimas 24 horas, por isso o número aparece antes de você disparar, e não só no relatório."
+      />
 
-      <form action={createBroadcast} className="mt-6 space-y-4 rounded-lg border bg-white p-4">
-        <div>
-          <label className="block text-xs text-neutral-500">Nome interno</label>
-          <input
-            name="name"
-            maxLength={120}
-            placeholder="ex: promoção de sexta"
-            className="mt-1 w-full rounded border px-2 py-1.5 text-sm"
-          />
-        </div>
+      <Card className="mt-6">
+        <CardContent className="p-4">
+          <form action={createBroadcast} className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="bc-name">Nome interno</Label>
+              <Input id="bc-name" name="name" maxLength={120} placeholder="ex: promoção de sexta" />
+            </div>
 
-        <div>
-          <label className="block text-xs text-neutral-500">Mensagem</label>
-          <textarea
-            name="text"
-            required
-            rows={4}
-            maxLength={1000}
-            className="mt-1 w-full rounded border px-2 py-1.5 text-sm"
-          />
-        </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="bc-text">Mensagem</Label>
+              <Textarea id="bc-text" name="text" required rows={4} maxLength={1000} />
+            </div>
 
-        <AudiencePicker tags={tags} />
+            <AudiencePicker tags={tags} />
 
-        <div>
-          <label className="block text-xs text-neutral-500">Agendar para (opcional)</label>
-          <input
-            type="datetime-local"
-            name="scheduledAt"
-            className="mt-1 rounded border px-2 py-1.5 text-sm"
-          />
-          <p className="mt-1 text-xs text-neutral-500">
-            Horário de {timeZone}. Depois de enfileirado, o disparo espera até esse momento.
-          </p>
-        </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="bc-when">Agendar para (opcional)</Label>
+              <Input id="bc-when" type="datetime-local" name="scheduledAt" className="w-auto" />
+              <p className="text-xs text-muted-foreground">
+                Horário de {timeZone}. Depois de enfileirado, o disparo espera até esse momento.
+              </p>
+            </div>
 
-        <button className="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white">
-          Salvar rascunho
-        </button>
-      </form>
+            <SubmitButton pendingLabel="Salvando…">Salvar rascunho</SubmitButton>
+          </form>
+        </CardContent>
+      </Card>
+
+      {broadcasts.length === 0 && (
+        <EmptyState
+          className="mt-6"
+          icon={Megaphone}
+          title="Nenhum disparo ainda."
+          description="Salve um rascunho acima. Ele fica aqui até você enfileirar o envio."
+        />
+      )}
 
       <div className="mt-6 space-y-2">
         {broadcasts.map((b) => {
@@ -83,59 +96,71 @@ export default async function BroadcastsPage() {
           const p = previews.get(b.id) ?? null;
 
           return (
-            <div key={b.id} className="rounded-lg border bg-white p-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="font-medium">{b.name}</span>
-                <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-700">
-                  {b.status}
-                </span>
-                {b._count.recipients > 0 && (
-                  <span className="text-xs text-neutral-500">
-                    {b._count.recipients} destinatário(s)
-                  </span>
-                )}
-                {b.scheduledAt && (
-                  <span className="text-xs text-neutral-500">
-                    agendado para {formatInTimeZone(b.scheduledAt, timeZone)}
-                  </span>
-                )}
-              </div>
-              <p className="mt-2 whitespace-pre-wrap text-sm text-neutral-700">{b.text}</p>
-
-              {p && (
-                <div
-                  className={`mt-2 text-xs ${p.mostlyOutOfWindow ? "text-amber-800" : "text-neutral-600"}`}
-                >
-                  {p.inWindow} de {p.total} contatos estão dentro da janela agora
-                  {p.mostlyOutOfWindow && " — a maioria não vai receber"}
+            <Card key={b.id}>
+              <CardContent className="p-4">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="font-medium">{b.name}</span>
+                  <StatusPill tone={broadcastStatusTone(b.status)}>
+                    {broadcastStatusLabel(b.status)}
+                  </StatusPill>
+                  {b._count.recipients > 0 && (
+                    <span className="text-xs text-muted-foreground">
+                      {b._count.recipients} destinatário(s)
+                    </span>
+                  )}
+                  {b.scheduledAt && (
+                    <span className="text-xs text-muted-foreground">
+                      agendado para {formatInTimeZone(b.scheduledAt, timeZone)}
+                    </span>
+                  )}
                 </div>
-              )}
+                <p className="mt-2 whitespace-pre-wrap text-sm text-neutral-700">{b.text}</p>
 
-              {b.status === "DRAFT" && (
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <form action={queueBroadcast} className="flex items-center gap-2">
-                    <input type="hidden" name="id" value={b.id} />
-                    <select
-                      name="window"
-                      defaultValue="in"
-                      className="rounded border px-2 py-1 text-sm"
-                    >
-                      <option value="in">Só quem está dentro da janela</option>
-                      <option value="">Todos (fora da janela vai falhar)</option>
-                    </select>
-                    <button className="rounded bg-neutral-900 px-3 py-1 text-sm text-white">
-                      Enfileirar
-                    </button>
-                  </form>
-                  <form action={deleteBroadcast}>
-                    <input type="hidden" name="id" value={b.id} />
-                    <button className="rounded border px-3 py-1 text-sm text-rose-700 hover:bg-rose-50">
-                      Excluir
-                    </button>
-                  </form>
-                </div>
-              )}
-            </div>
+                {p && (
+                  <div
+                    className={`mt-2 text-xs ${p.mostlyOutOfWindow ? "text-amber-800" : "text-neutral-600"}`}
+                  >
+                    {p.inWindow} de {p.total} contatos estão dentro da janela agora
+                    {p.mostlyOutOfWindow && ". A maioria não vai receber"}
+                  </div>
+                )}
+
+                {b.status === "DRAFT" && (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <form action={queueBroadcast} className="flex flex-wrap items-center gap-2">
+                      <input type="hidden" name="id" value={b.id} />
+                      <Label htmlFor={`window-${b.id}`} className="sr-only">
+                        Filtro da janela
+                      </Label>
+                      <Select name="window" defaultValue="in">
+                        <SelectTrigger id={`window-${b.id}`} className="h-8 w-72 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="in">Só quem está dentro da janela</SelectItem>
+                          <SelectItem value="all">Todos (fora da janela vai falhar)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <SubmitButton size="sm" pendingLabel="Enfileirando…">
+                        Enfileirar
+                      </SubmitButton>
+                    </form>
+                    <form action={deleteBroadcast}>
+                      <input type="hidden" name="id" value={b.id} />
+                      <ConfirmSubmitButton
+                        variant="outline"
+                        size="sm"
+                        className="text-destructive hover:bg-rose-50 hover:text-destructive"
+                        title={`Excluir o rascunho "${b.name}"?`}
+                        description="O texto e o filtro de público são perdidos."
+                      >
+                        Excluir
+                      </ConfirmSubmitButton>
+                    </form>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           );
         })}
       </div>

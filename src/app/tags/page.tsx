@@ -1,5 +1,21 @@
+import { Tag } from "lucide-react";
 import { db } from "../../server/db";
 import { createTag, renameTag, deleteTag, mergeTags } from "./actions";
+import { Card, CardContent } from "@/components/ui/card";
+import { ConfirmSubmitButton } from "@/components/ui/confirm-submit-button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/ui/page-header";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { SubmitButton } from "@/components/ui/submit-button";
+import { TagChip } from "@/components/ui/tag-chip";
 
 export const dynamic = "force-dynamic";
 
@@ -26,154 +42,168 @@ export default async function TagsPage() {
   }
 
   return (
-    <main className="mx-auto max-w-4xl px-6 py-8">
-      <h1 className="text-2xl font-semibold">Etiquetas</h1>
-      <p className="mt-1 text-sm text-neutral-600">
-        Etiquetas marcam contatos e são usadas por fluxos e disparos. Renomear atualiza os fluxos
-        que citam a etiqueta; excluir avisa antes se ela estiver em uso.
-      </p>
+    <main className="mx-auto w-full max-w-4xl px-6 py-8">
+      <PageHeader
+        title="Etiquetas"
+        description="Etiquetas marcam contatos e são usadas por fluxos e disparos. Renomear atualiza os fluxos que citam a etiqueta; excluir avisa antes se ela estiver em uso."
+      />
 
-      <form
-        action={createTag}
-        className="mt-6 flex flex-wrap items-end gap-2 rounded-lg border bg-white p-4"
-      >
-        <div>
-          <label className="block text-xs text-neutral-500">Nova etiqueta</label>
-          <input
-            name="name"
-            required
-            maxLength={60}
-            placeholder="ex: lead-quente"
-            className="mt-1 rounded border px-2 py-1.5 text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-xs text-neutral-500">Cor</label>
-          <input
-            name="color"
-            type="color"
-            defaultValue="#6366f1"
-            className="mt-1 h-9 w-14 rounded border"
-          />
-        </div>
-        <button className="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white">Criar</button>
-      </form>
+      <Card className="mt-6">
+        <CardContent className="p-4">
+          <form action={createTag} className="flex flex-wrap items-end gap-3">
+            <div className="min-w-48 flex-1 space-y-1.5">
+              <Label htmlFor="tag-name">Nova etiqueta</Label>
+              <Input
+                id="tag-name"
+                name="name"
+                required
+                maxLength={60}
+                placeholder="ex: lead-quente"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="tag-color">Cor</Label>
+              <Input
+                id="tag-color"
+                name="color"
+                type="color"
+                defaultValue="#6366f1"
+                className="h-9 w-14 cursor-pointer p-1"
+              />
+            </div>
+            <SubmitButton pendingLabel="Criando…">Criar</SubmitButton>
+          </form>
+        </CardContent>
+      </Card>
 
       {tags.length === 0 && (
-        <div className="mt-6 rounded-lg border border-dashed bg-white p-8 text-center text-sm text-neutral-500">
-          Nenhuma etiqueta ainda.
-        </div>
+        <EmptyState
+          className="mt-6"
+          icon={Tag}
+          title="Nenhuma etiqueta ainda."
+          description="Crie a primeira acima. Fluxos podem marcar contatos com ela e disparos podem filtrar por ela."
+        />
       )}
 
       <div className="mt-4 space-y-2">
         {tags.map((t) => {
           const inFlows = usedNames.get(t.id) ?? [];
+          const inUse = inFlows.length > 0;
           return (
-            <div key={t.id} className="rounded-lg border bg-white p-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <span
-                  className="rounded-full px-2.5 py-0.5 text-xs text-white"
-                  style={{ backgroundColor: t.color }}
-                >
-                  {t.name}
-                </span>
-                <span className="text-sm tabular-nums text-neutral-600">
-                  {t._count.contacts} contato{t._count.contacts === 1 ? "" : "s"}
-                </span>
-                {inFlows.length > 0 && (
-                  <span className="text-xs text-amber-800" title={inFlows.join(", ")}>
-                    usada por {inFlows.length} fluxo{inFlows.length === 1 ? "" : "s"}
+            <Card key={t.id}>
+              <CardContent className="p-4">
+                <div className="flex flex-wrap items-center gap-3">
+                  <TagChip name={t.name} color={t.color} />
+                  <span className="text-sm tabular-nums text-neutral-600">
+                    {t._count.contacts} contato{t._count.contacts === 1 ? "" : "s"}
                   </span>
-                )}
-              </div>
-
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <form action={renameTag} className="flex items-center gap-2">
-                  <input type="hidden" name="id" value={t.id} />
-                  <input
-                    name="name"
-                    defaultValue={t.name}
-                    maxLength={60}
-                    className="rounded border px-2 py-1 text-sm"
-                  />
-                  <button className="rounded border px-3 py-1 text-sm hover:bg-neutral-50">
-                    Renomear
-                  </button>
-                </form>
-
-                <form action={deleteTag} className="flex items-center gap-1">
-                  <input type="hidden" name="id" value={t.id} />
-                  <button
-                    name="confirm"
-                    value="false"
-                    className="rounded border px-3 py-1 text-sm text-rose-700 hover:bg-rose-50"
-                  >
-                    Excluir
-                  </button>
-                  {inFlows.length > 0 && (
-                    <button
-                      name="confirm"
-                      value="true"
-                      className="rounded border border-rose-300 px-3 py-1 text-xs text-rose-700 hover:bg-rose-50"
-                      title="Exclui mesmo estando em uso por um fluxo"
-                    >
-                      excluir mesmo assim
-                    </button>
+                  {inUse && (
+                    <span className="text-xs text-amber-800" title={inFlows.join(", ")}>
+                      usada por {inFlows.length} fluxo{inFlows.length === 1 ? "" : "s"}
+                    </span>
                   )}
-                </form>
-              </div>
-            </div>
+                </div>
+
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <form action={renameTag} className="flex items-center gap-2">
+                    <input type="hidden" name="id" value={t.id} />
+                    <Label htmlFor={`rename-${t.id}`} className="sr-only">
+                      Novo nome para {t.name}
+                    </Label>
+                    <Input
+                      id={`rename-${t.id}`}
+                      name="name"
+                      defaultValue={t.name}
+                      maxLength={60}
+                      className="h-8 w-48"
+                    />
+                    <SubmitButton variant="outline" size="sm" pendingLabel="Renomeando…">
+                      Renomear
+                    </SubmitButton>
+                  </form>
+
+                  <form action={deleteTag} className="flex items-center gap-1">
+                    <input type="hidden" name="id" value={t.id} />
+                    <ConfirmSubmitButton
+                      name="confirm"
+                      value="false"
+                      variant="outline"
+                      size="sm"
+                      className="text-destructive hover:bg-rose-50 hover:text-destructive"
+                      title={`Excluir a etiqueta "${t.name}"?`}
+                      description={
+                        inUse
+                          ? 'Ela ainda é usada por fluxos; a exclusão será recusada até você confirmar em "excluir mesmo assim".'
+                          : `Os ${t._count.contacts} contato(s) perdem a marcação. Isso não pode ser desfeito.`
+                      }
+                    >
+                      Excluir
+                    </ConfirmSubmitButton>
+                    {inUse && (
+                      <ConfirmSubmitButton
+                        name="confirm"
+                        value="true"
+                        variant="destructive"
+                        size="sm"
+                        title={`Excluir "${t.name}" mesmo em uso?`}
+                        description={`Fluxos que citam esta etiqueta (${inFlows.join(", ")}) passam a apontar para algo que não existe. Isso não pode ser desfeito.`}
+                        confirmLabel="Excluir mesmo assim"
+                      >
+                        excluir mesmo assim
+                      </ConfirmSubmitButton>
+                    )}
+                  </form>
+                </div>
+              </CardContent>
+            </Card>
           );
         })}
       </div>
 
       {tags.length >= 2 && (
-        <form
-          action={mergeTags}
-          className="mt-6 flex flex-wrap items-end gap-2 rounded-lg border bg-white p-4"
-        >
-          <div>
-            <label className="block text-xs text-neutral-500">Mesclar esta…</label>
-            <select
-              name="sourceId"
-              required
-              defaultValue=""
-              className="mt-1 rounded border px-2 py-1.5 text-sm"
-            >
-              <option value="" disabled>
-                escolha…
-              </option>
-              {tags.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name} ({t._count.contacts})
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs text-neutral-500">…dentro desta</label>
-            <select
-              name="targetId"
-              required
-              defaultValue=""
-              className="mt-1 rounded border px-2 py-1.5 text-sm"
-            >
-              <option value="" disabled>
-                escolha…
-              </option>
-              {tags.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name} ({t._count.contacts})
-                </option>
-              ))}
-            </select>
-          </div>
-          <button className="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white">Mesclar</button>
-          <p className="w-full text-xs text-neutral-500">
-            Os contatos da primeira passam a ter a segunda, os fluxos e disparos são atualizados, e
-            a primeira é excluída.
-          </p>
-        </form>
+        <Card className="mt-6">
+          <CardContent className="p-4">
+            <form action={mergeTags} className="flex flex-wrap items-end gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="merge-source">Mesclar esta…</Label>
+                <Select name="sourceId" required>
+                  <SelectTrigger id="merge-source" className="w-56">
+                    <SelectValue placeholder="escolha…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {tags.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>
+                        {t.name} ({t._count.contacts})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="merge-target">…dentro desta</Label>
+                <Select name="targetId" required>
+                  <SelectTrigger id="merge-target" className="w-56">
+                    <SelectValue placeholder="escolha…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {tags.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>
+                        {t.name} ({t._count.contacts})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <SubmitButton variant="secondary" pendingLabel="Mesclando…">
+                Mesclar
+              </SubmitButton>
+              <p className="w-full text-xs text-muted-foreground">
+                Os contatos da primeira passam a ter a segunda, os fluxos e disparos são
+                atualizados, e a primeira é excluída.
+              </p>
+            </form>
+          </CardContent>
+        </Card>
       )}
     </main>
   );
