@@ -2,11 +2,17 @@ import { describe, it, expect, vi } from "vitest";
 import type { PrismaClient } from "@prisma/client";
 import { applyReadReceipt, applyDelivery } from "../receipts";
 
-function fakeDb(opts: { contact?: boolean; lastCreatedAt?: Date } = {}) {
+function fakeDb(
+  opts: { contact?: boolean; lastCreatedAt?: Date; recipient?: { id: string } | null } = {},
+) {
   const updateMany = vi.fn().mockResolvedValue({ count: 2 });
   const recipientUpdateMany = vi.fn().mockResolvedValue({ count: 0 });
+  // The newest recipient row still awaiting the status; null when none.
+  const recipientFindFirst = vi
+    .fn()
+    .mockResolvedValue(opts.recipient === undefined ? { id: "r-latest" } : opts.recipient);
   const db = {
-    broadcastRecipient: { updateMany: recipientUpdateMany },
+    broadcastRecipient: { updateMany: recipientUpdateMany, findFirst: recipientFindFirst },
     contact: {
       findUnique: vi.fn().mockResolvedValue(opts.contact === false ? null : { id: "c1" }),
     },
@@ -20,7 +26,7 @@ function fakeDb(opts: { contact?: boolean; lastCreatedAt?: Date } = {}) {
       updateMany,
     },
   } as unknown as PrismaClient;
-  return { db, updateMany, recipientUpdateMany };
+  return { db, updateMany, recipientUpdateMany, recipientFindFirst };
 }
 
 describe("applyReadReceipt", () => {
@@ -101,22 +107,56 @@ describe("applyDelivery", () => {
 });
 
 describe("broadcast recipients follow the receipts", () => {
-  it("a read watermark marks the contact's SENT/DELIVERED recipient rows READ", async () => {
-    const { db, recipientUpdateMany } = fakeDb();
+  it("a read watermark advances only the contact's most recent recipient row", async () => {
+    const { db, recipientUpdateMany, recipientFindFirst } = fakeDb();
     const watermark = new Date("2026-08-25T12:00:00Z");
     await applyReadReceipt(db, { kind: "read", igScopedId: "ig1", watermark });
+
+    // The candidate is the newest pending row at or before the watermark.
+    expect(recipientFindFirst).toHaveBeenCalledWith({
+      where: {
+        contactId: "c1",
+        status: { in: ["SENT", "DELIVERED"] },
+        sentAt: { lte: watermark },
+      },
+      orderBy: { sentAt: "desc" },
+      select: { id: true },
+    });
+    // And only that row is written — never a whole span of history.
     expect(recipientUpdateMany).toHaveBeenCalledWith({
-      where: { contactId: "c1", status: { in: ["SENT", "DELIVERED"] }, sentAt: { lte: watermark } },
+      where: { id: "r-latest" },
       data: { status: "READ" },
     });
   });
 
-  it("a delivery by mid uses that message's createdAt as the recipient watermark", async () => {
+  it("does not sweep older broadcasts of the same contact into READ", async () => {
+    const { db, recipientUpdateMany } = fakeDb();
+    await applyReadReceipt(db, {
+      kind: "read",
+      igScopedId: "ig1",
+      watermark: new Date("2026-08-25T12:00:00Z"),
+    });
+
+    // The regression: a where clause spanning every past send for the
+    // contact inflated the read rate of every historical broadcast.
+    const where = recipientUpdateMany.mock.calls[0]![0].where;
+    expect(where).toEqual({ id: "r-latest" });
+    expect(where).not.toHaveProperty("sentAt");
+    expect(where).not.toHaveProperty("contactId");
+  });
+
+  it("a delivery by mid anchors the candidate on that message's createdAt", async () => {
     const at = new Date("2026-08-25T13:00:00Z");
-    const { db, recipientUpdateMany } = fakeDb({ lastCreatedAt: at });
+    const { db, recipientUpdateMany, recipientFindFirst } = fakeDb({ lastCreatedAt: at });
     await applyDelivery(db, { kind: "delivery", igScopedId: "ig1", mids: ["m1"] });
+
+    expect(recipientFindFirst).toHaveBeenCalledWith({
+      where: { contactId: "c1", status: { in: ["SENT"] }, sentAt: { lte: at } },
+      orderBy: { sentAt: "desc" },
+      select: { id: true },
+    });
     expect(recipientUpdateMany).toHaveBeenCalledWith({
-      where: { contactId: "c1", status: "SENT", sentAt: { lte: at } },
+      where: { id: "r-latest" },
       data: { status: "DELIVERED" },
     });
   });
@@ -124,6 +164,16 @@ describe("broadcast recipients follow the receipts", () => {
   it("touches no recipient when there is nothing to anchor a watermark on", async () => {
     const { db, recipientUpdateMany } = fakeDb();
     await applyDelivery(db, { kind: "delivery", igScopedId: "ig1", mids: [] });
+    expect(recipientUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("touches no recipient when the contact has no pending broadcast row", async () => {
+    const { db, recipientUpdateMany } = fakeDb({ recipient: null });
+    await applyReadReceipt(db, {
+      kind: "read",
+      igScopedId: "ig1",
+      watermark: new Date("2026-08-25T12:00:00Z"),
+    });
     expect(recipientUpdateMany).not.toHaveBeenCalled();
   });
 });

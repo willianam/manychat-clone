@@ -24,7 +24,12 @@ function fakeDb(failedRows: Array<{ id: string; kind: string; raw: unknown }> = 
       findUnique: vi.fn().mockResolvedValue(null),
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
-    broadcastRecipient: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+    broadcastRecipient: {
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      // Receipts advance only the newest pending recipient row; this contact
+      // has none, so nothing is written.
+      findFirst: vi.fn().mockResolvedValue(null),
+    },
   } as unknown as PrismaClient;
   return { db, update };
 }

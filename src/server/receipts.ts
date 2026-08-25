@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { MessageStatus, PrismaClient } from "@prisma/client";
 import type { DeliveryEvent, ReadReceiptEvent } from "../lib/entry-events";
 
 /**
@@ -13,11 +13,34 @@ import type { DeliveryEvent, ReadReceiptEvent } from "../lib/entry-events";
  * a message created a moment after the watermark will be covered by the
  * next receipt, so the imprecision is harmless.
  *
- * Broadcast recipients move with the messages: a recipient row records
- * `sentAt` for the one message the broadcast sent that contact, so the
- * same watermark that marks the message read marks the recipient read.
- * Without this the report could never say "lido", only "enviado".
+ * Broadcast recipients move with the messages, but ONLY the most recent
+ * send to that contact. A watermark says "everything up to here is read",
+ * which across broadcasts would sweep every historical recipient row for
+ * that contact into READ and inflate the read rate of every past broadcast
+ * — a contact who reads today's message did not thereby read the one from
+ * March. A broadcast send carries no id we can match a receipt back to
+ * (the wire payload is plain content), so the honest scope is the latest
+ * pending recipient row: the one this receipt can plausibly be about.
  */
+
+/**
+ * The most recent recipient row for this contact that is still awaiting the
+ * given status and was sent at or before the watermark. Returns its id, or
+ * null when there is nothing to advance.
+ */
+async function latestRecipientId(
+  db: PrismaClient,
+  contactId: string,
+  status: MessageStatus[],
+  watermark: Date,
+): Promise<string | null> {
+  const row = await db.broadcastRecipient.findFirst({
+    where: { contactId, status: { in: status }, sentAt: { lte: watermark } },
+    orderBy: { sentAt: "desc" },
+    select: { id: true },
+  });
+  return row?.id ?? null;
+}
 
 export async function applyReadReceipt(db: PrismaClient, r: ReadReceiptEvent): Promise<number> {
   const contact = await db.contact.findUnique({
@@ -47,14 +70,18 @@ export async function applyReadReceipt(db: PrismaClient, r: ReadReceiptEvent): P
     },
     data: { status: "READ" },
   });
-  await db.broadcastRecipient.updateMany({
-    where: {
-      contactId: contact.id,
-      status: { in: ["SENT", "DELIVERED"] },
-      sentAt: { lte: watermark },
-    },
-    data: { status: "READ" },
-  });
+  const recipientId = await latestRecipientId(
+    db,
+    contact.id,
+    ["SENT", "DELIVERED"],
+    watermark,
+  );
+  if (recipientId) {
+    await db.broadcastRecipient.updateMany({
+      where: { id: recipientId },
+      data: { status: "READ" },
+    });
+  }
   return count;
 }
 
@@ -98,10 +125,13 @@ export async function applyDelivery(db: PrismaClient, d: DeliveryEvent): Promise
   }
 
   if (watermark) {
-    await db.broadcastRecipient.updateMany({
-      where: { contactId: contact.id, status: "SENT", sentAt: { lte: watermark } },
-      data: { status: "DELIVERED" },
-    });
+    const recipientId = await latestRecipientId(db, contact.id, ["SENT"], watermark);
+    if (recipientId) {
+      await db.broadcastRecipient.updateMany({
+        where: { id: recipientId },
+        data: { status: "DELIVERED" },
+      });
+    }
   }
 
   return count;
