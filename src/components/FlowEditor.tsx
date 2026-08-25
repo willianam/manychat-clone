@@ -8,13 +8,21 @@ import ReactFlow, {
   addEdge,
   useNodesState,
   useEdgesState,
-  ConnectionLineType,
-  MarkerType,
   type Connection,
   type Edge,
   type Node,
 } from "reactflow";
 import "reactflow/dist/style.css";
+import {
+  AlertTriangle,
+  Check,
+  Loader2,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Save,
+  XCircle,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { FlowGraph, validateGraph, type FlowIssue, type FlowNodeData } from "../lib/flow-schema";
 import { duplicateNode, pruneOrphanEdges, uid, withInlineText } from "../lib/flow-edit";
 import type { FlowStats } from "../server/flow-metrics";
@@ -403,10 +411,10 @@ export function FlowEditor({
   );
 
   return (
-    <div className="flex h-[calc(100vh-4rem)]">
+    <div className="flex h-full">
       {/* side panel — how a step gets added */}
       {panel && (
-        <aside className="w-64 shrink-0 overflow-y-auto border-r bg-white">
+        <aside className="hidden w-64 shrink-0 overflow-y-auto border-r bg-card md:block">
           <div className="border-b px-4 py-3">
             <h2 className="text-sm font-semibold">Adicionar bloco</h2>
             <p className="mt-0.5 text-xs text-neutral-500">Clique para inserir no fluxo</p>
@@ -416,7 +424,7 @@ export function FlowEditor({
               <button
                 key={b.kind}
                 onClick={() => addNode(b.kind)}
-                className="w-full rounded-lg border border-transparent px-3 py-2 text-left transition hover:border-neutral-200 hover:bg-neutral-50"
+                className="w-full rounded-lg border border-transparent px-3 py-2 text-left transition hover:border-border hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
               >
                 <div className={`text-[13px] font-semibold ${b.tone}`}>{b.label}</div>
                 <div className="text-[11px] leading-tight text-neutral-500">{b.hint}</div>
@@ -427,10 +435,17 @@ export function FlowEditor({
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex items-center gap-2 border-b px-3 py-2">
-          <button onClick={() => setPanel((v) => !v)} className="rounded border px-2 py-1 text-xs">
-            {panel ? "◀" : "▶"} Blocos
-          </button>
+        <div className="flex items-center gap-2 border-b bg-card px-3 py-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setPanel((v) => !v)}
+            aria-pressed={panel}
+            className="hidden md:inline-flex"
+          >
+            {panel ? <PanelLeftClose aria-hidden /> : <PanelLeftOpen aria-hidden />}
+            Blocos
+          </Button>
           <span className="text-xs text-neutral-500">
             {nodes.length} {nodes.length === 1 ? "passo" : "passos"}
           </span>
@@ -438,32 +453,40 @@ export function FlowEditor({
             Duplo clique edita o texto · ⌘D duplica · Delete remove
           </span>
           <div className="ml-auto flex items-center gap-3">
-            {saveError && <span className="text-xs font-medium text-rose-600">{saveError}</span>}
-            {!saveError && savedAt && !saving && (
-              <span className="text-xs font-medium text-emerald-600">
-                ✓ Salvo às {timeOf(savedAt)}
-              </span>
-            )}
+            <span aria-live="polite" className="text-xs font-medium">
+              {saveError && <span className="text-rose-600">{saveError}</span>}
+              {!saveError && savedAt && !saving && (
+                <span className="inline-flex items-center gap-1 text-emerald-600">
+                  <Check className="h-3.5 w-3.5" aria-hidden />
+                  Salvo às {timeOf(savedAt)}
+                </span>
+              )}
+            </span>
             {errors.length > 0 && (
               <span className="text-xs font-medium text-rose-600">
                 {errors.length} {errors.length === 1 ? "erro" : "erros"}
               </span>
             )}
-            <button
-              onClick={save}
-              disabled={saving || errors.length > 0}
-              className="rounded-lg bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white disabled:opacity-40"
-            >
+            <Button size="sm" onClick={save} disabled={saving || errors.length > 0}>
+              {saving ? <Loader2 className="animate-spin" aria-hidden /> : <Save aria-hidden />}
               {saving ? "Salvando…" : "Salvar"}
-            </button>
+            </Button>
           </div>
         </div>
 
         {issues.length > 0 && (
           <ul className="max-h-24 overflow-y-auto border-b bg-amber-50 px-4 py-1.5 text-[11px]">
             {issues.map((i, n) => (
-              <li key={n} className={i.level === "error" ? "text-rose-700" : "text-amber-700"}>
-                {i.level === "error" ? "✗" : "⚠"} {i.message}
+              <li
+                key={n}
+                className={`flex items-center gap-1 ${i.level === "error" ? "text-rose-700" : "text-amber-700"}`}
+              >
+                {i.level === "error" ? (
+                  <XCircle className="h-3 w-3 shrink-0" aria-hidden />
+                ) : (
+                  <AlertTriangle className="h-3 w-3 shrink-0" aria-hidden />
+                )}
+                {i.message}
               </li>
             ))}
           </ul>
@@ -492,13 +515,15 @@ export function FlowEditor({
             nodeTypes={canvasNodeTypes}
             // We own Delete/Backspace so it can respect focused text fields.
             deleteKeyCode={null}
+            // Connections land when the pointer gets close, not only on the 6px dot.
+            connectionRadius={40}
             fitView
             minZoom={0.15}
             proOptions={{ hideAttribution: false }}
           >
             <Background gap={16} size={1} />
             <Controls />
-            <MiniMap zoomable pannable className="!bg-neutral-50 dark:!bg-neutral-800" />
+            <MiniMap zoomable pannable className="!bg-neutral-50" />
           </ReactFlow>
         </div>
       </div>

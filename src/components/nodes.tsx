@@ -2,6 +2,15 @@
 
 import { Handle, Position, type NodeProps } from "reactflow";
 import { useEffect, useRef, useState } from "react";
+import {
+  ExternalLink,
+  FileText,
+  Maximize2,
+  Minimize2,
+  Music,
+  Play,
+  type LucideIcon,
+} from "lucide-react";
 import type { FlowNodeData } from "../lib/flow-schema";
 import { inlineLimitOf } from "../lib/flow-edit";
 import type { NodeStats } from "../server/flow-metrics";
@@ -182,7 +191,7 @@ function EditableText({
           // Delete/Backspace inside the textarea must not delete the node.
           e.stopPropagation();
         }}
-        className="nodrag nowheel w-full resize-none rounded-lg border border-indigo-400 bg-white px-2.5 py-1.5 text-[12px] leading-snug outline-none"
+        className="nodrag nowheel w-full resize-none rounded-lg border border-indigo-400 bg-white px-2.5 py-1.5 text-[12px] leading-snug focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
       />
     );
   }
@@ -216,7 +225,7 @@ function PortButton({
     <div className="relative mt-1">
       <div className="flex items-center justify-center gap-1 rounded-full border border-neutral-200 py-1 text-[12px] font-semibold text-indigo-600">
         <span>{title}</span>
-        {external && <span className="text-[10px]">↗</span>}
+        {external && <ExternalLink className="h-3 w-3" aria-hidden />}
         {ctr !== undefined && ctr > 0 && (
           <span className="text-[9px] font-medium text-neutral-400">CTR {ctr}%</span>
         )}
@@ -368,10 +377,15 @@ export function CarouselNode({ data, id }: NodeProps<WithStats>) {
         right={
           <button
             onClick={() => setOpen((v) => !v)}
-            className="ml-auto rounded px-1 text-[13px] leading-none hover:bg-violet-100"
+            className="nodrag ml-auto rounded p-0.5 leading-none hover:bg-violet-100 focus-visible:ring-2 focus-visible:ring-ring"
             aria-label={open ? "Recolher" : "Expandir"}
+            aria-expanded={open}
           >
-            {open ? "⤡" : "⤢"}
+            {open ? (
+              <Minimize2 className="h-3 w-3" aria-hidden />
+            ) : (
+              <Maximize2 className="h-3 w-3" aria-hidden />
+            )}
           </button>
         }
       />
@@ -472,10 +486,10 @@ export function ImageNode({ data }: NodeProps<WithStats>) {
  * the part that tells you *which* asset this block sends. Showing a fake
  * player would suggest a preview we don't have.
  */
-function MediaCard({ icon, url, label }: { icon: string; url: string; label: string }) {
+function MediaCard({ icon: Icon, url, label }: { icon: LucideIcon; url: string; label: string }) {
   return (
     <div className="flex items-center gap-2 rounded-lg bg-neutral-100 px-2.5 py-2">
-      <span className="text-[18px] leading-none">{icon}</span>
+      <Icon className="h-4 w-4 shrink-0 text-neutral-500" aria-hidden />
       <div className="min-w-0 flex-1">
         <div className="truncate text-[11px] font-medium text-neutral-700">{label}</div>
         <div className="truncate text-[9px] text-neutral-400" title={url}>
@@ -494,7 +508,7 @@ export function VideoNode({ data }: NodeProps<WithStats>) {
       <Head tone="bg-fuchsia-50 text-fuchsia-700" label="Vídeo" />
       <Stats s={data._stats} />
       <div className="p-2.5">
-        <MediaCard icon="▶" url={d.url ?? ""} label="Vídeo" />
+        <MediaCard icon={Play} url={d.url ?? ""} label="Vídeo" />
       </div>
       <Handle type="source" position={B} className={`${HANDLE} !bottom-[-8px] !bg-neutral-400`} />
     </div>
@@ -509,7 +523,7 @@ export function AudioNode({ data }: NodeProps<WithStats>) {
       <Head tone="bg-cyan-50 text-cyan-700" label="Áudio" />
       <Stats s={data._stats} />
       <div className="p-2.5">
-        <MediaCard icon="♪" url={d.url ?? ""} label="Áudio" />
+        <MediaCard icon={Music} url={d.url ?? ""} label="Áudio" />
       </div>
       <Handle type="source" position={B} className={`${HANDLE} !bottom-[-8px] !bg-neutral-400`} />
     </div>
@@ -524,7 +538,7 @@ export function FileNode({ data }: NodeProps<WithStats>) {
       <Head tone="bg-stone-100 text-stone-700" label="PDF" />
       <Stats s={data._stats} />
       <div className="p-2.5">
-        <MediaCard icon="▤" url={d.url ?? ""} label={d.filename ?? "Documento PDF"} />
+        <MediaCard icon={FileText} url={d.url ?? ""} label={d.filename ?? "Documento PDF"} />
       </div>
       <Handle type="source" position={B} className={`${HANDLE} !bottom-[-8px] !bg-neutral-400`} />
     </div>

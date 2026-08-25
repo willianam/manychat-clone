@@ -1,7 +1,11 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
+import { ArrowLeft } from "lucide-react";
 import { db } from "../../../../server/db";
 import { FlowGraph } from "../../../../lib/flow-schema";
 import { PreviewPhone } from "./PreviewPhone";
+import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
 
 export const dynamic = "force-dynamic";
 
@@ -15,32 +19,37 @@ export const dynamic = "force-dynamic";
 export default async function FlowPreviewPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const flow = await db.flow.findUnique({ where: { id } });
-  if (!flow) return <main className="p-8">Fluxo não encontrado.</main>;
+  if (!flow) notFound();
+
+  const back = (
+    <Button asChild variant="ghost" size="sm" className="-ml-2">
+      <Link href={`/flows/${id}`}>
+        <ArrowLeft aria-hidden />
+        Voltar ao editor
+      </Link>
+    </Button>
+  );
 
   const parsed = FlowGraph.safeParse(flow.graph);
   if (!parsed.success) {
     return (
-      <main className="p-8">
-        <p className="text-sm text-rose-600">
-          Este fluxo não pode ser lido — o formato salvo é inválido.
-        </p>
-        <Link href={`/flows/${id}`} className="mt-2 inline-block text-xs underline">
-          ← Voltar ao editor
-        </Link>
+      <main className="mx-auto w-full max-w-3xl px-6 py-8">
+        {back}
+        <Callout tone="destructive" className="mt-4">
+          Este fluxo não pode ser lido: o formato salvo é inválido.
+        </Callout>
       </main>
     );
   }
 
   return (
-    <main className="mx-auto max-w-3xl px-6 py-8">
+    <main className="mx-auto w-full max-w-3xl px-6 py-8">
       <div className="mb-6">
-        <Link href={`/flows/${id}`} className="text-xs text-neutral-500 hover:underline">
-          ← Voltar ao editor
-        </Link>
+        {back}
         <h1 className="mt-1 text-xl font-semibold">Prévia: {flow.name}</h1>
-        <p className="mt-1 text-sm text-neutral-500">
+        <p className="mt-1 text-sm text-muted-foreground">
           O fluxo como a conversa vai aparecer no celular. Toque nos botões para seguir cada
-          caminho. Nada é enviado — serve para revisar o texto sem mandar DM de verdade.
+          caminho. Nada é enviado; serve para revisar o texto sem mandar DM de verdade.
         </p>
       </div>
 
