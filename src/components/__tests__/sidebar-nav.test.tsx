@@ -45,6 +45,21 @@ describe("SidebarNav", () => {
     const active = screen.getByRole("link", { name: "Fluxos" });
     expect(active.getAttribute("aria-current")).toBe("page");
     expect(screen.getByRole("link", { name: "Início" }).getAttribute("aria-current")).toBeNull();
-    expect(screen.getAllByRole("link")).toHaveLength(11);
+    expect(screen.getAllByRole("link")).toHaveLength(12);
+  });
+
+  it("shows the unread badge on the inbox item only when there is something unread", () => {
+    pathname.current = "/";
+    render(<SidebarNav badges={{ "/inbox": 3 }} />);
+    const inbox = screen.getByRole("link", { name: /Caixa de entrada/ });
+    expect(inbox.textContent).toContain("3");
+    expect(screen.getByLabelText("3 conversas não lidas")).toBeTruthy();
+    cleanup();
+    render(<SidebarNav badges={{ "/inbox": 0 }} />);
+    expect(screen.queryByLabelText(/não lida/)).toBeNull();
+  });
+
+  it("titles the inbox route", () => {
+    expect(titleFor("/inbox")).toBe("Caixa de entrada");
   });
 });

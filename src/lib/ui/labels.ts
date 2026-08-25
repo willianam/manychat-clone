@@ -11,6 +11,7 @@ import type { StatusTone } from "@/components/ui/status-pill";
 
 export type BroadcastStatus = "DRAFT" | "QUEUED" | "SENDING" | "DONE" | "FAILED";
 export type SessionStatus = "ACTIVE" | "WAITING_INPUT" | "COMPLETED" | "ABANDONED";
+export type MessageStatus = "PENDING" | "SENT" | "DELIVERED" | "READ" | "FAILED";
 
 export const BROADCAST_STATUS_LABEL: Record<BroadcastStatus, string> = {
   DRAFT: "rascunho",
@@ -33,6 +34,15 @@ export const SESSION_STATUS_LABEL: Record<SessionStatus, string> = {
   WAITING_INPUT: "aguardando resposta",
   COMPLETED: "concluída",
   ABANDONED: "abandonada",
+};
+
+/** Delivery state of an outbound message, as shown under a bubble in the inbox. */
+export const MESSAGE_STATUS_LABEL: Record<MessageStatus, string> = {
+  PENDING: "enviando",
+  SENT: "enviado",
+  DELIVERED: "entregue",
+  READ: "lido",
+  FAILED: "falhou",
 };
 
 /** Trigger kinds already carry their labels in lib/trigger-rules; re-exported for one import site. */
@@ -58,4 +68,8 @@ export function sessionStatusLabel(status: string): string {
 
 export function triggerKindLabel(kind: string): string {
   return labelFor(TRIGGER_KIND_LABEL, kind);
+}
+
+export function messageStatusLabel(status: string): string {
+  return labelFor(MESSAGE_STATUS_LABEL, status);
 }

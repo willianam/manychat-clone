@@ -3,6 +3,7 @@ import { canSend, type MessageTag } from "../lib/messaging-window";
 import { db as defaultDb } from "./db";
 import { getAccessToken } from "./token-refresh";
 import { logger } from "../lib/log";
+import { touchLastMessage } from "./last-message";
 
 const log = logger("instagram");
 
@@ -182,6 +183,7 @@ export async function sendMessage(
         payload: stored,
       },
     });
+    await touchLastMessage(db, contactId);
     throw new SendBlocked(decision.reason);
   }
 
@@ -194,6 +196,8 @@ export async function sendMessage(
       payload: stored,
     },
   });
+  // Every attempt is a row in the thread, so every attempt orders the inbox.
+  await touchLastMessage(db, contactId);
 
   try {
     const res = await fetch(`${BASE}/${SELF}/messages`, {

@@ -32,7 +32,7 @@ export async function handleInboundMessage(
   opts: { isNewContact?: boolean } = {},
 ): Promise<void> {
   if (await handleGlobalKeyword(db, contactId, text)) return;
-  if (!(await isSubscribed(db, contactId))) return;
+  if (!(await automationAllowed(db, contactId))) return;
 
   const waiting = await db.flowSession.findFirst({
     where: { contactId, status: "WAITING_INPUT" },
@@ -141,16 +141,25 @@ async function abandonSessions(db: PrismaClient, contactId: string): Promise<voi
 }
 
 /**
+ * The single gate every automated path goes through.
+ *
  * An opted-out contact gets nothing automated: no session resume, no
  * trigger, and no entry in the unmatched list — their messages are not
  * keyword gaps, they are a person who asked to be left alone.
+ *
+ * A contact paused from the inbox is the same from the engine's point of
+ * view, for a different reason: a human is talking to them, and a flow
+ * answering in the middle of that conversation would be worse than silence.
+ * The message itself is still recorded (the webhook did that before calling
+ * here) and global keywords were already honoured by the caller.
  */
-async function isSubscribed(db: PrismaClient, contactId: string): Promise<boolean> {
+async function automationAllowed(db: PrismaClient, contactId: string): Promise<boolean> {
   const contact = await db.contact.findUnique({
     where: { id: contactId },
-    select: { subscribed: true },
+    select: { subscribed: true, automationPaused: true },
   });
-  return contact?.subscribed ?? false;
+  if (!contact) return false;
+  return contact.subscribed && !contact.automationPaused;
 }
 
 /**
@@ -199,6 +208,7 @@ export async function handlePostback(
   contactId: string,
   payload: string,
 ): Promise<void> {
+  if (!(await automationAllowed(db, contactId))) return;
   const waiting = await db.flowSession.findFirst({
     where: { contactId, status: "WAITING_INPUT" },
     orderBy: { updatedAt: "desc" },
@@ -235,6 +245,7 @@ export async function handleComment(
     update: { username: args.username, lastInboundAt: new Date() },
   });
 
+  if (!(await automationAllowed(db, contact.id))) return;
   await recordTriggerFire(db, trigger.id, contact.id);
   await startFlow(db, trigger.flowId, contact.id);
 }
@@ -253,9 +264,9 @@ export async function handleStoryReply(
   contactId: string,
   text: string,
 ): Promise<void> {
-  // Global keywords and opt-out apply here exactly as to a plain DM.
+  // Global keywords, opt-out and the inbox pause apply exactly as to a plain DM.
   if (await handleGlobalKeyword(db, contactId, text)) return;
-  if (!(await isSubscribed(db, contactId))) return;
+  if (!(await automationAllowed(db, contactId))) return;
 
   // A session parked on a question owns the reply, same as any message.
   const waiting = await db.flowSession.findFirst({
@@ -285,6 +296,7 @@ export async function handleStoryReply(
  * highest priority wins.
  */
 export async function handleStoryMention(db: PrismaClient, contactId: string): Promise<void> {
+  if (!(await automationAllowed(db, contactId))) return;
   const trigger = await db.trigger.findFirst({
     where: { kind: "STORY_MENTION", enabled: true, flow: { enabled: true } },
     orderBy: { priority: "desc" },
@@ -309,6 +321,7 @@ export async function handleRefLink(
 ): Promise<boolean> {
   const link = await db.refLink.findUnique({ where: { code } });
   if (!link || !link.enabled) return false;
+  if (!(await automationAllowed(db, contactId))) return false;
 
   const result = await startFlow(db, link.flowId, contactId);
   return result !== null;
@@ -326,6 +339,7 @@ export async function handleProfilePostback(
   contactId: string,
   flowId: string,
 ): Promise<void> {
+  if (!(await automationAllowed(db, contactId))) return;
   // Starting a flow while another is mid-question would leave the old
   // session orphaned and waiting forever. An explicit menu tap is a clear
   // intent to switch, so abandon what was running.

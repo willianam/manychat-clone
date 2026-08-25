@@ -32,6 +32,16 @@ model Contact {
   /// while subscribed; kept so the daily opt-out count survives re-opt-ins.
   unsubscribedAt DateTime?
 
+  /// Set from the inbox when a human takes over: no flow starts or advances
+  /// for this contact until it is cleared. Global keywords still apply.
+  automationPaused Boolean @default(false)
+  /// When the operator last opened this conversation in the inbox. An
+  /// INBOUND message newer than this is unread.
+  lastReadAt       DateTime?
+  /// Last message either way. Orders the inbox; touched from a single
+  /// helper (server/inbox.ts touchLastMessage) at every message write.
+  lastMessageAt    DateTime?
+
   /// Where this contact came in from. Free-form so it survives new entry
   /// points without a migration: "dm", "comment", "story_reply",
   /// "story_mention", or "ref:<code>" for a tracked ig.me link.
@@ -50,6 +60,7 @@ model Contact {
 
   @@index([lastInboundAt])
   @@index([subscribed])
+  @@index([lastMessageAt])
 }
 
 /// Arbitrary key/value captured during flows (e.g. answers to questions).
@@ -97,6 +108,18 @@ model Segment {
   updatedAt DateTime @updatedAt
 
   broadcasts Broadcast[]
+}
+
+/// A canned answer for the inbox reply box. Typing "/" lists them; the
+/// shortcut is what the operator types after the slash to pick one.
+model QuickReplyTemplate {
+  id        String   @id @default(cuid())
+  title     String
+  text      String
+  /// Lowercase, no spaces, unique — "preco", "horario".
+  shortcut  String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 /// Free text the owner writes about a contact. Shown on the timeline.
