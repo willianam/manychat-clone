@@ -1,7 +1,7 @@
 import type { PrismaClient, FlowSession, Prisma } from "@prisma/client";
 import { FlowGraph, findEntryNode, type FlowNodeData } from "../lib/flow-schema";
 import { coerceFieldValue, compareValues } from "../lib/field-values";
-import { sendText, sendMessage, sendSenderActionToContact } from "./instagram";
+import { sendText, sendMessage, sendSenderActionToContact, type SendMeta } from "./instagram";
 import {
   buildMessage,
   buildQuickReply,
@@ -51,6 +51,11 @@ const SENDS_MESSAGE: ReadonlySet<FlowNodeData["kind"]> = new Set([
 const SEEN_KEY = "_markSeenSent";
 
 export type StepResult = { status: "waiting" | "completed" | "delayed"; nodeId?: string };
+
+/** Attribution stored on every message a node sends — see flow-metrics.ts. */
+function metaFor(session: FlowSession, nodeId: string): SendMeta {
+  return { flowId: session.flowId, nodeId, sessionId: session.id };
+}
 
 export async function startFlow(
   db: PrismaClient,
@@ -242,6 +247,7 @@ async function advance(
       const withText = { ...d, text: interpolate(d.text, ctx) };
       await sendMessage(db, session.contactId, buildMessage(node.id, withText), {
         preview: withText.text,
+        meta: metaFor(session, node.id),
       });
 
       // Buttons make this a branch point — unless a "Próximo Passo" edge
@@ -267,6 +273,7 @@ async function advance(
       const withText = { ...d, text: interpolate(d.text, ctx) };
       await sendMessage(db, session.contactId, buildQuickReply(node.id, withText), {
         preview: withText.text,
+        meta: metaFor(session, node.id),
       });
       await db.flowSession.update({
         where: { id: session.id },
@@ -278,6 +285,7 @@ async function advance(
     if (d.kind === "carousel") {
       await sendMessage(db, session.contactId, buildCarousel(node.id, d), {
         preview: previewOf(d),
+        meta: metaFor(session, node.id),
       });
       // Cards with postback buttons wait for a tap; decorative ones walk on.
       if (d.cards.some((c) => c.buttons?.some((b) => b.type === "postback"))) {
@@ -293,7 +301,10 @@ async function advance(
     }
 
     if (d.kind === "image") {
-      await sendMessage(db, session.contactId, buildImage(d), { preview: previewOf(d) });
+      await sendMessage(db, session.contactId, buildImage(d), {
+        preview: previewOf(d),
+        meta: metaFor(session, node.id),
+      });
       current = nextOf(graph, node.id);
       await db.flowSession.update({ where: { id: session.id }, data: { currentNodeId: current } });
       continue;
@@ -302,14 +313,20 @@ async function advance(
     // Video, audio and PDF share one payload shape and one control flow:
     // send, then walk on. None of them is a branch point.
     if (d.kind === "video" || d.kind === "audio" || d.kind === "file") {
-      await sendMessage(db, session.contactId, buildMedia(d), { preview: previewOf(d) });
+      await sendMessage(db, session.contactId, buildMedia(d), {
+        preview: previewOf(d),
+        meta: metaFor(session, node.id),
+      });
       current = nextOf(graph, node.id);
       await db.flowSession.update({ where: { id: session.id }, data: { currentNodeId: current } });
       continue;
     }
 
     if (d.kind === "album") {
-      await sendMessage(db, session.contactId, buildAlbum(d), { preview: previewOf(d) });
+      await sendMessage(db, session.contactId, buildAlbum(d), {
+        preview: previewOf(d),
+        meta: metaFor(session, node.id),
+      });
       current = nextOf(graph, node.id);
       await db.flowSession.update({ where: { id: session.id }, data: { currentNodeId: current } });
       continue;
@@ -345,7 +362,9 @@ async function advance(
     }
 
     if (d.kind === "question") {
-      await sendText(db, session.contactId, interpolate(d.text, ctx));
+      await sendText(db, session.contactId, interpolate(d.text, ctx), {
+        meta: metaFor(session, node.id),
+      });
       await db.flowSession.update({
         where: { id: session.id },
         data: { status: "WAITING_INPUT", currentNodeId: node.id, context: asJson(ctx) },

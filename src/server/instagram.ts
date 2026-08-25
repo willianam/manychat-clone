@@ -92,6 +92,13 @@ export async function sendSenderActionToContact(
   if (contact) await sendSenderAction(contact.igScopedId, action);
 }
 
+/**
+ * Where a send came from. Stored under `Message.payload.meta` (never sent
+ * to Meta) so per-node metrics and the flow funnel can attribute the row
+ * exactly, instead of matching it back by text.
+ */
+export type SendMeta = { flowId: string; nodeId: string; sessionId: string };
+
 export class SendBlocked extends Error {
   constructor(public readonly reason: string) {
     super(reason);
@@ -115,7 +122,7 @@ export async function sendText(
   db: PrismaClient,
   contactId: string,
   text: string,
-  opts: { tag?: MessageTag } = {},
+  opts: { tag?: MessageTag; meta?: SendMeta } = {},
 ): Promise<void> {
   return sendMessage(db, contactId, { text }, { ...opts, preview: text });
 }
@@ -129,20 +136,31 @@ export async function sendText(
  *
  * Every attempt is persisted as a Message row — including failures — so the
  * inbox reflects reality rather than only what succeeded.
+ *
+ * `meta` is stored alongside the wire payload (`payload.meta`) and stripped
+ * from what goes to Meta.
  */
 export async function sendMessage(
   db: PrismaClient,
   contactId: string,
   payload: Record<string, unknown>,
-  opts: { tag?: MessageTag; preview?: string } = {},
+  opts: { tag?: MessageTag; preview?: string; meta?: SendMeta } = {},
 ): Promise<void> {
   const text = opts.preview ?? "";
   const contact = await db.contact.findUniqueOrThrow({ where: { id: contactId } });
+  const stored = (opts.meta ? { ...payload, meta: opts.meta } : payload) as never;
 
   const decision = canSend(contact.lastInboundAt, { tag: opts.tag });
   if (!decision.allowed) {
     await db.message.create({
-      data: { contactId, direction: "OUTBOUND", text, status: "FAILED", error: decision.reason },
+      data: {
+        contactId,
+        direction: "OUTBOUND",
+        text,
+        status: "FAILED",
+        error: decision.reason,
+        payload: stored,
+      },
     });
     throw new SendBlocked(decision.reason);
   }
@@ -153,7 +171,7 @@ export async function sendMessage(
       direction: "OUTBOUND",
       text,
       status: "PENDING",
-      payload: payload as never,
+      payload: stored,
     },
   });
 
