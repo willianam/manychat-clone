@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 afterEach(cleanup);
 
@@ -89,6 +89,13 @@ describe("ContactsTable", () => {
     setup();
     fireEvent.click(screen.getByRole("checkbox", { name: "Selecionar todos da página" }));
     fireEvent.click(screen.getByRole("button", { name: "Descadastrar" }));
+
+    // Opting people out in bulk asks first, and names the count.
+    const dialog = await screen.findByRole("alertdialog");
+    expect(dialog.textContent).toContain("Descadastrar 2 contatos?");
+    expect(actions.bulkSetSubscribed).not.toHaveBeenCalled();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Descadastrar" }));
     await waitFor(() =>
       expect(actions.bulkSetSubscribed).toHaveBeenCalledWith(["c1", "c2"], false),
     );

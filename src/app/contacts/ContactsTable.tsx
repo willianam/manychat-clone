@@ -7,6 +7,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown, Download } from "lucide-react";
 import { bulkSetSubscribed, bulkStartFlow, bulkTag, exportSelectionCsv } from "./actions";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   Select,
   SelectContent,
@@ -243,6 +244,7 @@ function BulkBar({
   const [pending, start] = useTransition();
   const [tag, setTag] = useState(NONE);
   const [flow, setFlow] = useState(NONE);
+  const [confirmUnsubscribe, setConfirmUnsubscribe] = useState(false);
 
   const run = (job: () => Promise<string | undefined>) =>
     start(async () => {
@@ -358,21 +360,37 @@ function BulkBar({
       >
         Inscrever
       </Button>
+      {/*
+        Opting people out in bulk is not undoable from the operator's side —
+        a contact has to write in again to come back — so it asks first, and
+        the question names how many are affected.
+      */}
       <Button
         type="button"
         size="sm"
         variant="outline"
         disabled={pending}
         className="text-destructive hover:text-destructive"
-        onClick={() =>
-          run(async () => {
-            await bulkSetSubscribed(ids, false);
-            return `${n} contato(s) descadastrado(s).`;
-          })
-        }
+        onClick={() => setConfirmUnsubscribe(true)}
       >
         Descadastrar
       </Button>
+      <ConfirmDialog
+        open={confirmUnsubscribe}
+        onOpenChange={setConfirmUnsubscribe}
+        title={`Descadastrar ${n} contato${n === 1 ? "" : "s"}?`}
+        description="Eles param de receber disparos e qualquer fluxo em andamento é encerrado. Só voltam a receber se pedirem de novo."
+        confirmLabel="Descadastrar"
+        destructive
+        pending={pending}
+        onConfirm={() => {
+          setConfirmUnsubscribe(false);
+          run(async () => {
+            await bulkSetSubscribed(ids, false);
+            return `${n} contato(s) descadastrado(s).`;
+          });
+        }}
+      />
 
       <Button
         type="button"
