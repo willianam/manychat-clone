@@ -27,6 +27,7 @@ export function EditorShell({
   initial,
   stats,
   triggers,
+  flows,
   hasDraft,
   publishedAt,
 }: {
@@ -34,6 +35,7 @@ export function EditorShell({
   initial: FlowGraph;
   stats?: FlowStats;
   triggers: TriggerView[];
+  flows: Array<{ id: string; name: string }>;
   hasDraft: boolean;
   publishedAt: string | null;
 }) {
@@ -51,6 +53,7 @@ export function EditorShell({
         key={generation}
         initial={initial}
         stats={stats}
+        flows={flows}
         triggers={triggers}
         onAddTrigger={() => setDialog({ mode: "new" })}
         onEditTrigger={(trigger) => setDialog({ mode: "edit", trigger })}

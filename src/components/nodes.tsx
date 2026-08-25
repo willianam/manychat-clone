@@ -11,7 +11,7 @@ import {
   Play,
   type LucideIcon,
 } from "lucide-react";
-import type { FlowNodeData } from "../lib/flow-schema";
+import { armLabel, rulesOf, type FlowNodeData } from "../lib/flow-schema";
 import { inlineLimitOf } from "../lib/flow-edit";
 import type { NodeStats } from "../server/flow-metrics";
 
@@ -48,6 +48,8 @@ type WithStats = FlowNodeData & {
   _stats?: NodeStats;
   /** Commit an inline text edit for this node. Absent = read-only canvas. */
   _onText?: (text: string) => void;
+  /** Flow id → name, so a "Ir para" can say where it goes. */
+  _names?: Record<string, string>;
 };
 
 /**
@@ -311,10 +313,36 @@ export function QuestionNode({ data }: NodeProps<WithStats>) {
       <div className="p-2.5">
         <EditableBubble text={d.text} onCommit={data._onText} max={inlineLimitOf(d)} />
         <div className="mt-1.5 rounded border border-dashed border-neutral-300 px-2 py-1 text-[11px] text-neutral-500">
-          resposta livre → <span className="font-mono">{d.saveAs}</span>
+          {INPUT_TYPE_HINT[d.inputType ?? "text"]} → <span className="font-mono">{d.saveAs}</span>
+          {d.allowSkip && <span className="ml-1 text-neutral-400">· pode pular</span>}
         </div>
+        {d.onInvalid === "branch" && <SidePort id="invalid" label="inválida" tone="!bg-rose-500" />}
       </div>
       <NextStep />
+    </div>
+  );
+}
+
+const INPUT_TYPE_HINT: Record<string, string> = {
+  text: "resposta livre",
+  number: "número",
+  email: "e-mail",
+  phone: "telefone",
+  date: "data",
+  option: "uma das opções",
+};
+
+/** A named secondary output on the right edge, with its label. */
+function SidePort({ id, label, tone }: { id: string; label: string; tone: string }) {
+  return (
+    <div className="relative mt-1.5 flex items-center justify-end">
+      <span className="text-[10px] font-semibold text-neutral-500">{label}</span>
+      <Handle
+        type="source"
+        position={Position.Right}
+        id={id}
+        className={`${HANDLE} !right-[-14px] ${tone}`}
+      />
     </div>
   );
 }
@@ -596,9 +624,19 @@ export function ConditionNode({ data }: NodeProps<WithStats>) {
       <Handle type="target" position={T} className={`${HANDLE} !top-[-8px] !bg-neutral-400`} />
       <Head tone="bg-cyan-50 text-cyan-800 border-b border-cyan-100" label="Condição" />
       <div className="p-2.5">
-        <div className="rounded border px-2 py-1 font-mono text-[11px]">
-          {d.key} {d.op} {d.value ?? ""}
-        </div>
+        {rulesOf(d).map((r, i) => (
+          <div key={i} className="flex items-center gap-1">
+            {i > 0 && (
+              <span className="w-6 text-[9px] font-semibold uppercase text-neutral-400">
+                {d.combinator === "or" ? "ou" : "e"}
+              </span>
+            )}
+            <div className="mt-0.5 flex-1 truncate rounded border px-2 py-1 font-mono text-[11px]">
+              {r.op === "subscribed" ? "" : `${r.key} `}
+              {r.op} {r.value ?? ""}
+            </div>
+          </div>
+        ))}
         <div className="mt-2 flex justify-between text-[11px] font-semibold">
           <span className="text-emerald-600">sim</span>
           <span className="text-rose-600">não</span>
@@ -654,6 +692,12 @@ export function DelayNode({ data }: NodeProps<WithStats>) {
             </b>
           </>
         )}
+        {(d.mode ?? "fixed") === "fixed" && d.cancelOnReply && (
+          <SidePort id="replied" label="respondeu" tone="!bg-amber-500" />
+        )}
+        {d.mode === "untilReply" && d.timeoutSeconds && (
+          <SidePort id="timeout" label="tempo esgotado" tone="!bg-rose-500" />
+        )}
       </div>
       <Handle type="source" position={B} className={`${HANDLE} !bottom-[-8px] !bg-neutral-400`} />
     </div>
@@ -708,6 +752,9 @@ export function RandomNode({ data }: NodeProps<WithStats>) {
       <div className="p-2.5">
         {d.weights.map((w, i) => (
           <div key={i} className="relative mt-1 flex items-center gap-2">
+            {d.labels?.[i]?.trim() && (
+              <span className="w-16 truncate text-[10px] text-neutral-600">{armLabel(d, i)}</span>
+            )}
             <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-neutral-100">
               <div className="h-full bg-slate-400" style={{ width: `${w}%` }} />
             </div>
@@ -727,7 +774,10 @@ export function RandomNode({ data }: NodeProps<WithStats>) {
 
 export function GotoNode({ data }: NodeProps<WithStats>) {
   const d = data as Extract<FlowNodeData, { kind: "goto" }>;
-  const target = "flowId" in d.target ? `fluxo ${d.target.flowId}` : `passo ${d.target.nodeId}`;
+  const target =
+    "flowId" in d.target
+      ? `fluxo ${data._names?.[d.target.flowId] ?? d.target.flowId}`
+      : `passo ${d.target.nodeId}`;
   return (
     <div className={`${SHELL} w-[224px]`}>
       <Handle type="target" position={T} className={`${HANDLE} !top-[-8px] !bg-neutral-400`} />

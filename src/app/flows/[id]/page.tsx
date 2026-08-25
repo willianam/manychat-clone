@@ -24,6 +24,11 @@ export default async function FlowPage({ params }: { params: Promise<{ id: strin
   // Triggers are table rows, not graph nodes — the editor draws them as the
   // synthetic "Quando…" card at the top of the canvas.
   const triggers = await triggersOfFlow(flow.id);
+  // For "Ir para outro fluxo".
+  const flows = await db.flow.findMany({
+    select: { id: true, name: true },
+    orderBy: { name: "asc" },
+  });
 
   return (
     <main className="flex h-[calc(100vh-3.5rem)] flex-col">
@@ -62,6 +67,7 @@ export default async function FlowPage({ params }: { params: Promise<{ id: strin
           initial={graph}
           stats={stats}
           triggers={triggers}
+          flows={flows}
           hasDraft={flow.draftGraph !== null}
           publishedAt={flow.publishedAt?.toISOString() ?? null}
         />

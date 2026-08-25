@@ -45,7 +45,7 @@ import { emptyHistory, record, redo, undo } from "../lib/flow-history";
 import { layoutGraph } from "../lib/flow-layout";
 import type { FlowStats } from "../server/flow-metrics";
 import { nodeTypes } from "./nodes";
-import { PropertiesPanel } from "./PropertiesPanel";
+import { PropertiesPanel, type GotoTargets } from "./PropertiesPanel";
 import { TriggerNode, TRIGGER_NODE_ID, type TriggerNodeData } from "./TriggerNode";
 import type { TriggerView } from "../app/gatilhos/actions";
 
@@ -219,6 +219,8 @@ export function FlowEditor(props: FlowEditorProps) {
 type FlowEditorProps = {
   initial: FlowGraph;
   stats?: FlowStats;
+  /** Every flow, for "Ir para outro fluxo". Absent = the selector is empty. */
+  flows?: Array<{ id: string; name: string }>;
   /**
    * Triggers of this flow, for the "Quando…" card. These are rows of the
    * `Trigger` table, NOT graph nodes — see TriggerNode.tsx. Undefined means
@@ -244,6 +246,7 @@ type FlowEditorProps = {
 function FlowEditorInner({
   initial,
   stats,
+  flows,
   triggers,
   onAddTrigger,
   onEditTrigger,
@@ -398,12 +401,18 @@ function FlowEditorInner({
    * can draw its own numbers and commit its own text. Both are stripped
    * before validation — they are display wiring, not flow data.
    */
+  const flowNames = useMemo(
+    () => Object.fromEntries((flows ?? []).map((f) => [f.id, f.name])),
+    [flows],
+  );
+
   const rendered = useMemo(() => {
     const real = nodes.map((n) => ({
       ...n,
       data: {
         ...n.data,
         _stats: stats?.[n.id],
+        _names: flowNames,
         _onText: (text: string) =>
           updateNodeData(n.id, withInlineText(n.data as FlowNodeData, text)),
       },
@@ -442,7 +451,7 @@ function FlowEditorInner({
     };
 
     return [card as Node, ...real];
-  }, [nodes, edges, stats, updateNodeData, triggers, onAddTrigger, onEditTrigger]);
+  }, [nodes, edges, stats, flowNames, updateNodeData, triggers, onAddTrigger, onEditTrigger]);
 
   const onConnect = useCallback(
     (c: Connection) => {
@@ -492,7 +501,10 @@ function FlowEditorInner({
   const clean = useMemo(
     () => ({
       nodes: nodes.map(({ data, ...n }) => {
-        const { _stats, _onText, ...rest } = data as Record<string, unknown>;
+        const rest = { ...(data as Record<string, unknown>) };
+        delete rest._stats;
+        delete rest._onText;
+        delete rest._names;
         return { ...n, data: rest };
       }),
       edges,
@@ -684,6 +696,14 @@ function FlowEditorInner({
   const selected = useMemo(
     () => nodes.find((n) => n.id === selectedId) ?? null,
     [nodes, selectedId],
+  );
+
+  const gotoTargets: GotoTargets = useMemo(
+    () => ({
+      nodes: nodes.map((n) => ({ id: n.id, label: nodeLabel(n) })),
+      flows: flows ?? [],
+    }),
+    [nodes, flows],
   );
 
   return (
@@ -889,6 +909,7 @@ function FlowEditorInner({
 
       <PropertiesPanel
         node={selected}
+        targets={gotoTargets}
         onChange={(data) => selected && updateNodeData(selected.id, data)}
         onDelete={() => selected && deleteNode(selected.id)}
         onDuplicate={() => selected && duplicate(selected.id)}
@@ -916,6 +937,22 @@ const dateOf = (iso: string) =>
     hour: "2-digit",
     minute: "2-digit",
   });
+
+/** "Texto: Olá! (message-ab12)" — enough to pick a step out of a list. */
+function nodeLabel(n: Node): string {
+  const d = n.data as FlowNodeData;
+  const block = BLOCKS.find((b) => b.kind === d.kind)?.label ?? d.kind;
+  const text =
+    "text" in d && typeof d.text === "string"
+      ? d.text
+      : d.kind === "goal"
+        ? d.name
+        : d.kind === "request"
+          ? d.url
+          : "";
+  const short = text.length > 28 ? `${text.slice(0, 28)}…` : text;
+  return short ? `${block}: ${short} (${n.id})` : `${block} (${n.id})`;
+}
 
 const timeOf = (d: Date) =>
   d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
