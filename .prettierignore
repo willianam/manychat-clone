@@ -1,0 +1,7 @@
+node_modules
+.next
+package-lock.json
+prisma/migrations
+tsconfig.tsbuildinfo
+# Prose is maintained by hand; Prettier reflowing pt-BR docs is churn.
+*.md
