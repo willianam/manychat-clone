@@ -4,8 +4,20 @@
  * Pure, so the contact import/export can be tested without a database.
  */
 
+/**
+ * Cells starting with one of these are read as a FORMULA by Excel, Sheets and
+ * LibreOffice, not as text. An Instagram display name is chosen by a stranger,
+ * so `=HYPERLINK(...)` in a contact's name would execute in the operator's
+ * spreadsheet on open. Prefixing with an apostrophe forces the cell to text;
+ * the spreadsheet does not display the apostrophe.
+ */
+const FORMULA_LEAD = /^[=+\-@\t\r]/;
+
 export function serializeCsv(rows: string[][]): string {
-  const cell = (v: string) => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  const cell = (v: string) => {
+    const safe = FORMULA_LEAD.test(v) ? `'${v}` : v;
+    return /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
+  };
   return rows.map((r) => r.map(cell).join(",")).join("\r\n") + "\r\n";
 }
 
