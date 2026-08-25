@@ -12,6 +12,11 @@ import type { DeliveryEvent, ReadReceiptEvent } from "../lib/entry-events";
  * our own `createdAt`. Our clock and Meta's differ by at most seconds, and
  * a message created a moment after the watermark will be covered by the
  * next receipt, so the imprecision is harmless.
+ *
+ * Broadcast recipients move with the messages: a recipient row records
+ * `sentAt` for the one message the broadcast sent that contact, so the
+ * same watermark that marks the message read marks the recipient read.
+ * Without this the report could never say "lido", only "enviado".
  */
 
 export async function applyReadReceipt(db: PrismaClient, r: ReadReceiptEvent): Promise<number> {
@@ -42,6 +47,14 @@ export async function applyReadReceipt(db: PrismaClient, r: ReadReceiptEvent): P
     },
     data: { status: "READ" },
   });
+  await db.broadcastRecipient.updateMany({
+    where: {
+      contactId: contact.id,
+      status: { in: ["SENT", "DELIVERED"] },
+      sentAt: { lte: watermark },
+    },
+    data: { status: "READ" },
+  });
   return count;
 }
 
@@ -53,6 +66,7 @@ export async function applyDelivery(db: PrismaClient, d: DeliveryEvent): Promise
   if (!contact) return 0;
 
   let count = 0;
+  let watermark = d.watermark;
 
   if (d.mids.length) {
     const r = await db.message.updateMany({
@@ -60,6 +74,13 @@ export async function applyDelivery(db: PrismaClient, d: DeliveryEvent): Promise
       data: { status: "DELIVERED" },
     });
     count += r.count;
+    // The newest delivered mid covers every broadcast send before it.
+    const last = await db.message.findFirst({
+      where: { externalId: { in: d.mids } },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true },
+    });
+    if (last && (!watermark || last.createdAt > watermark)) watermark = last.createdAt;
   }
 
   if (d.watermark) {
@@ -74,6 +95,13 @@ export async function applyDelivery(db: PrismaClient, d: DeliveryEvent): Promise
       data: { status: "DELIVERED" },
     });
     count += r.count;
+  }
+
+  if (watermark) {
+    await db.broadcastRecipient.updateMany({
+      where: { contactId: contact.id, status: "SENT", sentAt: { lte: watermark } },
+      data: { status: "DELIVERED" },
+    });
   }
 
   return count;

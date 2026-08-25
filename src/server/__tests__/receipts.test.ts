@@ -4,7 +4,9 @@ import { applyReadReceipt, applyDelivery } from "../receipts";
 
 function fakeDb(opts: { contact?: boolean; lastCreatedAt?: Date } = {}) {
   const updateMany = vi.fn().mockResolvedValue({ count: 2 });
+  const recipientUpdateMany = vi.fn().mockResolvedValue({ count: 0 });
   const db = {
+    broadcastRecipient: { updateMany: recipientUpdateMany },
     contact: {
       findUnique: vi.fn().mockResolvedValue(opts.contact === false ? null : { id: "c1" }),
     },
@@ -12,10 +14,13 @@ function fakeDb(opts: { contact?: boolean; lastCreatedAt?: Date } = {}) {
       findUnique: vi
         .fn()
         .mockResolvedValue(opts.lastCreatedAt ? { createdAt: opts.lastCreatedAt } : null),
+      findFirst: vi
+        .fn()
+        .mockResolvedValue(opts.lastCreatedAt ? { createdAt: opts.lastCreatedAt } : null),
       updateMany,
     },
   } as unknown as PrismaClient;
-  return { db, updateMany };
+  return { db, updateMany, recipientUpdateMany };
 }
 
 describe("applyReadReceipt", () => {
@@ -92,5 +97,33 @@ describe("applyDelivery", () => {
       watermark: new Date(),
     });
     expect(updateMany).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("broadcast recipients follow the receipts", () => {
+  it("a read watermark marks the contact's SENT/DELIVERED recipient rows READ", async () => {
+    const { db, recipientUpdateMany } = fakeDb();
+    const watermark = new Date("2026-08-25T12:00:00Z");
+    await applyReadReceipt(db, { kind: "read", igScopedId: "ig1", watermark });
+    expect(recipientUpdateMany).toHaveBeenCalledWith({
+      where: { contactId: "c1", status: { in: ["SENT", "DELIVERED"] }, sentAt: { lte: watermark } },
+      data: { status: "READ" },
+    });
+  });
+
+  it("a delivery by mid uses that message's createdAt as the recipient watermark", async () => {
+    const at = new Date("2026-08-25T13:00:00Z");
+    const { db, recipientUpdateMany } = fakeDb({ lastCreatedAt: at });
+    await applyDelivery(db, { kind: "delivery", igScopedId: "ig1", mids: ["m1"] });
+    expect(recipientUpdateMany).toHaveBeenCalledWith({
+      where: { contactId: "c1", status: "SENT", sentAt: { lte: at } },
+      data: { status: "DELIVERED" },
+    });
+  });
+
+  it("touches no recipient when there is nothing to anchor a watermark on", async () => {
+    const { db, recipientUpdateMany } = fakeDb();
+    await applyDelivery(db, { kind: "delivery", igScopedId: "ig1", mids: [] });
+    expect(recipientUpdateMany).not.toHaveBeenCalled();
   });
 });

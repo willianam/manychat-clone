@@ -24,6 +24,7 @@ function fakeDb(failedRows: Array<{ id: string; kind: string; raw: unknown }> = 
       findUnique: vi.fn().mockResolvedValue(null),
       updateMany: vi.fn().mockResolvedValue({ count: 1 }),
     },
+    broadcastRecipient: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
   } as unknown as PrismaClient;
   return { db, update };
 }
