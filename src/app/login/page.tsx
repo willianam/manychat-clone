@@ -3,6 +3,7 @@ import { cookies, headers } from "next/headers";
 import { MessageCircle } from "lucide-react";
 import { authSecret, constantTimeEqual, signToken, SESSION_TTL_MS } from "../../lib/auth-token";
 import { loginRateLimiter } from "../../lib/login-rate-limit";
+import { clientIp } from "../../lib/client-ip";
 import { Callout } from "@/components/ui/callout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -31,7 +32,7 @@ export default async function LoginPage({
     const submitted = String(formData.get("password") ?? "");
     const expected = process.env.ADMIN_PASSWORD;
     const target = String(formData.get("next") ?? "/");
-    const ip = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+    const ip = clientIp(await headers());
 
     if (!loginRateLimiter.allows(ip)) {
       redirect(`/login?next=${encodeURIComponent(target)}&error=rate`);
