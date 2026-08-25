@@ -27,7 +27,10 @@ model Contact {
   /// never received a message and may only send via a valid tag.
   lastInboundAt DateTime?
 
-  subscribed Boolean  @default(true)
+  subscribed     Boolean   @default(true)
+  /// When the contact last opted out (global keyword or action node). Null
+  /// while subscribed; kept so the daily opt-out count survives re-opt-ins.
+  unsubscribedAt DateTime?
 
   /// Where this contact came in from. Free-form so it survives new entry
   /// points without a migration: "dm", "comment", "story_reply",
@@ -329,4 +332,32 @@ model UnmatchedMessage {
 
   @@index([resolvedAt, count])
   @@index([lastSeenAt])
+}
+
+/// One number per (day, metric, key), recomputed idempotently by
+/// server/rollup.ts. `date` is the account-timezone calendar day. `key`
+/// is "" for a global metric, or a dimension (trigger id, broadcast id).
+model DailyStat {
+  id     String   @id @default(cuid())
+  date   DateTime @db.Date
+  metric String
+  key    String   @default("")
+  value  Int      @default(0)
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([date, metric, key])
+  @@index([metric, date])
+}
+
+/// A trigger that started (or tried to start) a flow. Plain ids, no FK:
+/// deleting a trigger must not erase the history of how often it fired.
+model TriggerFire {
+  id        String   @id @default(cuid())
+  triggerId String
+  contactId String
+  at        DateTime @default(now())
+
+  @@index([at])
+  @@index([triggerId, at])
 }

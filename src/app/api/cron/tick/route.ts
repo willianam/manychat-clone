@@ -6,6 +6,7 @@ import {
   sweepStaleSessions,
 } from "../../../../server/broadcast-worker";
 import { maybeRefreshToken } from "../../../../server/token-refresh";
+import { rollupRecent } from "../../../../server/rollup";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -61,5 +62,8 @@ export async function GET(req: NextRequest) {
     broadcast = { name: queued[0].name, ...r };
   }
 
-  return NextResponse.json({ ok: true, token: token.action, resumed, swept, broadcast });
+  // Daily aggregates last: they read what the jobs above just wrote.
+  const rolled = await rollupRecent(db);
+
+  return NextResponse.json({ ok: true, token: token.action, resumed, swept, broadcast, rolled });
 }

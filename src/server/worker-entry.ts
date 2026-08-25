@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { runBroadcast, tickDelayedSessions, sweepStaleSessions } from "./broadcast-worker";
 import { maybeRefreshToken } from "./token-refresh";
+import { rollupRecent } from "./rollup";
 
 /**
  * Background loop: resumes delayed flow sessions and drains queued
@@ -11,8 +12,11 @@ import { maybeRefreshToken } from "./token-refresh";
 const TICK_MS = Number(process.env.WORKER_TICK_MS ?? 5000);
 /** The token check is cheap but a failing refresh must not hit Meta every 5s. */
 const TOKEN_CHECK_MS = 60 * 60 * 1000;
+/** Daily aggregates are cheap but not free; once a minute is plenty. */
+const ROLLUP_MS = 60 * 1000;
 let stopping = false;
 let lastTokenCheck = 0;
+let lastRollup = 0;
 
 async function tick(): Promise<void> {
   if (Date.now() - lastTokenCheck >= TOKEN_CHECK_MS) {
@@ -42,6 +46,11 @@ async function tick(): Promise<void> {
     console.log(
       `[worker] "${b.name}": ${report.sent} sent, ${report.skipped} skipped (window), ${report.failed} failed`,
     );
+  }
+
+  if (Date.now() - lastRollup >= ROLLUP_MS) {
+    lastRollup = Date.now();
+    await rollupRecent(db);
   }
 }
 

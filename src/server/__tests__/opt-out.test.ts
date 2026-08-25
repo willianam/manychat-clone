@@ -203,7 +203,7 @@ describe("action node ops", () => {
     expect(contact.subscribed).toBe(false);
     expect(db.contact.update).toHaveBeenCalledWith({
       where: { id: CONTACT },
-      data: { subscribed: false },
+      data: { subscribed: false, unsubscribedAt: expect.any(Date) },
     });
   });
 
@@ -215,7 +215,7 @@ describe("action node ops", () => {
 
     expect(db.contact.update).toHaveBeenCalledWith({
       where: { id: CONTACT },
-      data: { subscribed: true },
+      data: { subscribed: true, unsubscribedAt: null },
     });
   });
 });

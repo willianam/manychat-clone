@@ -22,6 +22,7 @@ import {
   type MessagingEvent,
 } from "../../../../lib/entry-events";
 import { applyReadReceipt, applyDelivery } from "../../../../server/receipts";
+import { rollupRecent } from "../../../../server/rollup";
 import { parseFlowPayload } from "../../../../lib/messenger-profile";
 import {
   tickDelayedSessions,
@@ -324,6 +325,8 @@ async function drainDueWork(): Promise<void> {
       },
     });
     if (queued) await runBroadcast(db, queued.id);
+
+    await rollupRecent(db);
   } catch (err) {
     console.error("[webhook] background drain failed:", err);
   }

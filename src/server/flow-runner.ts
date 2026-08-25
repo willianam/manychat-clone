@@ -468,9 +468,10 @@ async function applyOps(
     if (op.op === "unsubscribe" || op.op === "resubscribe") {
       // The running flow continues: the author decides what, if anything, is
       // said after this. Only future broadcasts and flow starts are affected.
+      const subscribed = op.op === "resubscribe";
       await db.contact.update({
         where: { id: contactId },
-        data: { subscribed: op.op === "resubscribe" },
+        data: { subscribed, unsubscribedAt: subscribed ? null : new Date() },
       });
       continue;
     }
