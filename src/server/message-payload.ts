@@ -1,6 +1,12 @@
 import type { FlowButton, FlowNodeData, LIMITS as L } from "../lib/flow-schema";
 import { LIMITS, byteLength } from "../lib/flow-schema";
-import { accountTimeZone, wallClockIn, wallClockToDate, type WallClock } from "../lib/timezone";
+import {
+  accountTimeZone,
+  parseLocalDateTime,
+  wallClockIn,
+  wallClockToDate,
+  type WallClock,
+} from "../lib/timezone";
 
 /**
  * Translates flow nodes into Instagram message payloads.
@@ -234,7 +240,17 @@ export function resumeAtFor(
   now: Date = new Date(),
   timeZone: string = accountTimeZone(),
 ): Date {
-  const at = new Date(now.getTime() + d.seconds * 1000);
+  if (d.mode === "untilDate") {
+    // An unparseable or past date resumes now: waiting forever on a typo is
+    // the worse failure.
+    const at = parseLocalDateTime(d.untilDate ?? "", timeZone);
+    return at && at.getTime() > now.getTime() ? at : now;
+  }
+  if (d.mode === "untilReply") {
+    return new Date(now.getTime() + (d.timeoutSeconds ?? 0) * 1000);
+  }
+
+  const at = new Date(now.getTime() + (d.seconds ?? 0) * 1000);
   if (!d.window) return at;
 
   const { fromHour, toHour } = d.window;

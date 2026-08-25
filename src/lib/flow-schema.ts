@@ -308,24 +308,50 @@ const ConditionData = z.object({
 });
 
 /**
- * Delay. `window` restricts *when* the flow may resume — a 20h delay set at
- * 3am would otherwise wake the conversation at 11pm. Hours are 0–23 in the
- * account's timezone.
+ * Delay. Three modes:
+ *
+ *   fixed      wait `seconds`; `window` restricts *when* the flow may resume
+ *              (a 20h delay set at 3am would otherwise wake the conversation
+ *              at 11pm — hours are 0–23 in the account's timezone). With
+ *              `cancelOnReply` a message from the contact cuts the wait short
+ *              and leaves by the "replied" handle.
+ *   untilReply pause until the contact sends anything; an optional
+ *              `timeoutSeconds` leaves by the "timeout" handle instead.
+ *   untilDate  resume at `untilDate` ("YYYY-MM-DDTHH:mm", account timezone);
+ *              a date already past continues immediately.
+ *
+ * `mode` is optional so every delay saved before it existed is a fixed one.
  */
-const DelayData = z.object({
-  kind: z.literal("delay"),
-  seconds: z
-    .number()
-    .int()
-    .min(1)
-    .max(60 * 60 * 24 * 30),
-  window: z
-    .object({
-      fromHour: z.number().int().min(0).max(23),
-      toHour: z.number().int().min(0).max(23),
-    })
-    .optional(),
-});
+const DelaySeconds = z
+  .number()
+  .int()
+  .min(1)
+  .max(60 * 60 * 24 * 30);
+
+const DelayData = z
+  .object({
+    kind: z.literal("delay"),
+    mode: z.enum(["fixed", "untilReply", "untilDate"]).optional(),
+    seconds: DelaySeconds.optional(),
+    window: z
+      .object({
+        fromHour: z.number().int().min(0).max(23),
+        toHour: z.number().int().min(0).max(23),
+      })
+      .optional(),
+    cancelOnReply: z.boolean().optional(),
+    timeoutSeconds: DelaySeconds.optional(),
+    untilDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/)
+      .optional(),
+  })
+  .refine((v) => (v.mode ?? "fixed") !== "fixed" || v.seconds !== undefined, {
+    message: "Informe quantos segundos esperar.",
+  })
+  .refine((v) => v.mode !== "untilDate" || Boolean(v.untilDate), {
+    message: "Informe a data e a hora para continuar.",
+  });
 
 /** Field writes are typed, so conditions can compare numbers and dates. */
 export const FieldOp = z.discriminatedUnion("op", [
@@ -467,6 +493,20 @@ export function outputsOf(
             { handle: "invalid", label: "inválida" },
           ]
         : [{ handle: "", label: "" }];
+    case "delay":
+      if ((d.mode ?? "fixed") === "fixed" && d.cancelOnReply) {
+        return [
+          { handle: "next", label: "depois" },
+          { handle: "replied", label: "respondeu" },
+        ];
+      }
+      if (d.mode === "untilReply" && d.timeoutSeconds) {
+        return [
+          { handle: "next", label: "respondeu" },
+          { handle: "timeout", label: "tempo esgotado" },
+        ];
+      }
+      return [{ handle: "", label: "" }];
     case "goto":
     case "end":
       return [];
@@ -528,6 +568,21 @@ export function validateGraph(graph: FlowGraph): FlowIssue[] {
         });
       }
       continue;
+    }
+
+    if (d.kind === "delay") {
+      const extra =
+        (d.mode ?? "fixed") === "fixed" && d.cancelOnReply
+          ? "replied"
+          : d.mode === "untilReply" && d.timeoutSeconds
+            ? "timeout"
+            : null;
+      if (extra && !out.some((e) => e.sourceHandle === extra)) {
+        issues.push({
+          level: "warning",
+          message: `A saída "${extra === "replied" ? "respondeu" : "tempo esgotado"}" do atraso "${n.id}" não está ligada; segue pelo caminho normal.`,
+        });
+      }
     }
 
     if (d.kind === "goto") {

@@ -615,7 +615,22 @@ export function DelayNode({ data }: NodeProps<WithStats>) {
       <Handle type="target" position={T} className={`${HANDLE} !top-[-8px] !bg-neutral-400`} />
       <Head tone="bg-rose-50 text-rose-800 border-b border-rose-100" label="Atraso inteligente" />
       <div className="p-2.5 text-[12px] text-neutral-700">
-        Aguarde <b>{humanize(d.seconds)}</b>
+        {d.mode === "untilReply" && (
+          <>
+            Aguarde <b>a resposta</b>
+            {d.timeoutSeconds && <> (até {humanize(d.timeoutSeconds)})</>}
+          </>
+        )}
+        {d.mode === "untilDate" && (
+          <>
+            Aguarde até <b>{d.untilDate?.replace("T", " ")}</b>
+          </>
+        )}
+        {(d.mode ?? "fixed") === "fixed" && (
+          <>
+            Aguarde <b>{humanize(d.seconds ?? 0)}</b>
+          </>
+        )}
         {d.window && (
           <>
             {" "}

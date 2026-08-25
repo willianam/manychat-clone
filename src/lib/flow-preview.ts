@@ -230,7 +230,13 @@ export function previewFrom(
     // Silent nodes: shown as a margin note so the reviewer knows time passes
     // or state changes here, without it looking like a message.
     if (d.kind === "delay") {
-      items.push({ kind: "note", nodeId: id, text: `Espera ${humanize(d.seconds)}` });
+      const text =
+        d.mode === "untilReply"
+          ? `Espera a resposta${d.timeoutSeconds ? ` (até ${humanize(d.timeoutSeconds)})` : ""}`
+          : d.mode === "untilDate"
+            ? `Espera até ${d.untilDate?.replace("T", " ")}`
+            : `Espera ${humanize(d.seconds ?? 0)}`;
+      items.push({ kind: "note", nodeId: id, text });
       current = targetOf(graph, id);
       if (!current) {
         items.push({ kind: "dangling", nodeId: id });

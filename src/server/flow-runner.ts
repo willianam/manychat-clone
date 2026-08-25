@@ -119,6 +119,16 @@ export async function resumeWithInput(
   const flow = await db.flow.findUniqueOrThrow({ where: { id: session.flowId } });
   const graph = FlowGraph.parse(flow.graph);
 
+  // A delay waiting on the contact: the message is the wake-up, not an answer.
+  const delayExit = delayReplyExit(graph, session);
+  if (delayExit !== undefined) {
+    session = await db.flowSession.update({
+      where: { id: session.id },
+      data: { status: "ACTIVE", currentNodeId: delayExit, resumeAt: null },
+    });
+    return advance(db, session, graph, { inbound: true });
+  }
+
   const node = graph.nodes.find((n) => n.id === session.currentNodeId);
   if (node?.data.kind === "question") {
     const q = node.data;
@@ -258,7 +268,23 @@ export async function resumeWithPostback(
  */
 export async function resumeDelayed(db: PrismaClient, session: FlowSession): Promise<StepResult> {
   const flow = await db.flow.findUniqueOrThrow({ where: { id: session.flowId } });
-  return advance(db, session, FlowGraph.parse(flow.graph));
+  return advance(db, session, FlowGraph.parse(flow.graph), { timer: true });
+}
+
+/**
+ * Where a delay node parked on itself continues when the contact writes.
+ *
+ * Returns null when the session is not parked on such a delay.
+ */
+function delayReplyExit(graph: FlowGraph, session: FlowSession): string | null | undefined {
+  const node = graph.nodes.find((n) => n.id === session.currentNodeId);
+  if (node?.data.kind !== "delay") return undefined;
+  const d = node.data;
+  if (d.mode === "untilReply") return nextOf(graph, node.id);
+  if ((d.mode ?? "fixed") === "fixed" && d.cancelOnReply) {
+    return nextOf(graph, node.id, "replied") ?? nextOf(graph, node.id);
+  }
+  return undefined;
 }
 
 /**
@@ -271,9 +297,12 @@ async function advance(
   db: PrismaClient,
   session: FlowSession,
   graph: FlowGraph,
-  opts: { inbound?: boolean; hops?: number } = {},
+  opts: { inbound?: boolean; hops?: number; timer?: boolean } = {},
 ): Promise<StepResult> {
   let current = session.currentNodeId;
+  // A delay that parked on itself (waiting on the contact, or a cancellable
+  // wait) and is now woken by the worker: leave by its timeout path.
+  const wokenOn = opts.timer ? current : null;
   // Stored contact fields are readable by {{name}} alongside session answers,
   // so a flow can greet by a name captured weeks ago in a different flow.
   // Session context wins on conflict — see loadContactFields.
@@ -473,7 +502,44 @@ async function advance(
     }
 
     if (d.kind === "delay") {
+      const mode = d.mode ?? "fixed";
+
+      if (wokenOn === node.id && step === 0) {
+        const handle = mode === "untilReply" ? "timeout" : undefined;
+        current = (handle && nextOf(graph, node.id, handle)) || nextOf(graph, node.id);
+        await db.flowSession.update({
+          where: { id: session.id },
+          data: { status: "ACTIVE", currentNodeId: current, context: asJson(ctx) },
+        });
+        continue;
+      }
+
       const resumeAt = resumeAtFor(d);
+
+      if (mode === "untilReply" || (mode === "fixed" && d.cancelOnReply)) {
+        // Park on this node, so the next message from the contact is routed
+        // here (WAITING_INPUT) and the worker can still fire the timeout.
+        await db.flowSession.update({
+          where: { id: session.id },
+          data: {
+            status: "WAITING_INPUT",
+            currentNodeId: node.id,
+            resumeAt: mode === "untilReply" && !d.timeoutSeconds ? null : resumeAt,
+            context: asJson(ctx),
+          },
+        });
+        return { status: "delayed", nodeId: node.id };
+      }
+
+      if (mode === "untilDate" && resumeAt.getTime() <= Date.now()) {
+        current = nextOf(graph, node.id);
+        await db.flowSession.update({
+          where: { id: session.id },
+          data: { currentNodeId: current, context: asJson(ctx) },
+        });
+        continue;
+      }
+
       await db.flowSession.update({
         where: { id: session.id },
         data: {
