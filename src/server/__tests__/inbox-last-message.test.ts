@@ -10,7 +10,7 @@ vi.mock("../token-refresh", () => ({ getAccessToken: vi.fn().mockResolvedValue("
 
 import { recordInboundMessage } from "../inbound-attachments";
 import { sendMessage } from "../instagram";
-import { touchLastMessage } from "../inbox";
+import { touchLastMessage } from "../last-message";
 
 function fakeDb(opts: { lastInboundAt?: Date | null; failTouch?: boolean } = {}) {
   return {

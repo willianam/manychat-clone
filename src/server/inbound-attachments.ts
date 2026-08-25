@@ -1,5 +1,5 @@
 import type { PrismaClient, Prisma } from "@prisma/client";
-import { touchLastMessage } from "./inbox";
+import { touchLastMessage } from "./last-message";
 
 /**
  * Inbound attachment capture.

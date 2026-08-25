@@ -10,7 +10,7 @@ import {
 } from "./trigger-dispatch";
 import { fetchProfile } from "./instagram";
 import { recordInboundMessage } from "./inbound-attachments";
-import { touchLastMessage } from "./inbox";
+import { touchLastMessage } from "./last-message";
 import { applyReadReceipt, applyDelivery } from "./receipts";
 import {
   parseStoryReply,

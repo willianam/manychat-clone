@@ -2,6 +2,7 @@ import type { Prisma, PrismaClient, QuickReplyTemplate } from "@prisma/client";
 import { windowRemainingMs, HUMAN_AGENT_WINDOW_MS } from "../lib/messaging-window";
 import { FlowGraph, type NodeKind } from "../lib/flow-schema";
 import { sendHumanAgentMessage, sendMessage, sendText } from "./instagram";
+import type { ConversationFilter } from "../lib/inbox-filters";
 
 /**
  * Inbox: the operator's view of conversations.
@@ -13,40 +14,14 @@ import { sendHumanAgentMessage, sendMessage, sendText } from "./instagram";
  * message newer than lastReadAt.
  */
 
-/**
- * Bump `Contact.lastMessageAt`. The one place the inbox order is written
- * from; every Message write (inbound webhook, outbound send) calls it.
- *
- * Best-effort on purpose: a missing timestamp misorders one row in the
- * inbox, while a thrown error here would fail the send or the webhook.
- */
-export async function touchLastMessage(
-  db: PrismaClient,
-  contactId: string,
-  at: Date = new Date(),
-): Promise<void> {
-  try {
-    await db.contact.update({ where: { id: contactId }, data: { lastMessageAt: at } });
-  } catch (err) {
-    console.warn(`[inbox] failed to touch lastMessageAt for ${contactId}:`, err);
-  }
-}
+export { touchLastMessage } from "./last-message";
 
 // ---------------------------------------------------------------------------
 // Conversation list
 // ---------------------------------------------------------------------------
 
-export type ConversationFilter = "all" | "unread" | "paused" | "open-window";
-export const CONVERSATION_FILTERS: readonly ConversationFilter[] = [
-  "all",
-  "unread",
-  "paused",
-  "open-window",
-];
-
-export function parseConversationFilter(raw: string | undefined): ConversationFilter {
-  return CONVERSATION_FILTERS.find((f) => f === raw) ?? "all";
-}
+export type { ConversationFilter } from "../lib/inbox-filters";
+export { parseConversationFilter } from "../lib/inbox-filters";
 
 export type ConversationPreview = {
   text: string | null;

@@ -3,7 +3,7 @@ import { canSend, type MessageTag } from "../lib/messaging-window";
 import { db as defaultDb } from "./db";
 import { getAccessToken } from "./token-refresh";
 import { logger } from "../lib/log";
-import { touchLastMessage } from "./inbox";
+import { touchLastMessage } from "./last-message";
 
 const log = logger("instagram");
 
