@@ -125,7 +125,7 @@ describe("importContactsCsv", () => {
     // "sim" re-subscribes c2 and records it
     expect(raw.contact.update).toHaveBeenCalledWith({
       where: { id: "c2" },
-      data: { subscribed: true },
+      data: { subscribed: true, unsubscribedAt: null },
     });
     expect(raw.contactEvent.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ kind: "SUBSCRIBED" }) }),

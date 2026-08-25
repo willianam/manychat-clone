@@ -38,6 +38,7 @@ export async function handleInboundMessage(
 
   const trigger = await matchKeyword(db, text);
   if (trigger) {
+    await recordTriggerFire(db, trigger.id, contactId);
     await startFlow(db, trigger.flowId, contactId);
     return;
   }
@@ -51,7 +52,28 @@ export async function handleInboundMessage(
     where: { kind: "DEFAULT", enabled: true, flow: { enabled: true } },
     orderBy: { priority: "desc" },
   });
-  if (fallback) await startFlow(db, fallback.flowId, contactId);
+  if (fallback) {
+    await recordTriggerFire(db, fallback.id, contactId);
+    await startFlow(db, fallback.flowId, contactId);
+  }
+}
+
+/**
+ * One row per trigger fire, the raw material for the "disparos por gatilho"
+ * daily stat (server/rollup.ts). Recorded before startFlow so a fire whose
+ * flow refused to start (opted out, already running) still counts as the
+ * trigger having matched. Never throws: analytics must not cost the reply.
+ */
+async function recordTriggerFire(
+  db: PrismaClient,
+  triggerId: string,
+  contactId: string,
+): Promise<void> {
+  try {
+    await db.triggerFire.create({ data: { triggerId, contactId } });
+  } catch {
+    // Best-effort.
+  }
 }
 
 /**
@@ -94,7 +116,7 @@ async function handleGlobalKeyword(
 async function abandonSessions(db: PrismaClient, contactId: string): Promise<void> {
   await db.flowSession.updateMany({
     where: { contactId, status: { in: ["ACTIVE", "WAITING_INPUT"] } },
-    data: { status: "ABANDONED" },
+    data: { status: "ABANDONED", abandonedAt: new Date() },
   });
 }
 
@@ -193,6 +215,7 @@ export async function handleComment(
     update: { username: args.username, lastInboundAt: new Date() },
   });
 
+  await recordTriggerFire(db, trigger.id, contact.id);
   await startFlow(db, trigger.flowId, contact.id);
 }
 
@@ -226,6 +249,7 @@ export async function handleStoryReply(
 
   const trigger = await matchByKind(db, "STORY_REPLY", text);
   if (trigger) {
+    await recordTriggerFire(db, trigger.id, contactId);
     await startFlow(db, trigger.flowId, contactId);
     return;
   }
@@ -246,6 +270,7 @@ export async function handleStoryMention(db: PrismaClient, contactId: string): P
     orderBy: { priority: "desc" },
   });
   if (!trigger) return;
+  await recordTriggerFire(db, trigger.id, contactId);
   await startFlow(db, trigger.flowId, contactId);
 }
 
@@ -286,7 +311,7 @@ export async function handleProfilePostback(
   // intent to switch, so abandon what was running.
   await db.flowSession.updateMany({
     where: { contactId, status: { in: ["ACTIVE", "WAITING_INPUT"] } },
-    data: { status: "ABANDONED" },
+    data: { status: "ABANDONED", abandonedAt: new Date() },
   });
 
   await startFlow(db, flowId, contactId);

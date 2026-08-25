@@ -68,11 +68,15 @@ export async function setContactSubscribed(
     where: { id: contactId },
     select: { subscribed: true },
   });
-  await db.contact.update({ where: { id: contactId }, data: { subscribed } });
+  const now = new Date();
+  await db.contact.update({
+    where: { id: contactId },
+    data: { subscribed, unsubscribedAt: subscribed ? null : now },
+  });
   if (!subscribed) {
     await db.flowSession.updateMany({
       where: { contactId, status: { in: ["ACTIVE", "WAITING_INPUT"] } },
-      data: { status: "ABANDONED" },
+      data: { status: "ABANDONED", abandonedAt: now },
     });
   }
   if (before && before.subscribed === subscribed) return;

@@ -96,19 +96,17 @@ function fakeDb(opts: { graph?: object; subscribed?: boolean; waiting?: boolean 
       update: vi.fn(write),
     },
     trigger: {
-      findMany: vi
-        .fn()
-        .mockResolvedValue([
-          {
-            id: "trg-1",
-            flowId: FLOW,
-            kind: "KEYWORD",
-            pattern: "preco",
-            match: "CONTAINS",
-            enabled: true,
-            priority: 0,
-          },
-        ]),
+      findMany: vi.fn().mockResolvedValue([
+        {
+          id: "trg-1",
+          flowId: FLOW,
+          kind: "KEYWORD",
+          pattern: "preco",
+          match: "CONTAINS",
+          enabled: true,
+          priority: 0,
+        },
+      ]),
       findFirst: vi.fn().mockResolvedValue(null),
     },
     unmatchedMessage: { upsert: vi.fn().mockResolvedValue({}) },
@@ -138,7 +136,7 @@ describe("opt-out keyword", () => {
     expect(contact.subscribed).toBe(false);
     expect(db.flowSession.updateMany).toHaveBeenCalledWith({
       where: { contactId: CONTACT, status: { in: ["ACTIVE", "WAITING_INPUT"] } },
-      data: { status: "ABANDONED" },
+      data: { status: "ABANDONED", abandonedAt: expect.any(Date) },
     });
     expect(sentTexts()).toHaveLength(1);
     expect(sentTexts()[0]).toContain("voltar");
@@ -205,7 +203,7 @@ describe("action node ops", () => {
     expect(contact.subscribed).toBe(false);
     expect(db.contact.update).toHaveBeenCalledWith({
       where: { id: CONTACT },
-      data: { subscribed: false },
+      data: { subscribed: false, unsubscribedAt: expect.any(Date) },
     });
   });
 
@@ -217,7 +215,7 @@ describe("action node ops", () => {
 
     expect(db.contact.update).toHaveBeenCalledWith({
       where: { id: CONTACT },
-      data: { subscribed: true },
+      data: { subscribed: true, unsubscribedAt: null },
     });
   });
 });

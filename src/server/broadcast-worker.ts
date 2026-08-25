@@ -11,6 +11,9 @@ import {
   SEGMENT_CONTACT_SELECT,
 } from "./segments";
 import type { SegmentRules } from "../lib/segment-rules";
+import { logger } from "../lib/log";
+
+const log = logger("worker");
 
 /**
  * Broadcast sender.
@@ -409,7 +412,7 @@ export async function tickDelayedSessions(db: PrismaClient): Promise<number> {
   for (const s of due) {
     await db.flowSession.update({ where: { id: s.id }, data: { resumeAt: null } });
     await resumeDelayed(db, s).catch((err) => {
-      console.warn(`[worker] delayed session ${s.id} failed to resume:`, err);
+      log.warn("delayed session failed to resume", { sessionId: s.id, err });
     });
     resumed++;
   }
@@ -434,7 +437,7 @@ export async function sweepStaleSessions(db: PrismaClient, now = new Date()): Pr
       status: "WAITING_INPUT",
       updatedAt: { lt: new Date(now.getTime() - STALE_SESSION_MS) },
     },
-    data: { status: "ABANDONED" },
+    data: { status: "ABANDONED", abandonedAt: now },
   });
   return count;
 }

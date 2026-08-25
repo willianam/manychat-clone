@@ -65,23 +65,21 @@ function fakeDb(opts: { menuTrigger?: boolean } = {}) {
       update: vi.fn(write),
     },
     trigger: {
-      findMany: vi
-        .fn()
-        .mockResolvedValue(
-          opts.menuTrigger
-            ? [
-                {
-                  id: "trg-menu",
-                  flowId: MENU_FLOW,
-                  kind: "KEYWORD",
-                  pattern: "menu",
-                  match: "EXACT",
-                  enabled: true,
-                  priority: 0,
-                },
-              ]
-            : [],
-        ),
+      findMany: vi.fn().mockResolvedValue(
+        opts.menuTrigger
+          ? [
+              {
+                id: "trg-menu",
+                flowId: MENU_FLOW,
+                kind: "KEYWORD",
+                pattern: "menu",
+                match: "EXACT",
+                enabled: true,
+                priority: 0,
+              },
+            ]
+          : [],
+      ),
       findFirst: vi.fn().mockResolvedValue(null),
     },
     unmatchedMessage: { upsert: vi.fn().mockResolvedValue({}) },
@@ -108,7 +106,7 @@ describe("escape keywords", () => {
 
     expect(db.flowSession.updateMany).toHaveBeenCalledWith({
       where: { contactId: CONTACT, status: { in: ["ACTIVE", "WAITING_INPUT"] } },
-      data: { status: "ABANDONED" },
+      data: { status: "ABANDONED", abandonedAt: expect.any(Date) },
     });
     // The old question did not swallow the word...
     expect(db.flow.findUniqueOrThrow).not.toHaveBeenCalledWith(
@@ -149,7 +147,7 @@ describe("sweepStaleSessions", () => {
         status: "WAITING_INPUT",
         updatedAt: { lt: new Date(now.getTime() - STALE_SESSION_MS) },
       },
-      data: { status: "ABANDONED" },
+      data: { status: "ABANDONED", abandonedAt: expect.any(Date) },
     });
     expect(STALE_SESSION_MS).toBe(24 * 60 * 60 * 1000);
   });

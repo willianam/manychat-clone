@@ -56,6 +56,13 @@ O webhook precisa continuar aberto: a Meta se autentica assinando o corpo
 (HMAC), não carregando a nossa senha. O cron valida `CRON_SECRET` por conta
 própria, porque o Vercel Cron não envia cookie.
 
+`/api/health` também é público, pensado para monitor de uptime: responde
+`db`, status do token (dias restantes, se o último refresh falhou — nunca o
+valor), a última chamada à Meta e a contagem de erros das últimas 24 h
+(tabela `ErrorEvent`, gravada pelos `catch` do webhook, do drain e do
+worker). 503 quando o banco não responde. Logs são JSON em produção
+(`src/lib/log.ts`; nível via `LOG_LEVEL`).
+
 ---
 
 ## Passo a passo na Meta
@@ -109,7 +116,21 @@ Em **Webhooks → Instagram → Assinar este objeto**:
 Clique em **Verificar e salvar**. A Meta faz um GET de handshake na hora —
 se o app não estiver rodando com o `.env` correto, falha aqui.
 
-Depois **assine os campos**: `messages`, `messaging_postbacks` e `comments`.
+Depois **assine os campos**:
+
+| Campo | Para quê |
+|---|---|
+| `messages` | DMs, story replies, menções em story, ref links |
+| `messaging_postbacks` | toques em botão e quick reply |
+| `comments` | comment-to-DM |
+| `messaging_seen` | recibo de leitura: `read.mid` marca como READ tudo o que enviamos até aquela mensagem |
+| `message_reads` | mesma coisa no formato Messenger (`read.watermark`); só existe se o app também usa Páginas |
+| `message_deliveries` | recibo de entrega (`delivery.mids` / `delivery.watermark` → DELIVERED). A API do Instagram com login do Instagram não expõe este campo hoje; a rota já o parseia caso passe a existir ou o app use Messenger |
+
+Os recibos são tratados em `src/lib/entry-events.ts` (parse) e
+`src/server/receipts.ts` (atualização de `Message.status`, sempre para a
+frente: SENT → DELIVERED → READ). Sem `messaging_seen` assinado, as
+mensagens ficam em SENT para sempre e a taxa de leitura do dashboard é zero.
 
 ### 6. Permissões e App Review
 
@@ -156,7 +177,11 @@ isso a rota lê `await req.text()` primeiro. A comparação é constant-time.
 
 **Retry agressivo**. A Meta reenvia qualquer webhook que demore mais que
 ~20s. A rota responde 200 na hora e processa em background; a tabela
-`WebhookEvent` deduplica por id de entrega.
+`WebhookEvent` deduplica por id de entrega. Cada evento é reivindicado
+como uma linha dessa tabela e o handler grava `processedAt` (sucesso) ou
+`error` + `attempts` (falha). `reprocessFailed()` (`src/server/webhook-events.ts`),
+chamado pelo tick e pelo worker, roda uma segunda vez os eventos que
+falharam — uma falha transitória (banco, Meta 5xx) não perde a mensagem.
 
 **Rate limit**. Broadcasts são paced em `BROADCAST_RATE` msg/s (padrão 5).
 Rajada leva a throttle (erro 613) ou flag na conta.

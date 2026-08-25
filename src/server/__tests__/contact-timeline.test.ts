@@ -147,9 +147,13 @@ describe("contact events at the mutation sites", () => {
     await setContactSubscribed(a.db, "c1", false, "panel");
     expect(a.raw.contact.update).toHaveBeenCalledWith({
       where: { id: "c1" },
-      data: { subscribed: false },
+      data: { subscribed: false, unsubscribedAt: expect.any(Date) },
     });
-    expect(a.raw.flowSession.updateMany).toHaveBeenCalledTimes(1);
+    expect(a.raw.flowSession.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { status: "ABANDONED", abandonedAt: expect.any(Date) },
+      }),
+    );
     expect(a.raw.contactEvent.create).toHaveBeenCalledWith({
       data: { contactId: "c1", kind: "UNSUBSCRIBED", payload: { via: "panel" } },
     });
