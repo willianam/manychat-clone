@@ -116,6 +116,8 @@ function fakeDb(opts: { graph?: object; subscribed?: boolean; waiting?: boolean 
       findMany: vi.fn().mockResolvedValue([]),
       upsert: vi.fn().mockResolvedValue({}),
     },
+    customField: { upsert: vi.fn().mockResolvedValue({}) },
+    contactEvent: { create: vi.fn().mockResolvedValue({}) },
   } as unknown as PrismaClient;
 
   return { db, contact };

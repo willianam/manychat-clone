@@ -24,6 +24,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Link href="/tags" className="text-sm text-neutral-600 hover:text-neutral-900">
               Etiquetas
             </Link>
+            <Link href="/campos" className="text-sm text-neutral-600 hover:text-neutral-900">
+              Campos
+            </Link>
             <Link href="/broadcasts" className="text-sm text-neutral-600 hover:text-neutral-900">
               Disparos
             </Link>

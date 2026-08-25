@@ -2,6 +2,7 @@ import type { PrismaClient, FlowSession, Prisma } from "@prisma/client";
 import { FlowGraph, findEntryNode, type FlowNodeData } from "../lib/flow-schema";
 import { coerceFieldValue, compareValues } from "../lib/field-values";
 import { sendText, sendMessage, sendSenderActionToContact } from "./instagram";
+import { saveContactField } from "./contact-fields";
 import {
   buildMessage,
   buildQuickReply,
@@ -100,11 +101,7 @@ export async function resumeWithInput(
   const node = graph.nodes.find((n) => n.id === session.currentNodeId);
   if (node?.data.kind === "question") {
     const ctx: Ctx = { ...(session.context as Ctx), [node.data.saveAs]: input };
-    await db.contactField.upsert({
-      where: { contactId_key: { contactId: session.contactId, key: node.data.saveAs } },
-      create: { contactId: session.contactId, key: node.data.saveAs, value: input },
-      update: { value: input },
-    });
+    await saveContactField(db, session.contactId, node.data.saveAs, input);
     session = await db.flowSession.update({
       where: { id: session.id },
       data: { context: asJson(ctx), status: "ACTIVE", currentNodeId: nextOf(graph, node.id) },
@@ -143,11 +140,7 @@ export async function resumeWithPostback(
     if (opt) {
       const value = opt.value ?? opt.title;
       ctx[node.data.saveAs] = value;
-      await db.contactField.upsert({
-        where: { contactId_key: { contactId: session.contactId, key: node.data.saveAs } },
-        create: { contactId: session.contactId, key: node.data.saveAs, value },
-        update: { value },
-      });
+      await saveContactField(db, session.contactId, node.data.saveAs, value);
     }
   }
 
@@ -438,11 +431,7 @@ async function applyOps(
       // compares "1500" with "1499" as numbers — see lib/field-values.ts.
       const value = coerceFieldValue(op.value, op.valueType);
       ctx[op.key] = value;
-      await db.contactField.upsert({
-        where: { contactId_key: { contactId, key: op.key } },
-        create: { contactId, key: op.key, value },
-        update: { value },
-      });
+      await saveContactField(db, contactId, op.key, value, op.valueType);
       continue;
     }
 

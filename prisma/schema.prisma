@@ -60,6 +60,28 @@ model ContactField {
   @@unique([contactId, key])
 }
 
+enum FieldType {
+  TEXT
+  NUMBER
+  DATE
+  BOOLEAN
+}
+
+/// The registry of known contact field keys.
+///
+/// ContactField rows are free-form so a flow can save any key; this table is
+/// what the UI lists and what gives a key a label and a type. Rows are
+/// created explicitly on /campos or automatically the first time a flow
+/// saves a key that is not here yet — see server/custom-fields.ts.
+model CustomField {
+  id           String    @id @default(cuid())
+  key          String    @unique
+  label        String
+  type         FieldType @default(TEXT)
+  defaultValue String?
+  createdAt    DateTime  @default(now())
+}
+
 model Tag {
   id        String       @id @default(cuid())
   name      String       @unique

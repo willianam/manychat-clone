@@ -67,6 +67,8 @@ function fakeDb() {
       findMany: vi.fn().mockResolvedValue([]),
       upsert: vi.fn().mockResolvedValue({}),
     },
+    customField: { upsert: vi.fn().mockResolvedValue({}) },
+    contactEvent: { create: vi.fn().mockResolvedValue({}) },
     tag: { upsert: vi.fn().mockResolvedValue({ id: "tag-vip", name: "vip" }) },
     contactTag: { upsert: vi.fn().mockResolvedValue({}) },
   };
