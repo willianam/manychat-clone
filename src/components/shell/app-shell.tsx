@@ -16,17 +16,26 @@ import { isBareRoute, titleFor } from "./nav";
  * Login and the privacy policy render bare — one has no session to show a
  * sidebar for, the other is read by Meta's reviewers, not by the owner.
  */
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({
+  children,
+  unreadConversations = 0,
+}: {
+  children: React.ReactNode;
+  /** Badge on the inbox item; the root layout counts it. */
+  unreadConversations?: number;
+}) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
   if (isBareRoute(pathname)) return <>{children}</>;
 
+  const badges = { "/inbox": unreadConversations };
+
   return (
     <div className="flex min-h-screen">
       <aside className="fixed inset-y-0 left-0 hidden w-60 flex-col border-r bg-card md:flex">
         <Brand />
-        <SidebarNav />
+        <SidebarNav badges={badges} />
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col md:pl-60">
@@ -40,7 +49,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <SheetContent side="left" className="w-64 p-0">
               <SheetTitle className="sr-only">Menu</SheetTitle>
               <Brand />
-              <SidebarNav onNavigate={() => setOpen(false)} />
+              <SidebarNav onNavigate={() => setOpen(false)} badges={badges} />
             </SheetContent>
           </Sheet>
 

@@ -1,6 +1,7 @@
 import {
   BarChart3,
   Home,
+  Inbox,
   Link2,
   Megaphone,
   Settings,
@@ -17,6 +18,7 @@ export type NavItem = { href: string; label: string; icon: LucideIcon };
 /** The sidebar, in the order the owner works through it. */
 export const NAV: NavItem[] = [
   { href: "/", label: "Início", icon: Home },
+  { href: "/inbox", label: "Caixa de entrada", icon: Inbox },
   { href: "/flows", label: "Fluxos", icon: Workflow },
   { href: "/gatilhos", label: "Gatilhos", icon: Zap },
   { href: "/contacts", label: "Contatos", icon: Users },
