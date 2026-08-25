@@ -358,7 +358,11 @@ model FlowSession {
   flow    Flow    @relation(fields: [flowId], references: [id], onDelete: Cascade)
   contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
-  @@unique([contactId, flowId, status])
+  /// Only ONE open run per (contact, flow) — enforced by the partial unique
+  /// index `FlowSession_open_unique` (migration 20260828000000). Prisma cannot
+  /// express a WHERE clause on a unique, so it lives in raw SQL: a full
+  /// unique on (contactId, flowId, status) would let a contact complete a
+  /// flow exactly once, forever.
   @@index([status, resumeAt])
   @@index([flowId, startedAt])
 }
