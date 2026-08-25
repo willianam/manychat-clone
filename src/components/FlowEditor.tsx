@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactFlow, {
   Background,
   Controls,
@@ -21,7 +21,9 @@ import {
   Loader2,
   PanelLeftClose,
   PanelLeftOpen,
+  Redo2,
   Save,
+  Undo2,
   XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -33,6 +35,8 @@ import {
   uid,
   withInlineText,
 } from "../lib/flow-edit";
+import { clipSelection, parseClip, pasteClip, serializeClip } from "../lib/flow-clipboard";
+import { emptyHistory, record, redo, undo } from "../lib/flow-history";
 import type { FlowStats } from "../server/flow-metrics";
 import { nodeTypes } from "./nodes";
 import { PropertiesPanel } from "./PropertiesPanel";
@@ -120,6 +124,25 @@ const BLOCKS: Array<{
 
 /** MIME type of a palette drag, so a stray file drop is ignored. */
 const DRAG_TYPE = "application/x-flow-block";
+
+type Snapshot = { nodes: Node[]; edges: Edge[] };
+
+/**
+ * Last copy made in this tab. The system clipboard is the primary channel
+ * (it is what makes paste across flows work), but reading it needs a
+ * permission the browser may refuse; this keeps ⌘C/⌘V working regardless.
+ */
+let memoryClip: string | null = null;
+
+const isTyping = () => {
+  const el = document.activeElement;
+  return (
+    el instanceof HTMLInputElement ||
+    el instanceof HTMLTextAreaElement ||
+    el instanceof HTMLSelectElement ||
+    (el instanceof HTMLElement && el.isContentEditable)
+  );
+};
 
 const DEFAULTS: Record<string, () => object> = {
   message: () => ({ kind: "message", text: "Olá!" }),
@@ -227,13 +250,60 @@ function FlowEditorInner({
    */
   const [pendingPrune, setPendingPrune] = useState(0);
 
+  /**
+   * Undo/redo. `snap` records the committed state BEFORE a change, read from
+   * a ref that tracks the last render, so callers stay free of stale
+   * closures. `historyTick` only exists to re-render the toolbar buttons.
+   */
+  const historyRef = useRef(emptyHistory<Snapshot>());
+  const latest = useRef<Snapshot>({ nodes, edges });
+  const [, setHistoryTick] = useState(0);
+  useEffect(() => {
+    latest.current = { nodes, edges };
+  }, [nodes, edges]);
+
+  const snap = useCallback((key: string | null = null) => {
+    historyRef.current = record(historyRef.current, latest.current, key);
+    setHistoryTick((t) => t + 1);
+  }, []);
+
+  const restore = useCallback(
+    (s: Snapshot) => {
+      setNodes(s.nodes);
+      setEdges(s.edges);
+      setSelectedId(null);
+      setSavedAt(null);
+      setHistoryTick((t) => t + 1);
+    },
+    [setNodes, setEdges],
+  );
+
+  const undoNow = useCallback(() => {
+    const r = undo(historyRef.current, latest.current);
+    if (!r) return;
+    historyRef.current = r.history;
+    restore(r.state);
+  }, [restore]);
+
+  const redoNow = useCallback(() => {
+    const r = redo(historyRef.current, latest.current);
+    if (!r) return;
+    historyRef.current = r.history;
+    restore(r.state);
+  }, [restore]);
+
+  const canUndo = historyRef.current.past.length > 0;
+  const canRedo = historyRef.current.future.length > 0;
+
   const updateNodeData = useCallback(
     (nodeId: string, data: FlowNodeData) => {
+      // Keystrokes into one node's fields fold into a single undo step.
+      snap(`data:${nodeId}`);
       setNodes((ns) => ns.map((n) => (n.id === nodeId ? { ...n, data } : n)));
       setPendingPrune((n) => n + 1);
       setSavedAt(null);
     },
-    [setNodes],
+    [setNodes, snap],
   );
 
   useEffect(() => {
@@ -255,6 +325,7 @@ function FlowEditorInner({
    */
   const duplicate = useCallback(
     (nodeId: string) => {
+      snap();
       const next = duplicateNode(
         { nodes: nodes as FlowGraph["nodes"], edges: edges as FlowGraph["edges"] },
         nodeId,
@@ -264,17 +335,18 @@ function FlowEditorInner({
       if (added) setSelectedId(added.id);
       setSavedAt(null);
     },
-    [nodes, edges, setNodes],
+    [nodes, edges, setNodes, snap],
   );
 
   const deleteNode = useCallback(
     (nodeId: string) => {
+      snap();
       setNodes((ns) => ns.filter((n) => n.id !== nodeId));
       setEdges((es) => es.filter((e) => e.source !== nodeId && e.target !== nodeId));
       setSelectedId((id) => (id === nodeId ? null : id));
       setSavedAt(null);
     },
-    [setNodes, setEdges],
+    [setNodes, setEdges, snap],
   );
 
   /**
@@ -330,10 +402,11 @@ function FlowEditorInner({
 
   const onConnect = useCallback(
     (c: Connection) => {
+      snap();
       setEdges((eds) => addEdge({ ...c, animated: true }, eds));
       setSavedAt(null);
     },
-    [setEdges],
+    [setEdges, snap],
   );
 
   /**
@@ -342,6 +415,7 @@ function FlowEditorInner({
    */
   const addNode = useCallback(
     (kind: string, at?: { x: number; y: number }) => {
+      snap();
       const id = uid(kind);
       setNodes((ns) => {
         const data = DEFAULTS[kind]!() as Record<string, unknown>;
@@ -357,7 +431,7 @@ function FlowEditorInner({
       setSelectedId(id);
       setSavedAt(null);
     },
-    [setNodes, edges, selectedId],
+    [setNodes, edges, selectedId, snap],
   );
 
   const onDrop = useCallback(
@@ -370,20 +444,84 @@ function FlowEditorInner({
     [addNode, screenToFlowPosition],
   );
 
+  // Strips display-only wiring before validating.
+  const clean = useMemo(
+    () => ({
+      nodes: nodes.map(({ data, ...n }) => {
+        const { _stats, _onText, ...rest } = data as Record<string, unknown>;
+        return { ...n, data: rest };
+      }),
+      edges,
+    }),
+    [nodes, edges],
+  );
+
+  /** Ids to copy: the multi-selection when there is one, else the open node. */
+  const selectedIds = useCallback(() => {
+    const multi = nodes.filter((n) => n.selected).map((n) => n.id);
+    if (multi.length) return multi;
+    return selectedId ? [selectedId] : [];
+  }, [nodes, selectedId]);
+
+  const copy = useCallback(() => {
+    const clip = clipSelection(clean as FlowGraph, selectedIds());
+    if (!clip) return;
+    const text = serializeClip(clip);
+    memoryClip = text;
+    navigator.clipboard?.writeText(text).catch(() => {});
+  }, [clean, selectedIds]);
+
+  const paste = useCallback(async () => {
+    let text = memoryClip;
+    try {
+      const fromSystem = await navigator.clipboard?.readText();
+      if (fromSystem && parseClip(fromSystem)) text = fromSystem;
+    } catch {
+      // Permission refused: fall back to what this tab copied.
+    }
+    const clip = text ? parseClip(text) : null;
+    if (!clip) return;
+
+    snap();
+    const { graph, added } = pasteClip(clean as FlowGraph, clip);
+    const pasted = new Set(added);
+    setNodes(graph.nodes.map((n) => ({ ...n, selected: pasted.has(n.id) })) as Node[]);
+    setEdges(graph.edges as Edge[]);
+    setSelectedId(added[0] ?? null);
+    setSavedAt(null);
+  }, [clean, setNodes, setEdges, snap]);
+
   /**
-   * Delete/Backspace removes the selection. React Flow ships its own delete
-   * key handling, but it does not know about our selection state or the
-   * "don't delete while typing" rule, so we own it.
+   * Keyboard. React Flow ships its own delete key handling, but it does not
+   * know about our selection state or the "don't delete while typing" rule,
+   * so we own every shortcut here.
    */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "d") {
-        const el0 = document.activeElement;
-        const typing =
-          el0 instanceof HTMLInputElement ||
-          el0 instanceof HTMLTextAreaElement ||
-          (el0 instanceof HTMLElement && el0.isContentEditable);
-        if (!typing && selectedId) {
+      // Never eat a keystroke aimed at a text field.
+      if (isTyping()) return;
+      const mod = e.metaKey || e.ctrlKey;
+      const key = e.key.toLowerCase();
+
+      if (mod && key === "z") {
+        e.preventDefault();
+        if (e.shiftKey) redoNow();
+        else undoNow();
+        return;
+      }
+      if (mod && key === "c") {
+        if (selectedIds().length === 0) return;
+        e.preventDefault();
+        copy();
+        return;
+      }
+      if (mod && key === "v") {
+        e.preventDefault();
+        void paste();
+        return;
+      }
+      if (mod && key === "d") {
+        if (selectedId) {
           e.preventDefault();
           duplicate(selectedId);
         }
@@ -392,20 +530,10 @@ function FlowEditorInner({
 
       if (e.key !== "Delete" && e.key !== "Backspace") return;
 
-      // Never eat a keystroke aimed at a text field.
-      const el = document.activeElement;
-      if (
-        el instanceof HTMLInputElement ||
-        el instanceof HTMLTextAreaElement ||
-        el instanceof HTMLSelectElement ||
-        (el instanceof HTMLElement && el.isContentEditable)
-      ) {
-        return;
-      }
-
       const selectedEdges = edges.filter((x) => x.selected);
       if (selectedEdges.length) {
         e.preventDefault();
+        snap();
         const gone = new Set(selectedEdges.map((x) => x.id));
         setEdges((es) => es.filter((x) => !gone.has(x.id)));
         setSavedAt(null);
@@ -421,19 +549,20 @@ function FlowEditorInner({
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [nodes, edges, selectedId, deleteNode, duplicate, setEdges]);
-
-  // Strips display-only wiring before validating.
-  const clean = useMemo(
-    () => ({
-      nodes: nodes.map(({ data, ...n }) => {
-        const { _stats, _onText, ...rest } = data as Record<string, unknown>;
-        return { ...n, data: rest };
-      }),
-      edges,
-    }),
-    [nodes, edges],
-  );
+  }, [
+    nodes,
+    edges,
+    selectedId,
+    deleteNode,
+    duplicate,
+    setEdges,
+    snap,
+    undoNow,
+    redoNow,
+    copy,
+    paste,
+    selectedIds,
+  ]);
 
   const issues: FlowIssue[] = useMemo(() => {
     const parsed = FlowGraph.safeParse(clean);
@@ -508,11 +637,31 @@ function FlowEditorInner({
             {panel ? <PanelLeftClose aria-hidden /> : <PanelLeftOpen aria-hidden />}
             Blocos
           </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={undoNow}
+            disabled={!canUndo}
+            aria-label="Desfazer"
+            title="Desfazer (⌘Z)"
+          >
+            <Undo2 aria-hidden />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={redoNow}
+            disabled={!canRedo}
+            aria-label="Refazer"
+            title="Refazer (⌘⇧Z)"
+          >
+            <Redo2 aria-hidden />
+          </Button>
           <span className="text-xs text-neutral-500">
             {nodes.length} {nodes.length === 1 ? "passo" : "passos"}
           </span>
           <span className="hidden text-xs text-neutral-400 sm:inline">
-            Duplo clique edita o texto · ⌘D duplica · Delete remove
+            Duplo clique edita o texto · ⌘D duplica · ⌘C/⌘V copia e cola · Delete remove
           </span>
           <div className="ml-auto flex items-center gap-3">
             <span aria-live="polite" className="text-xs font-medium">
@@ -577,6 +726,7 @@ function FlowEditorInner({
             // would open a properties panel for something that cannot be edited.
             onNodeClick={(_, n) => setSelectedId(n.id === TRIGGER_NODE_ID ? null : n.id)}
             onPaneClick={() => setSelectedId(null)}
+            onNodeDragStart={() => snap()}
             onEdgesDelete={() => setSavedAt(null)}
             onNodesDelete={(deleted) => {
               setSelectedId((id) => (deleted.some((n) => n.id === id) ? null : id));
