@@ -1,5 +1,5 @@
 import type { Prisma, PrismaClient, QuickReplyTemplate } from "@prisma/client";
-import { canSend, windowRemainingMs, HUMAN_AGENT_WINDOW_MS } from "../lib/messaging-window";
+import { windowRemainingMs, HUMAN_AGENT_WINDOW_MS } from "../lib/messaging-window";
 import { FlowGraph, type NodeKind } from "../lib/flow-schema";
 import { sendHumanAgentMessage, sendMessage, sendText } from "./instagram";
 
