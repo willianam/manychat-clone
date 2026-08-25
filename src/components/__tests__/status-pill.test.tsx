@@ -23,6 +23,6 @@ describe("StatusPill", () => {
     );
     expect(screen.getByText("com erro").className).toContain("text-rose-700");
     expect(screen.getByText("fluxo pausado").className).toContain("text-amber-700");
-    expect(screen.getByText("pausado").className).toContain("text-neutral-500");
+    expect(screen.getByText("pausado").className).toContain("text-neutral-700");
   });
 });

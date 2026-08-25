@@ -4,7 +4,9 @@ export type StatusTone = "success" | "neutral" | "warning" | "destructive" | "in
 
 const TONES: Record<StatusTone, string> = {
   success: "bg-emerald-50 text-emerald-700",
-  neutral: "bg-neutral-100 text-neutral-500",
+  // 700, not 500: the pill renders at 10px, where neutral-500 on
+  // neutral-100 falls below the 4.5:1 contrast minimum.
+  neutral: "bg-neutral-100 text-neutral-700",
   warning: "bg-amber-50 text-amber-700",
   destructive: "bg-rose-50 text-rose-700",
   info: "bg-indigo-50 text-indigo-700",
