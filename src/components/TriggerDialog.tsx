@@ -62,6 +62,7 @@ const OFFERED: TriggerKindName[] = [
   "STORY_REPLY",
   "KEYWORD",
   "STORY_MENTION",
+  "WELCOME",
   "DEFAULT",
 ];
 
