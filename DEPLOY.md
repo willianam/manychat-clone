@@ -1,201 +1,282 @@
-# Deploy em produção — Vercel + Neon
+# Publicar na sua conta — Vercel + Neon
 
-Tempo estimado: ~1h para estar no ar. O App Review da Meta é o que demora
-(dias a semanas) e vem **depois** — você precisa do sistema público para
-gravar o vídeo que eles exigem.
+Este guia assume que você já rodou o app local e viu uma DM chegar pelo túnel,
+como descrito no [README](README.md). Se ainda não, faça isso antes: depurar
+credencial da Meta e deploy ao mesmo tempo dobra o trabalho.
+
+Tempo: cerca de uma hora. Custo: zero nos planos grátis.
+
+Por que Vercel e Neon: o app é Next.js com Postgres, e essa dupla é a que exige
+menos configuração. Qualquer host que rode Node 20+ e qualquer Postgres
+funcionam — o que muda está na seção "fora da Vercel", no fim.
 
 ---
 
-## Parte 1 — Banco no Neon (10 min)
+## Antes de qualquer coisa: duas decisões
 
-1. Crie conta em `neon.tech` → **New Project** → nome `manychat`, região
-   mais próxima de você.
+Elas mudam o comportamento do sistema e é melhor decidir agora do que descobrir
+depois.
+
+### O cron roda uma vez por dia
+
+O plano Hobby da Vercel permite **um disparo de cron por dia**. O
+`vercel.json` já está assim (`0 9 * * *`).
+
+Isso não quebra a automação. O trabalho de fundo tem três caminhos, e o
+principal é o webhook: **toda mensagem recebida drena a fila** — retoma delays
+vencidos, empurra o disparo em andamento, consolida as estatísticas. Uma conta
+que recebe DM se mantém sozinha.
+
+O cron é o **piso para uma conta parada**. E é aí que dói: se ninguém mandar
+mensagem, um nó de delay de 30 minutos pode só retomar no dia seguinte.
+**Numa conta sem movimento, um delay pode atrasar até 24h.**
+
+Três saídas, e a escolha é sua:
+
+1. **Aceitar.** Se os seus fluxos respondem na hora e os delays são de horas,
+   não de minutos, isso nunca vai te incomodar.
+2. **Plano pago da Vercel.** Cron de minuto em minuto; basta trocar o
+   `schedule` no `vercel.json` para `* * * * *`. O código não muda.
+3. **Worker próprio.** `npm run worker` numa VPS ou no docker-compose: laço de
+   5 segundos, delay confiável, e sem orçamento de tempo no drain. É o caminho
+   certo também se você dispara para listas grandes.
+
+### `TRUST_PROXY` — a pegadinha
+
+**Na Vercel, não defina esta variável.** A Vercel marca `VERCEL=1` e manda
+`x-vercel-forwarded-for` sozinha, e o app já confia nisso.
+
+A armadilha aparece se você trocar de host. O rate limit do login (5 tentativas
+por IP a cada 15 min) precisa do IP de quem chamou, e esse IP vem de
+`x-forwarded-for` — um header que o cliente pode semear e cada proxy só anexa.
+A única entrada confiável é a última, escrita pelo **seu** proxy, e ela só
+existe se houver um proxy.
+
+Então o app só lê esse header quando o deploy declara que há um: `TRUST_PROXY=1`
+ou `VERCEL`. Sem isso, ignora o header e joga todas as tentativas num balde só.
+
+As duas metades da pegadinha:
+
+- **Tem proxy (nginx, Caddy, Traefik, túnel) e esqueceu `TRUST_PROXY=1`?** O
+  limite vira global: cinco senhas erradas de qualquer origem trancam o login
+  para todo mundo por 15 minutos. Seguro, mas áspero.
+- **Definiu `TRUST_PROXY=1` sem ter proxy?** Pior. O atacante passa a controlar
+  o header, troca o valor a cada tentativa, ganha um balde novo por tentativa e
+  faz força bruta na sua senha sem nunca bater no limite.
+
+Regra prática: defina `1` **se e somente se** houver um proxy seu na frente, e
+que sobrescreva o header do cliente.
+
+---
+
+## Parte 1 — Banco no Neon
+
+1. Conta em [neon.tech](https://neon.tech) → **New Project** → nome `manychat`,
+   região mais perto de você (latência ao banco aparece em toda página).
 
 2. Em **Connection Details**, copie as **duas** strings:
 
-   - A que tem `-pooler` no host → vai ser `DATABASE_URL`
-   - A direta, sem `-pooler` → vai ser `DIRECT_URL`
+   - a que tem `-pooler` no host → `DATABASE_URL`
+   - a direta, sem `-pooler` → `DIRECT_URL`
 
-   As duas são necessárias. Funções serverless abrem uma conexão por
-   invocação e esgotariam o limite direto em minutos; já o Prisma Migrate
-   não funciona através do pooler. Por isso o schema declara as duas.
+   As duas são necessárias. Cada função serverless abre uma conexão por
+   invocação e esgotaria o limite direto do Postgres em minutos; já o Prisma
+   Migrate não atravessa um pooler de transação. Por isso o schema declara as
+   duas.
 
-3. Rode a migração a partir da sua máquina, apontando para o Neon:
+3. Crie as tabelas a partir da sua máquina, apontando para o Neon:
 
    ```bash
    cd app
-   cp .env.example .env
-   # preencha DATABASE_URL e DIRECT_URL com as strings do Neon
+   # no .env, troque DATABASE_URL e DIRECT_URL pelas strings do Neon
    npx prisma migrate deploy
-   npm run db:seed        # opcional: dados de exemplo
+   npm run db:seed        # opcional: o fluxo e os contatos de exemplo
    ```
+
+   `migrate deploy` aplica as migrações existentes e não gera nenhuma nova —
+   é o comando certo para produção. `migrate dev` não.
 
 ---
 
-## Parte 2 — Deploy na Vercel (15 min)
+## Parte 2 — Deploy na Vercel
 
 1. Suba o código para o GitHub:
 
    ```bash
    cd app
-   git init && git add -A
-   git commit -m "ManyChat clone"
    gh repo create manychat-clone --private --source=. --push
    ```
 
-2. Em `vercel.com` → **Add New → Project** → importe o repositório.
-   Framework Next.js é detectado sozinho. **Não faça deploy ainda.**
+   Confira que o `.env` **não** subiu (`git status` limpo, `.gitignore` já
+   cobre). Se subiu, rotacione tudo antes de seguir.
 
-3. Em **Environment Variables**, adicione todas antes do primeiro build:
+2. Em `vercel.com` → **Add New → Project** → importe o repositório. Framework
+   Next.js é detectado sozinho. **Não faça deploy ainda.**
+
+3. Em **Environment Variables**, adicione tudo **antes** do primeiro build. A
+   lista completa, com explicação de cada uma, está no `.env.example`; o
+   mínimo para subir:
 
    | Variável | Valor |
-   |---|---|
+   | --- | --- |
    | `DATABASE_URL` | string **pooled** do Neon |
    | `DIRECT_URL` | string **direta** do Neon |
    | `ADMIN_PASSWORD` | `openssl rand -base64 24` |
+   | `AUTH_SECRET` | `openssl rand -hex 32` |
    | `CRON_SECRET` | `openssl rand -hex 32` |
-   | `IG_APP_SECRET` | preencha na Parte 4 |
-   | `IG_VERIFY_TOKEN` | string que você inventa |
-   | `IG_ACCESS_TOKEN` | preencha na Parte 4 |
-   | `GRAPH_API_VERSION` | `v26.0` |
-   | `BROADCAST_RATE` | `5` |
-   | `ACCOUNT_TIMEZONE` | `America/Sao_Paulo` (janelas de delay e agendamentos são lidos neste fuso) |
+   | `IG_APP_SECRET` | do app na Meta |
+   | `IG_VERIFY_TOKEN` | a string que você inventou |
+   | `IG_ACCESS_TOKEN` | o token de 60 dias |
+   | `IG_USERNAME` | seu @ sem arroba, para os links de ref e QR codes |
+   | `ACCOUNT_TIMEZONE` | `America/Sao_Paulo` |
 
-   As três da Meta podem ficar vazias por ora — o painel sobe sem elas.
-   `ADMIN_PASSWORD` **não** pode: sem ela o painel se tranca com 503.
+   Se a Vercel oferecer escolher os ambientes, marque **Production** para
+   todas. As três da Meta podem entrar vazias e ser preenchidas depois; o
+   painel sobe sem elas, o webhook é que fica trancado em 503.
 
-4. **Deploy**. Ao terminar você recebe `https://manychat-clone-xxx.vercel.app`.
+   **Não** defina `TRUST_PROXY` aqui. Veja acima.
 
-5. Abra a URL: deve pedir a senha. Entre e confira o painel.
-   O Vercel Cron já está ativo via `vercel.json` (uma vez por dia, às 09:00
-   UTC — o limite do plano Hobby). No dia a dia quem drena a fila é o
-   próprio webhook, a cada mensagem recebida; veja "Deploy em produção" no
-   README.
+4. **Deploy.** No fim você recebe `https://manychat-clone-xxx.vercel.app`.
 
----
+5. Abra a URL: tem que pedir a senha. Entre e confira o painel. O cron já
+   está ativo pelo `vercel.json`.
 
-## Parte 3 — Conta e app na Meta (20 min)
-
-### 3.1 Conta profissional
-Instagram → **Configurações → Tipo de conta → Mudar para profissional**.
-Criador ou Empresa, tanto faz.
-
-### 3.2 Página do Facebook — dispensada
-Este projeto usa a **API do Instagram com login do Instagram**
-(`graph.instagram.com`), que não exige Página do Facebook nem token de
-Página. A conta profissional do passo 3.1 é suficiente.
-
-### 3.3 Criar o app
-`developers.facebook.com/apps` → **Criar app** → tipo **Empresa**.
-Adicione o caso de uso **"Gerenciar mensagens e conteúdo no Instagram"**.
+> **Variável nova só vale no build seguinte.** Toda vez que você adicionar ou
+> mudar uma variável na Vercel, faça **Redeploy**. Metade dos "não funciona
+> depois que eu configurei" é isso.
 
 ---
 
-## Parte 4 — Credenciais (15 min)
+## Parte 3 — Apontar a Meta para a URL de produção
 
-| Variável | Onde achar |
-|---|---|
-| `IG_APP_SECRET` | Configurações → Básico → Chave secreta do app |
-| `IG_VERIFY_TOKEN` | Você inventa. Só precisa bater com a Parte 5 |
-| `IG_ACCESS_TOKEN` | Painel do app → API do Instagram → Gerar tokens de acesso |
+Você já montou o app na Meta seguindo a etapa 3 do README. Falta trocar o
+túnel pela URL real.
 
-O token gerado no painel é de curta duração (~1h). Troque por um de longa
-duração (~60 dias):
+1. No painel da Meta, na seção **Webhooks** do caso de uso do Instagram, troque
+   a **Callback URL** para:
+
+   ```
+   https://SEU-APP.vercel.app/api/webhook/instagram
+   ```
+
+   O **Verify token** continua o mesmo. Salve — a Meta refaz o handshake GET na
+   hora. Se falhar, quase sempre é `IG_VERIFY_TOKEN` diferente entre a Vercel e
+   a Meta, ou um redeploy que não aconteceu.
+
+2. **Refaça a inscrição do app na conta** com o token de produção: abra
+   `https://SEU-APP.vercel.app/configuracoes`, aba **Conexão**, bloco
+   **Inscrição do app na conta**, e clique em **Inscrever esta conta**. A
+   inscrição é por token; a que você fez em desenvolvimento não vale aqui.
+
+   <details>
+   <summary>Alternativa pelo terminal</summary>
+
+   ```bash
+   curl -X POST "https://graph.instagram.com/v26.0/me/subscribed_apps" \
+     -d "subscribed_fields=messages,messaging_postbacks,comments,messaging_seen,messaging_referral" \
+     -d "access_token=$IG_ACCESS_TOKEN"
+   ```
+
+   </details>
+
+3. Mande "oi" no DM da sua conta. O fluxo tem que responder. Se não responder,
+   os logs estão em **Vercel → Deployments → Functions**.
+
+---
+
+## Parte 4 — Conferir que está de pé
 
 ```bash
-curl -G "https://graph.instagram.com/access_token" \
-  -d "grant_type=ig_exchange_token" \
-  -d "client_secret=SEU_APP_SECRET" \
-  -d "access_token=TOKEN_CURTO"
+# saúde: banco, validade do token, última chamada à Meta, erros em 24h
+curl https://SEU-APP.vercel.app/api/health
+
+# forçar um tick (o que o cron faria)
+curl -H "Authorization: Bearer $CRON_SECRET" https://SEU-APP.vercel.app/api/cron/tick
 ```
 
-Coloque os valores na Vercel (**Settings → Environment Variables**) e
-**redeploy** — variáveis novas só valem no build seguinte.
+O `/api/health` é público de propósito, para monitor de uptime: devolve
+status, nunca valores. Responde 503 quando o banco não responde — aponte um
+UptimeRobot da vida para ele.
 
-> O token de longa duração expira em ~60 dias. O app o guarda no banco e
-> renova sozinho no tick do cron/worker quando faltam menos de 10 dias; se a
-> renovação falhar, a página **Configurações** avisa. Só nesse caso gere um
-> token novo e atualize `IG_ACCESS_TOKEN`.
+O `CRON_SECRET` vai no **header**, nunca em query string: segredo em URL fica
+gravado no log de acesso da Vercel, em cada proxy do caminho e no seu histórico
+de shell, e quem ler o log passa a poder mandar mensagem no seu lugar.
 
----
-
-## Parte 5 — Webhook (10 min)
-
-Em **Webhooks → Instagram → Assinar este objeto**:
-
-- **URL de callback**: `https://SEU-APP.vercel.app/api/webhook/instagram`
-- **Token de verificação**: o mesmo `IG_VERIFY_TOKEN`
-
-Clique em **Verificar e salvar**. A Meta faz um GET na hora — se as
-variáveis não estiverem no ambiente do deploy atual, falha aqui.
-
-Depois **assine os campos**: `messages`, `messaging_postbacks`, `comments`.
-
-Teste real: mande "oi" no DM da sua conta pelo Instagram. O fluxo
-"Boas-vindas" deve responder. Se não responder, veja os logs em
-**Vercel → Deployments → Functions**.
-
----
-
-## Parte 6 — App Review
-
-Em modo desenvolvimento **já funciona** com contas listadas em **Funções do
-app**. Adicione a sua e teste à vontade — não precisa esperar o review para
-usar você mesmo.
-
-Para atender qualquer pessoa, solicite:
-
-- `instagram_business_basic`
-- `instagram_business_manage_messages`
-- `instagram_business_manage_comments` (necessária para comment-to-DM)
-
-A Meta exige um **vídeo de tela** mostrando o ciclo completo: alguém
-comenta no post → recebe a DM → responde → o fluxo continua. Grave com o
-sistema já em produção, em modo desenvolvimento.
-
-Descreva o caso de uso como automação de atendimento da própria conta —
-que é o que de fato é. Recusa e reenvio são comuns; não é sinal de
-problema no código.
-
----
-
-## Checklist
+### Checklist
 
 - [ ] Neon criado, `migrate deploy` rodado
-- [ ] Deploy na Vercel com todas as env vars
+- [ ] Deploy na Vercel com todas as variáveis, `TRUST_PROXY` ausente
 - [ ] Painel abre e pede senha
-- [ ] Conta IG profissional adicionada como Testador do Instagram
-- [ ] Caso de uso do Instagram configurado
-- [ ] Token de longa duração gerado (data anotada)
-- [ ] Webhook verificado e campos assinados
+- [ ] Webhook verificado apontando para a URL da Vercel
+- [ ] Conta inscrita com o token de produção (Configurações → Conexão)
 - [ ] "oi" no DM dispara o fluxo
-- [ ] Vídeo gravado e review enviado
+- [ ] `/api/health` responde `ok`
+- [ ] Data do token anotada (vale 60 dias; o app renova sozinho, mas confira em
+      `/configuracoes` na primeira semana)
 
 ---
 
-## Custos
+## Custos e limites
 
-| Item | Custo |
-|---|---|
-| Vercel Hobby | grátis (uso pessoal) |
-| Neon free tier | grátis (0.5 GB) |
-| Meta APIs | grátis |
+| Item | Custo | Limite que te afeta |
+| --- | --- | --- |
+| Vercel Hobby | grátis | função até 60s; cron 1×/dia |
+| Neon free | grátis | 0,5 GB; o banco hiberna sem uso e a primeira query demora |
+| APIs da Meta | grátis | rate limit por conta, não por dinheiro |
 
-Vercel Hobby limita funções a 60s — por isso o cron processa em fatias e
-retoma na chamada seguinte (o próximo webhook, ou o cron do dia seguinte).
-Para listas grandes de broadcast, prefira o worker (`bun run worker`) numa
-máquina sua; na Vercel o envio se espalha ao longo das mensagens recebidas.
+O teto de 60s é o motivo de o drain trabalhar com **orçamento de tempo**: o
+webhook drena por até 9s (contra `maxDuration = 15`) e o cron por até 45s
+(contra 60), devolvendo o lock ao parar. O que sobrou continua na chamada
+seguinte, e ninguém recebe duas vezes. Para listas grandes, o worker próprio é
+melhor — na Vercel o envio se espalha ao longo das mensagens que chegam.
+
+---
+
+## Fora da Vercel
+
+O `docker-compose.yml` sobe três serviços: Postgres, o app e o worker. Basta
+preencher as variáveis no ambiente e `docker compose up -d`.
+
+Duas diferenças em relação à Vercel, e as duas importam:
+
+- **Existe worker de verdade** (`npm run worker`, laço de 5s, ajustável por
+  `WORKER_TICK_MS`). Delays curtos retomam na hora e o drain roda sem
+  orçamento. O `vercel.json` passa a ser irrelevante.
+- **`TRUST_PROXY` volta à mesa.** O Dockerfile serve `npm run start` direto na
+  porta 3000. Se você puser nginx ou Caddy na frente — e vai, nem que seja pelo
+  TLS — defina `TRUST_PROXY=1`. Se expuser a 3000 direto na internet, não
+  defina, e reveja essa escolha.
+
+> O `docker-compose.yml` repassa todas as variáveis do `.env.example` — as
+> obrigatórias sem padrão, as opcionais com o mesmo padrão do código. A exceção
+> é a família `FLOW_SECRET_*`: só o `FLOW_SECRET_CRM` do exemplo está lá, e cada
+> segredo novo do nó de Requisição pede uma linha no bloco `environment`.
+
+---
 
 ## Se algo falhar
 
-**Webhook não verifica** — `IG_VERIFY_TOKEN` diferente entre a Vercel e o
-painel da Meta, ou faltou redeploy depois de adicionar a variável.
+**Painel responde 503** — nem `ADMIN_PASSWORD` nem `AUTH_SECRET` no ambiente
+daquele deploy. Adicione e **redeploy**.
 
-**Mensagens não saem** — token expirado (60 dias), ou o contato está fora
-da janela de 24h. O painel mostra quem está alcançável.
+**Webhook não verifica** — `IG_VERIFY_TOKEN` diferente entre Vercel e Meta, ou
+faltou redeploy depois de adicionar a variável. Teste direto:
+`curl "https://SEU-APP.vercel.app/api/webhook/instagram?hub.mode=subscribe&hub.verify_token=SEU_TOKEN&hub.challenge=teste"` — tem que devolver `teste`.
 
-**`P1001` no migrate** — você usou a string pooled em `DIRECT_URL`. A
-migração precisa da conexão direta.
+**Webhook verifica mas nada chega** — a inscrição do app na conta, na Parte 3.
+É o erro mais comum de todos, e o painel mostra o estado em Configurações →
+Conexão.
 
-**Painel responde 503** — `ADMIN_PASSWORD` não está definida no ambiente
-daquele deploy.
+**Webhook responde 401** — assinatura inválida: `IG_APP_SECRET` é de outro app
+ou foi copiado com espaço no fim.
+
+**Mensagens não saem** — token expirado, ou o contato está fora da janela de
+24h. `/configuracoes` mostra o estado do token e o painel mostra quem está
+alcançável.
+
+**`P1001` no migrate** — você usou a string pooled em `DIRECT_URL`. Migração
+precisa da conexão direta.
+
+**Disparo trava em "enviando"** — na Vercel ele avança a cada mensagem recebida
+e uma vez por dia no cron. Numa conta parada, force com o curl do
+`/api/cron/tick`, ou suba o worker.

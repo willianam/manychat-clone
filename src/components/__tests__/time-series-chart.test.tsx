@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { TimeSeriesChart } from "../charts/time-series-chart";
+// The chart itself; time-series-chart.tsx is only the next/dynamic wrapper.
+import { TimeSeriesChart } from "../charts/time-series-chart-recharts";
 import { ChartTooltip } from "../charts/chart-bits";
 
 afterEach(cleanup);

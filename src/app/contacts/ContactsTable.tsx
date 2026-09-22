@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/table";
 import { TagChip } from "@/components/ui/tag-chip";
 import { withToast } from "@/lib/ui/action-toast";
+import { isActionFailure, type ActionFailure } from "@/lib/ui/action-result";
 import {
   serializeContactQuery,
   withQuery,
@@ -266,8 +267,11 @@ function BulkBar({
   const [tag, setTag] = useState(NONE);
   const [flow, setFlow] = useState(NONE);
   const [confirmUnsubscribe, setConfirmUnsubscribe] = useState(false);
+  const [confirmStartFlow, setConfirmStartFlow] = useState(false);
 
-  const run = (job: () => Promise<string | undefined>) =>
+  // A job returns the success sentence, or the action's own failure value,
+  // which `withToast` turns into the toast the operator reads.
+  const run = (job: () => Promise<string | ActionFailure | undefined>) =>
     start(async () => {
       const message = await withToast(job, { error: "Não foi possível aplicar a ação." });
       if (message === undefined) return;
@@ -277,6 +281,7 @@ function BulkBar({
 
   const n = ids.length;
   const tagName = tags.find((t) => t.id === tag)?.name ?? "";
+  const flowName = flows.find((f) => f.id === flow)?.name ?? "";
 
   return (
     <div
@@ -326,6 +331,7 @@ function BulkBar({
             onClick={() =>
               run(async () => {
                 const changed = await bulkTag(ids, tagName, "remove");
+                if (isActionFailure(changed)) return changed;
                 return `Etiqueta removida de ${changed} contato(s).`;
               })
             }
@@ -355,15 +361,31 @@ function BulkBar({
             size="sm"
             variant="outline"
             disabled={pending || flow === NONE}
-            onClick={() =>
-              run(async () => {
-                const r = await bulkStartFlow(ids, flow);
-                return `Fluxo iniciado para ${r.started}; ${r.skipped} ignorado(s) (descadastrados ou já no fluxo).`;
-              })
-            }
+            onClick={() => setConfirmStartFlow(true)}
           >
             Inscrever no fluxo
           </Button>
+          {/*
+            Starting a flow in bulk sends real DMs the moment it is clicked and
+            nothing recalls them, so it asks first — the same rule "Descadastrar"
+            below already follows, and this one is the less reversible of the two.
+          */}
+          <ConfirmDialog
+            open={confirmStartFlow}
+            onOpenChange={setConfirmStartFlow}
+            title={`Iniciar "${flowName}" para ${n} contato${n === 1 ? "" : "s"}?`}
+            description="As mensagens do fluxo saem imediatamente e não há como recolhê-las. Contatos descadastrados ou já neste fluxo são ignorados."
+            confirmLabel="Inscrever no fluxo"
+            pending={pending}
+            onConfirm={() => {
+              setConfirmStartFlow(false);
+              run(async () => {
+                const r = await bulkStartFlow(ids, flow);
+                if (isActionFailure(r)) return r;
+                return `Fluxo iniciado para ${r.started}; ${r.skipped} ignorado(s) (descadastrados ou já no fluxo).`;
+              });
+            }}
+          />
         </div>
       )}
 
@@ -374,7 +396,8 @@ function BulkBar({
         disabled={pending}
         onClick={() =>
           run(async () => {
-            await bulkSetSubscribed(ids, true);
+            const r = await bulkSetSubscribed(ids, true);
+            if (isActionFailure(r)) return r;
             return `${n} contato(s) inscrito(s).`;
           })
         }
@@ -407,7 +430,8 @@ function BulkBar({
         onConfirm={() => {
           setConfirmUnsubscribe(false);
           run(async () => {
-            await bulkSetSubscribed(ids, false);
+            const r = await bulkSetSubscribed(ids, false);
+            if (isActionFailure(r)) return r;
             return `${n} contato(s) descadastrado(s).`;
           });
         }}

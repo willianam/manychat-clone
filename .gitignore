@@ -7,3 +7,10 @@ next-env.d.ts
 preview.db
 .vercel
 .env*
+!.env.example
+
+# Orchestration artifacts, not project files: agent run logs and scratch
+# output that land inside app/ while a multi-agent round is running.
+.DS_Store
+outputs/
+.nirvana/

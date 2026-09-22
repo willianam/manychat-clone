@@ -1,4 +1,4 @@
-import type { FlowButton, FlowNodeData, LIMITS as L } from "../lib/flow-schema";
+import type { FlowButton, FlowNodeData } from "../lib/flow-schema";
 import { LIMITS, byteLength } from "../lib/flow-schema";
 import {
   accountTimeZone,

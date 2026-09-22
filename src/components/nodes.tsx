@@ -1,7 +1,7 @@
 "use client";
 
 import { Handle, Position, type NodeProps } from "reactflow";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import {
   ExternalLink,
   FileText,
@@ -254,7 +254,6 @@ const B = Position.Bottom;
 export function MessageNode({ data }: NodeProps<WithStats>) {
   const d = data as Extract<FlowNodeData, { kind: "message" }> & { _stats?: NodeStats };
   const s = data._stats;
-  const postbacks = (d.buttons ?? []).filter((b) => b.type === "postback");
 
   return (
     <div className={`${SHELL} w-[248px]`}>
@@ -395,7 +394,7 @@ export function QuickReplyNode({ data }: NodeProps<WithStats>) {
  * size would be ~1800px and swallow the canvas, but hiding them behind a
  * side panel means you can't see the flow you're editing.
  */
-export function CarouselNode({ data, id }: NodeProps<WithStats>) {
+export function CarouselNode({ data }: NodeProps<WithStats>) {
   const d = data as Extract<FlowNodeData, { kind: "carousel" }> & { _stats?: NodeStats };
   const [open, setOpen] = useState(d.expanded ?? false);
   const s = data._stats;
@@ -889,23 +888,31 @@ function humanize(seconds: number): string {
 
 const pad = (h: number) => String(h).padStart(2, "0");
 
+/**
+ * The canvas node table.
+ *
+ * Every type is memoized: React Flow re-renders a node when its props change
+ * by reference, and the editor hands all of them a fresh array on every canvas
+ * change. With `data` kept stable per node (see FlowEditor's `rendered`), an
+ * edit to one node now re-renders that node alone.
+ */
 export const nodeTypes = {
-  message: MessageNode,
-  question: QuestionNode,
-  quickreply: QuickReplyNode,
-  carousel: CarouselNode,
-  image: ImageNode,
-  video: VideoNode,
-  audio: AudioNode,
-  file: FileNode,
-  album: AlbumNode,
-  condition: ConditionNode,
-  delay: DelayNode,
-  action: ActionNode,
-  random: RandomNode,
-  tag: TagNode,
-  goto: GotoNode,
-  goal: GoalNode,
-  request: RequestNode,
-  end: EndNode,
+  message: memo(MessageNode),
+  question: memo(QuestionNode),
+  quickreply: memo(QuickReplyNode),
+  carousel: memo(CarouselNode),
+  image: memo(ImageNode),
+  video: memo(VideoNode),
+  audio: memo(AudioNode),
+  file: memo(FileNode),
+  album: memo(AlbumNode),
+  condition: memo(ConditionNode),
+  delay: memo(DelayNode),
+  action: memo(ActionNode),
+  random: memo(RandomNode),
+  tag: memo(TagNode),
+  goto: memo(GotoNode),
+  goal: memo(GoalNode),
+  request: memo(RequestNode),
+  end: memo(EndNode),
 };

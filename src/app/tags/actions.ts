@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { failForm } from "../../lib/ui/form-error";
 import { Prisma } from "@prisma/client";
 import { db } from "../../server/db";
 import { graphUsesTag, renameTagInGraph } from "../../lib/tag-rename";
@@ -49,12 +50,12 @@ async function findUsage(tagId: string, tagName: string) {
 
 export async function createTag(formData: FormData) {
   const name = cleanName(formData.get("name"));
-  if (!name) throw new Error("O nome da etiqueta não pode ficar vazio.");
+  if (!name) failForm("/tags", "O nome da etiqueta não pode ficar vazio.");
 
   const color = String(formData.get("color") ?? "#6366f1");
 
   const existing = await db.tag.findUnique({ where: { name } });
-  if (existing) throw new Error(`A etiqueta "${name}" já existe.`);
+  if (existing) failForm("/tags", `A etiqueta "${name}" já existe.`);
 
   await db.tag.create({ data: { name, color } });
   revalidatePath("/tags");
@@ -74,11 +75,11 @@ const COLOR_RE = /^#[0-9a-f]{6}$/i;
 export async function renameTag(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   const name = cleanName(formData.get("name"));
-  if (!id) throw new Error("Etiqueta não informada.");
-  if (!name) throw new Error("O nome da etiqueta não pode ficar vazio.");
+  if (!id) failForm("/tags", "Etiqueta não informada.");
+  if (!name) failForm("/tags", "O nome da etiqueta não pode ficar vazio.");
 
   const tag = await db.tag.findUnique({ where: { id } });
-  if (!tag) throw new Error("Etiqueta não encontrada.");
+  if (!tag) failForm("/tags", "Etiqueta não encontrada.");
 
   const rawColor = String(formData.get("color") ?? "");
   const color = COLOR_RE.test(rawColor) ? rawColor.toLowerCase() : tag.color;
@@ -93,7 +94,7 @@ export async function renameTag(formData: FormData) {
 
   const clash = await db.tag.findUnique({ where: { name } });
   if (clash) {
-    throw new Error(`Já existe uma etiqueta "${name}". Use "mesclar" para juntar as duas.`);
+    failForm("/tags", `Já existe uma etiqueta "${name}". Use "mesclar" para juntar as duas.`);
   }
 
   const usage = await findUsage(id, tag.name);
@@ -124,11 +125,11 @@ export async function renameTag(formData: FormData) {
  */
 export async function deleteTag(formData: FormData) {
   const id = String(formData.get("id") ?? "");
-  if (!id) throw new Error("Etiqueta não informada.");
+  if (!id) failForm("/tags", "Etiqueta não informada.");
   const confirmed = String(formData.get("confirm") ?? "") === "true";
 
   const tag = await db.tag.findUnique({ where: { id } });
-  if (!tag) throw new Error("Etiqueta não encontrada.");
+  if (!tag) failForm("/tags", "Etiqueta não encontrada.");
 
   const usage = await findUsage(id, tag.name);
   const inUse = usage.flows.length > 0 || usage.broadcasts.length > 0;
@@ -140,7 +141,7 @@ export async function deleteTag(formData: FormData) {
         : "",
       usage.broadcasts.length ? `${usage.broadcasts.length} disparo(s)` : "",
     ].filter(Boolean);
-    throw new Error(
+    failForm("/tags", 
       `"${tag.name}" está em uso por ${parts.join(" e ")}. Excluir vai quebrar essas referências — confirme para prosseguir.`,
     );
   }
@@ -172,14 +173,14 @@ export async function deleteTag(formData: FormData) {
 export async function mergeTags(formData: FormData) {
   const sourceId = String(formData.get("sourceId") ?? "");
   const targetId = String(formData.get("targetId") ?? "");
-  if (!sourceId || !targetId) throw new Error("Escolha as duas etiquetas.");
-  if (sourceId === targetId) throw new Error("Escolha duas etiquetas diferentes.");
+  if (!sourceId || !targetId) failForm("/tags", "Escolha as duas etiquetas.");
+  if (sourceId === targetId) failForm("/tags", "Escolha duas etiquetas diferentes.");
 
   const [source, target] = await Promise.all([
     db.tag.findUnique({ where: { id: sourceId } }),
     db.tag.findUnique({ where: { id: targetId } }),
   ]);
-  if (!source || !target) throw new Error("Etiqueta não encontrada.");
+  if (!source || !target) failForm("/tags", "Etiqueta não encontrada.");
 
   const links = await db.contactTag.findMany({
     where: { tagId: sourceId },

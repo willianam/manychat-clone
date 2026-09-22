@@ -141,34 +141,38 @@ export default async function Home() {
             {d.topFlows.length === 0 ? (
               <p className="text-sm text-muted-foreground">Nenhum fluxo ativo rodou no período.</p>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Fluxo</TableHead>
-                    <TableHead className="text-right">Iniciados</TableHead>
-                    <TableHead className="text-right">Concluídos</TableHead>
-                    <TableHead className="text-right">Metas</TableHead>
-                    <TableHead className="text-right">Taxa</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {d.topFlows.map((f) => (
-                    <TableRow key={f.id}>
-                      <TableCell>
-                        <Link href={`/flows/${f.id}`} className="hover:underline">
-                          {f.name}
-                        </Link>
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">{f.started}</TableCell>
-                      <TableCell className="text-right tabular-nums">{f.completed}</TableCell>
-                      <TableCell className="text-right tabular-nums">{f.goals}</TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {f.rate === null ? "—" : `${f.rate}%`}
-                      </TableCell>
+              // Five numeric columns do not fit a 390px screen; the broadcast
+              // recipients table solves it the same way.
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Fluxo</TableHead>
+                      <TableHead className="text-right">Iniciados</TableHead>
+                      <TableHead className="text-right">Concluídos</TableHead>
+                      <TableHead className="text-right">Metas</TableHead>
+                      <TableHead className="text-right">Taxa</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {d.topFlows.map((f) => (
+                      <TableRow key={f.id}>
+                        <TableCell>
+                          <Link href={`/flows/${f.id}`} className="hover:underline">
+                            {f.name}
+                          </Link>
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">{f.started}</TableCell>
+                        <TableCell className="text-right tabular-nums">{f.completed}</TableCell>
+                        <TableCell className="text-right tabular-nums">{f.goals}</TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {f.rate === null ? "—" : `${f.rate}%`}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             )}
           </CardContent>
         </Card>

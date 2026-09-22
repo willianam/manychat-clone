@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TagChip } from "@/components/ui/tag-chip";
 import { withToast } from "@/lib/ui/action-toast";
+import type { ActionFailure } from "@/lib/ui/action-result";
 
 type Tag = { id: string; name: string; color: string };
 
@@ -27,9 +28,10 @@ export function TagEditor({
   const [name, setName] = useState("");
   const available = allTags.filter((t) => !tags.some((x) => x.id === t.id));
 
-  const run = (job: () => Promise<void>, success: string) =>
+  const run = (job: () => Promise<void | ActionFailure>, success: string) =>
     start(async () => {
-      const ok = await withToast(() => job().then(() => true), {
+      // `?? true` keeps a failure value intact for withToast to show.
+      const ok = await withToast(() => job().then((r) => r ?? true), {
         success,
         error: "Não foi possível alterar as etiquetas.",
       });

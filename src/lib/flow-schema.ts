@@ -217,25 +217,24 @@ const CarouselData = z.object({
  * is friction with no upside — and an uploaded id is reusable, so sending
  * the same audio to a thousand contacts costs one upload.
  */
-const MediaSource = z
-  .object({
-    url: z.string().url().optional(),
-    attachmentId: z.string().min(1).optional(),
-  })
-  .refine((v) => Boolean(v.url) || Boolean(v.attachmentId), {
-    message: "Envie um arquivo ou informe uma URL.",
-  });
+const mediaSourceFields = {
+  url: z.string().url().optional(),
+  attachmentId: z.string().min(1).optional(),
+};
 
-const ImageData = z
-  .object({
-    kind: z.literal("image"),
-    url: z.string().url().optional(),
-    attachmentId: z.string().min(1).optional(),
-    caption: z.string().max(LIMITS.messageText).optional(),
-  })
-  .refine((v) => Boolean(v.url) || Boolean(v.attachmentId), {
-    message: "Envie um arquivo ou informe uma URL.",
-  });
+/** A media node's own fields plus the source pair, with "at least one" enforced once. */
+function withMediaSource<T extends z.ZodRawShape>(shape: T) {
+  return z
+    .object({ ...mediaSourceFields, ...shape })
+    .refine((v) => Boolean(v.url) || Boolean(v.attachmentId), {
+      message: "Envie um arquivo ou informe uma URL.",
+    });
+}
+
+const ImageData = withMediaSource({
+  kind: z.literal("image"),
+  caption: z.string().max(LIMITS.messageText).optional(),
+});
 
 /**
  * Video, audio and file share one shape: a public https URL.
@@ -249,38 +248,16 @@ const ImageData = z
  * only an inbox preview here), Instagram sends the attachment alone, so a
  * caption would silently never ship.
  */
-const VideoData = z
-  .object({
-    kind: z.literal("video"),
-    url: z.string().url().optional(),
-    attachmentId: z.string().min(1).optional(),
-  })
-  .refine((v) => Boolean(v.url) || Boolean(v.attachmentId), {
-    message: "Envie um arquivo ou informe uma URL.",
-  });
+const VideoData = withMediaSource({ kind: z.literal("video") });
 
-const AudioData = z
-  .object({
-    kind: z.literal("audio"),
-    url: z.string().url().optional(),
-    attachmentId: z.string().min(1).optional(),
-  })
-  .refine((v) => Boolean(v.url) || Boolean(v.attachmentId), {
-    message: "Envie um arquivo ou informe uma URL.",
-  });
+const AudioData = withMediaSource({ kind: z.literal("audio") });
 
 /** Documents. Instagram accepts PDF only, so the schema says so. */
-const FileData = z
-  .object({
-    kind: z.literal("file"),
-    url: z.string().url().optional(),
-    attachmentId: z.string().min(1).optional(),
-    /** Shown on the canvas so the block is identifiable without opening it. */
-    filename: z.string().max(120).optional(),
-  })
-  .refine((v) => Boolean(v.url) || Boolean(v.attachmentId), {
-    message: "Envie um arquivo ou informe uma URL.",
-  });
+const FileData = withMediaSource({
+  kind: z.literal("file"),
+  /** Shown on the canvas so the block is identifiable without opening it. */
+  filename: z.string().max(120).optional(),
+});
 
 /**
  * Album: up to ten images delivered as one message, via the `attachments`

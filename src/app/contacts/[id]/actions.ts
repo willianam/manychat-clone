@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { actionFailure, type ActionFailure } from "../../../lib/ui/action-result";
 import { db } from "../../../server/db";
 import { addTagToContact, removeTagFromContact } from "../../../server/contact-events";
 import {
@@ -16,6 +17,11 @@ import {
 } from "../../../server/contact-timeline";
 import { toTimelineDto, type TimelineItemDto } from "../../../lib/ui/timeline";
 
+/**
+ * An id the UI always has. A missing one is a bug, not something to explain to
+ * the operator, so this one stays a throw; the sentences an operator can
+ * actually cause come back as values.
+ */
 function need(id: string, what: string): string {
   if (!id) throw new Error(`${what} não informado.`);
   return id;
@@ -26,9 +32,9 @@ function refresh(contactId: string) {
   revalidatePath("/contacts");
 }
 
-export async function addTag(contactId: string, tagName: string): Promise<void> {
+export async function addTag(contactId: string, tagName: string): Promise<void | ActionFailure> {
   const name = tagName.trim();
-  if (!name) throw new Error("Escolha uma etiqueta.");
+  if (!name) return actionFailure("Escolha uma etiqueta.");
   await addTagToContact(db, need(contactId, "Contato"), name, "panel");
   refresh(contactId);
 }
@@ -60,9 +66,12 @@ export async function deleteNote(contactId: string, noteId: string): Promise<voi
   refresh(contactId);
 }
 
-export async function abandonSession(contactId: string, sessionId: string): Promise<void> {
+export async function abandonSession(
+  contactId: string,
+  sessionId: string,
+): Promise<void | ActionFailure> {
   const done = await abandonSessionRow(db, need(sessionId, "Sessão"));
-  if (!done) throw new Error("A sessão já tinha terminado.");
+  if (!done) return actionFailure("A sessão já tinha terminado.");
   refresh(contactId);
 }
 

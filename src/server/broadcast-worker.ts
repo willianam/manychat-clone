@@ -12,6 +12,7 @@ import {
 } from "./segments";
 import type { SegmentRules } from "../lib/segment-rules";
 import { logger } from "../lib/log";
+import { isWindowError, reportBucketOf } from "./recipient-bucket";
 
 const log = logger("worker");
 
@@ -181,6 +182,42 @@ export type BroadcastReport = {
   failed: number;
   /** False when another drainer holds the broadcast; nothing was done. */
   claimed: boolean;
+  /**
+   * Why the drain stopped. "drained" means no PENDING row was left and the
+   * broadcast is finished; "budget" means the time budget ran out with work
+   * still queued — the broadcast went back to QUEUED and the lock was
+   * returned, so the next webhook or tick resumes it immediately.
+   */
+  stopped: "drained" | "budget";
+  /** PENDING rows still waiting when the drain stopped. */
+  remaining: number;
+};
+
+/**
+ * How long a drain may run before it hands the broadcast back.
+ *
+ * A serverless invocation is killed at `maxDuration` with no warning and no
+ * chance to run cleanup, so the budget has to be comfortably under it: the
+ * function must still have time to flip the row back to QUEUED, clear
+ * `lockedAt` and answer the request. These are the two call sites that run
+ * under a hard cap.
+ */
+export const WEBHOOK_DRAIN_BUDGET_MS = 9_000; // route maxDuration = 15
+export const CRON_DRAIN_BUDGET_MS = 45_000; // route maxDuration = 60
+
+/** How many PENDING rows are loaded at a time. */
+const DRAIN_PAGE = 100;
+
+export type RunBroadcastOptions = {
+  /**
+   * Stop after roughly this many milliseconds and return the lock. Undefined
+   * means no budget: the caller (the dedicated worker) can hold a loop.
+   */
+  budgetMs?: number;
+  /** Clock, injectable so the budget is testable without real waiting. */
+  now?: () => number;
+  /** Rate-limit pause between sends. Injectable for the same reason. */
+  wait?: (ms: number) => Promise<void>;
 };
 
 /** A SENDING claim older than this is a dead drainer and may be re-taken. */
@@ -216,53 +253,137 @@ export async function claimBroadcast(
   return count === 1;
 }
 
+/**
+ * Drain a broadcast's PENDING recipients, optionally under a time budget.
+ *
+ * The budget is what makes this safe on Vercel. Before this, the drain ran
+ * inside the webhook until the platform killed the function mid-loop: the
+ * process died holding the claim, so `lockedAt` stayed set and the broadcast
+ * sat in SENDING until the 10-minute lock expiry let someone else in. A
+ * 500-person send took hours of those cycles.
+ *
+ * Now the loop checks the clock before every send. When the budget is spent
+ * it puts the broadcast back to QUEUED with `lockedAt` cleared and returns —
+ * the very next webhook claims it and continues.
+ *
+ * Nothing is sent twice, and nothing is orphaned, because the unit of
+ * progress is one recipient row: a row leaves PENDING (SENT or FAILED) in the
+ * same iteration its send returns, and the drain only ever stops BETWEEN
+ * iterations. A resume re-reads PENDING, so it sees exactly the rows that
+ * were never attempted. A process killed anyway (budget mis-set, platform
+ * cutting early) is no worse than before: the row it was on is still PENDING
+ * and the expired lock lets the next drainer retake it.
+ */
 export async function runBroadcast(
   db: PrismaClient,
   broadcastId: string,
+  opts: RunBroadcastOptions = {},
 ): Promise<BroadcastReport> {
+  const now = opts.now ?? (() => Date.now());
+  const wait = opts.wait ?? sleep;
+  const startedAt = now();
+  const deadline = opts.budgetMs === undefined ? null : startedAt + opts.budgetMs;
+
   if (!(await claimBroadcast(db, broadcastId))) {
-    return { sent: 0, skipped: 0, failed: 0, claimed: false };
+    return { sent: 0, skipped: 0, failed: 0, claimed: false, stopped: "drained", remaining: 0 };
   }
   const b = await db.broadcast.findUniqueOrThrow({ where: { id: broadcastId } });
 
-  const pending = await db.broadcastRecipient.findMany({
-    where: { broadcastId: b.id, status: "PENDING" },
-    include: { contact: true },
-  });
-
-  const report: BroadcastReport = { sent: 0, skipped: 0, failed: 0, claimed: true };
+  const report: BroadcastReport = {
+    sent: 0,
+    skipped: 0,
+    failed: 0,
+    claimed: true,
+    stopped: "drained",
+    remaining: 0,
+  };
   const body = parseBroadcastBody(b);
   const tag = parseMessageTag(b.tag);
 
-  for (const r of pending) {
-    const decision = canSend(r.contact.lastInboundAt, { tag });
-    if (!decision.allowed) {
-      await db.broadcastRecipient.update({
-        where: { id: r.id },
-        data: { status: "FAILED", error: decision.reason },
-      });
-      report.skipped++;
-      continue;
-    }
+  let outOfBudget = false;
+  // Paging trusts rows to leave PENDING as they are processed. If one ever
+  // does not — a driver quirk, a status the update did not take — the same
+  // page would come back forever. Remember the last page's head and stop
+  // instead of spinning on it.
+  let lastHead: string | null = null;
 
-    try {
-      await deliver(db, b.id, body, r.contactId, tag);
-      await db.broadcastRecipient.update({
-        where: { id: r.id },
-        data: { status: "SENT", sentAt: new Date() },
-      });
-      report.sent++;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      await db.broadcastRecipient.update({
-        where: { id: r.id },
-        data: { status: "FAILED", error: msg },
-      });
-      if (err instanceof SendBlocked) report.skipped++;
-      else report.failed++;
+  // Paged rather than one findMany over every PENDING row: a large broadcast
+  // would otherwise pull the whole audience into memory, and under a budget
+  // most of it would never be looked at. Each page re-queries PENDING, and
+  // every processed row has left PENDING by then, so there is no offset to
+  // drift — a page is always the next un-attempted rows.
+  while (!outOfBudget) {
+    const pending = await db.broadcastRecipient.findMany({
+      where: { broadcastId: b.id, status: "PENDING" },
+      // Only what the loop needs. The full contact row was being loaded for
+      // every recipient; canSend reads one field.
+      select: { id: true, contactId: true, contact: { select: { lastInboundAt: true } } },
+      take: DRAIN_PAGE,
+    });
+    if (pending.length === 0) break;
+    if (pending[0]!.id === lastHead) {
+      log.warn("broadcast drain made no progress on a page; stopping", { broadcastId: b.id });
+      break;
     }
+    lastHead = pending[0]!.id;
 
-    await sleep(INTERVAL_MS);
+    for (const r of pending) {
+      if (deadline !== null && now() >= deadline) {
+        outOfBudget = true;
+        break;
+      }
+
+      const decision = canSend(r.contact.lastInboundAt, { tag });
+      if (!decision.allowed) {
+        await db.broadcastRecipient.update({
+          where: { id: r.id },
+          data: { status: "FAILED", error: decision.reason },
+        });
+        report.skipped++;
+        continue;
+      }
+
+      try {
+        await deliver(db, b.id, body, r.contactId, tag);
+        await db.broadcastRecipient.update({
+          where: { id: r.id },
+          data: { status: "SENT", sentAt: new Date() },
+        });
+        report.sent++;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        await db.broadcastRecipient.update({
+          where: { id: r.id },
+          data: { status: "FAILED", error: msg },
+        });
+        if (err instanceof SendBlocked) report.skipped++;
+        else report.failed++;
+      }
+
+      await wait(INTERVAL_MS);
+    }
+  }
+
+  report.remaining = await db.broadcastRecipient.count({
+    where: { broadcastId: b.id, status: "PENDING" },
+  });
+
+  if (outOfBudget && report.remaining > 0) {
+    // Hand the broadcast back instead of dying on it. QUEUED + lockedAt null
+    // is exactly the state a fresh broadcast is in, so the next drainer
+    // claims it with no wait for the lock to expire.
+    report.stopped = "budget";
+    await db.broadcast.update({
+      where: { id: b.id },
+      data: { status: "QUEUED", lockedAt: null },
+    });
+    log.info("broadcast drain paused on budget", {
+      broadcastId: b.id,
+      sent: report.sent,
+      remaining: report.remaining,
+      elapsedMs: now() - startedAt,
+    });
+    return report;
   }
 
   await db.broadcast.update({
@@ -276,12 +397,11 @@ export async function runBroadcast(
 /**
  * A recipient failure caused by the messaging window rather than by the
  * send itself. These are not retried: the window will not reopen by trying
- * again, only by the contact writing.
+ * again, only by the contact writing. Defined in recipient-bucket.ts, which
+ * owns the single recipient classifier; re-exported here because this module
+ * has always been where callers looked for it.
  */
-export function isWindowError(error: string | null): boolean {
-  if (!error) return false;
-  return /messaging window|never sent us a message|HUMAN_AGENT window/i.test(error);
-}
+export { isWindowError };
 
 export type BroadcastStatusReport = {
   id: string;
@@ -319,9 +439,10 @@ export async function broadcastReport(
   for (const g of grouped) {
     const n = g._count._all;
     counts.total += n;
-    if (g.status === "PENDING") counts.pending += n;
-    else if (g.status === "FAILED") counts.failed += n;
-    else counts.sent += n; // SENT, DELIVERED, READ
+    // groupBy has no error text, and it does not need one: "skipped" and
+    // "failed" both land in `failed` here, and the split is reported below
+    // as outOfWindow. One classifier, one place it can change.
+    counts[reportBucketOf(g.status, null)] += n;
   }
 
   const errors = failedRows

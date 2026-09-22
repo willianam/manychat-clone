@@ -101,6 +101,15 @@ export async function flowStats(
   const tapsByPayload = new Map<string, number>();
   for (const t of taps) if (t.payload) tapsByPayload.set(t.payload, t.n);
 
+  // Serialize each legacy payload ONCE, not once per (node × row). The old
+  // shape put JSON.stringify inside the inner loop, so a 30-node flow against
+  // the 5000-row cap serialized 150k times to answer the same question.
+  const legacyRows = legacy.map((m) => ({
+    text: m.text,
+    status: m.status,
+    payloadJson: JSON.stringify(m.payload ?? ""),
+  }));
+
   const stats: FlowStats = {};
 
   for (const node of graph.data.nodes) {
@@ -111,9 +120,9 @@ export async function flowStats(
     const counts = new Map(byNode.get(node.id) ?? []);
 
     // Legacy rows: no meta, so fall back to the old matching.
-    for (const m of legacy) {
-      const hit =
-        (text && m.text === text) || JSON.stringify(m.payload ?? "").includes(`"${node.id}:`);
+    const needle = `"${node.id}:`;
+    for (const m of legacyRows) {
+      const hit = (text && m.text === text) || m.payloadJson.includes(needle);
       if (hit) counts.set(m.status, (counts.get(m.status) ?? 0) + 1);
     }
 

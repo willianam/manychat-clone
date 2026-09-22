@@ -1,10 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { failForm } from "../../lib/ui/form-error";
 import { redirect } from "next/navigation";
 import { db } from "../../server/db";
 import { enqueueBroadcast } from "../../server/broadcast-worker";
 import { parseBroadcastForm } from "../../lib/broadcast-form";
+import { sendBroadcastTest, type BroadcastTestDraft } from "../../server/broadcast-test";
+import { actionFailure, type ActionFailure } from "../../lib/ui/action-result";
 
 /**
  * Broadcast composition.
@@ -48,7 +51,7 @@ export async function createBroadcast(formData: FormData) {
     if (count === 0) {
       // enqueueBroadcast marks an empty audience DONE; a draft is more useful.
       await db.broadcast.update({ where: { id: b.id }, data: { status: "DRAFT" } });
-      throw new Error(
+      failForm("/broadcasts", 
         "Nenhum contato se encaixa nesse filtro agora. O disparo ficou salvo como rascunho.",
       );
     }
@@ -68,11 +71,11 @@ export async function createBroadcast(formData: FormData) {
  */
 export async function queueBroadcast(formData: FormData) {
   const id = String(formData.get("id") ?? "");
-  if (!id) throw new Error("Disparo não informado.");
+  if (!id) failForm("/broadcasts", "Disparo não informado.");
 
   const count = await enqueueBroadcast(db, id, { window: parseWindow(formData.get("window")) });
   if (count === 0) {
-    throw new Error(
+    failForm("/broadcasts", 
       "Nenhum contato se encaixa nesse filtro agora. Ajuste as etiquetas ou espere alguém escrever.",
     );
   }
@@ -82,7 +85,44 @@ export async function queueBroadcast(formData: FormData) {
 
 export async function deleteBroadcast(formData: FormData) {
   const id = String(formData.get("id") ?? "");
-  if (!id) throw new Error("Disparo não informado.");
+  if (!id) failForm("/broadcasts", "Disparo não informado.");
   await db.broadcast.delete({ where: { id } });
   revalidatePath("/broadcasts");
+}
+
+/**
+ * Send the composed broadcast to one contact, as a test.
+ *
+ * Nothing about the real path changes: no Broadcast row, no recipients, no
+ * enqueue — see server/broadcast-test.ts. Failure comes back as a value
+ * because the caller is a client component, and Next replaces the message of
+ * a thrown Server Action error in production.
+ */
+export async function testBroadcast(
+  draft: BroadcastTestDraft,
+  contactId: string,
+): Promise<{ ok: true } | ActionFailure> {
+  if (!contactId) return actionFailure("Escolha um contato para receber o teste.");
+  try {
+    await sendBroadcastTest(db, draft, contactId);
+    return { ok: true };
+  } catch (err) {
+    return actionFailure(
+      err instanceof Error && err.message ? err.message : "Não foi possível enviar o teste.",
+    );
+  }
+}
+
+/** Contacts whose @username contains `q`, for the broadcast test dialog. */
+export async function searchBroadcastTestContacts(
+  q: string,
+): Promise<Array<{ id: string; username: string | null; name: string | null }>> {
+  const needle = q.trim().replace(/^@/, "");
+  if (!needle) return [];
+  return db.contact.findMany({
+    where: { username: { contains: needle, mode: "insensitive" } },
+    select: { id: true, username: true, name: true },
+    orderBy: { username: "asc" },
+    take: 8,
+  });
 }

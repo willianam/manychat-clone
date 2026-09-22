@@ -8,8 +8,10 @@ import {
   type RecipientBucket,
 } from "../../../server/broadcast-detail";
 import { accountTimeZone, formatInTimeZone } from "../../../lib/timezone";
+import { formError } from "../../../lib/ui/form-error";
 import { cancelBroadcastAction, duplicateBroadcastAction, retryFailedRecipients } from "./actions";
 import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
 import { Card, CardContent } from "@/components/ui/card";
 import { ConfirmSubmitButton } from "@/components/ui/confirm-submit-button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -55,10 +57,11 @@ export default async function BroadcastPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; erro?: string }>;
 }) {
   const { id } = await params;
-  const { status } = await searchParams;
+  const { status, erro: rawErro } = await searchParams;
+  const erro = formError(rawErro);
   const bucket = BUCKETS.includes(status as RecipientBucket) ? (status as RecipientBucket) : null;
 
   const b = await db.broadcast.findUnique({
@@ -134,6 +137,12 @@ export default async function BroadcastPage({
           </>
         }
       />
+
+      {erro && (
+        <Callout tone="destructive" className="mt-6">
+          {erro}
+        </Callout>
+      )}
 
       <Card className="mt-6">
         <CardContent className="p-4">

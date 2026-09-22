@@ -41,6 +41,23 @@ services:
       GRAPH_API_VERSION: ${GRAPH_API_VERSION:-v26.0}
       BROADCAST_RATE: ${BROADCAST_RATE:-5}
       ACCOUNT_TIMEZONE: ${ACCOUNT_TIMEZONE:-America/Sao_Paulo}
+      AUTH_SECRET: ${AUTH_SECRET}
+      IG_USERNAME: ${IG_USERNAME:-}
+      # Read by lib/client-ip.ts. Define it ONLY when a proxy (nginx, Caddy,
+      # a load balancer) sits in front of this container: the last entry of
+      # x-forwarded-for is trustworthy only when something appended it. With a
+      # proxy and no TRUST_PROXY the login rate limit collapses into a single
+      # global bucket; without a proxy and with TRUST_PROXY an attacker forges
+      # the header and gets a fresh bucket per attempt. This deploy path is
+      # exactly the one where it matters, so it has to be reachable here.
+      TRUST_PROXY: ${TRUST_PROXY:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      SENDER_ACTIONS: ${SENDER_ACTIONS:-on}
+      HUMAN_AGENT: ${HUMAN_AGENT:-}
+      # The {{secret.NAME}} of the Request node is a family, not one variable:
+      # add one line per secret you use (FLOW_SECRET_CRM is the example in
+      # .env.example).
+      FLOW_SECRET_CRM: ${FLOW_SECRET_CRM:-}
     ports:
       - "3000:3000"
     command: sh -c "npx prisma migrate deploy && npm run start"
@@ -58,11 +75,20 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://manychat:manychat@db:5432/manychat
+      DIRECT_URL: postgresql://manychat:manychat@db:5432/manychat
       IG_ACCESS_TOKEN: ${IG_ACCESS_TOKEN}
       IG_USER_ID: ${IG_USER_ID:-}
       GRAPH_API_VERSION: ${GRAPH_API_VERSION:-v26.0}
       BROADCAST_RATE: ${BROADCAST_RATE:-5}
       ACCOUNT_TIMEZONE: ${ACCOUNT_TIMEZONE:-America/Sao_Paulo}
+      # The worker sends messages and runs flows, so it needs the same send
+      # switches as the web process. TRUST_PROXY and AUTH_SECRET are absent on
+      # purpose: it serves no HTTP and has no session.
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      SENDER_ACTIONS: ${SENDER_ACTIONS:-on}
+      HUMAN_AGENT: ${HUMAN_AGENT:-}
+      WORKER_TICK_MS: ${WORKER_TICK_MS:-5000}
+      FLOW_SECRET_CRM: ${FLOW_SECRET_CRM:-}
     command: npm run worker
 
 volumes:

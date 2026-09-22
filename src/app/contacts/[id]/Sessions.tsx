@@ -90,7 +90,7 @@ export function Sessions({ contactId, sessions }: { contactId: string; sessions:
           const s = confirming;
           if (!s) return;
           start(async () => {
-            const ok = await withToast(() => abandonSession(contactId, s.id).then(() => true), {
+            const ok = await withToast(() => abandonSession(contactId, s.id).then((r) => r ?? true), {
               success: "Sessão abandonada.",
               error: "Não foi possível abandonar a sessão.",
             });

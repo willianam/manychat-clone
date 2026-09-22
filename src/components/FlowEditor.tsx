@@ -283,8 +283,9 @@ function FlowEditorInner({
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   /** Edits since the last successful save. */
   const [dirty, setDirty] = useState(false);
+  /** Mark the graph edited: the "saved at" stamp is stale and the draft is dirty. */
   const touch = useCallback(() => {
-    touch();
+    setSavedAt(null);
     setDirty(true);
   }, []);
 
@@ -425,6 +426,57 @@ function FlowEditorInner({
    * can draw its own numbers and commit its own text. Both are stripped
    * before validation — they are display wiring, not flow data.
    */
+  /**
+   * The inline-edit callback, one per node, created once.
+   *
+   * It used to be a closure rebuilt on every render, which changed each node's
+   * `data` by reference and made React Flow re-render all of them for any
+   * change. The node's current data is read from `latest` at call time, so the
+   * stable handler is never stale.
+   */
+  const updateRef = useRef(updateNodeData);
+  useEffect(() => {
+    updateRef.current = updateNodeData;
+  }, [updateNodeData]);
+  const textHandlers = useRef(new Map<string, (text: string) => void>());
+  const onTextFor = useCallback((id: string) => {
+    const cached = textHandlers.current.get(id);
+    if (cached) return cached;
+    const handler = (text: string) => {
+      const node = latest.current.nodes.find((n) => n.id === id);
+      if (!node) return;
+      updateRef.current(id, withInlineText(node.data as FlowNodeData, text));
+    };
+    textHandlers.current.set(id, handler);
+    return handler;
+  }, []);
+
+  /**
+   * One `data` object per node, reused while its inputs are identical. React
+   * Flow decides whether to re-render a node by comparing `data` by reference.
+   */
+  const dataCache = useRef(new Map<string, { deps: unknown[]; data: Record<string, unknown> }>());
+  const nodeData = useCallback(
+    (id: string, data: unknown, nodeStats: unknown, ab: unknown, names: Record<string, string>) => {
+      const onText = onTextFor(id);
+      const deps = [data, nodeStats, ab, names, onText];
+      const hit = dataCache.current.get(id);
+      if (hit && hit.deps.length === deps.length && hit.deps.every((d, i) => d === deps[i])) {
+        return hit.data;
+      }
+      const next = {
+        ...(data as Record<string, unknown>),
+        _stats: nodeStats,
+        _ab: ab,
+        _names: names,
+        _onText: onText,
+      };
+      dataCache.current.set(id, { deps, data: next });
+      return next;
+    },
+    [onTextFor],
+  );
+
   const flowNames = useMemo(
     () => Object.fromEntries((flows ?? []).map((f) => [f.id, f.name])),
     [flows],
@@ -433,14 +485,7 @@ function FlowEditorInner({
   const rendered = useMemo(() => {
     const real = nodes.map((n) => ({
       ...n,
-      data: {
-        ...n.data,
-        _stats: stats?.[n.id],
-        _ab: metrics?.ab[n.id],
-        _names: flowNames,
-        _onText: (text: string) =>
-          updateNodeData(n.id, withInlineText(n.data as FlowNodeData, text)),
-      },
+      data: nodeData(n.id, n.data, stats?.[n.id], metrics?.ab[n.id], flowNames),
     })) as Node[];
 
     if (!triggers) return real;
@@ -482,7 +527,7 @@ function FlowEditorInner({
     stats,
     metrics?.ab,
     flowNames,
-    updateNodeData,
+    nodeData,
     triggers,
     onAddTrigger,
     onEditTrigger,
@@ -974,7 +1019,7 @@ function FlowEditorInner({
             onNodeClick={(_, n) => setSelectedId(n.id === TRIGGER_NODE_ID ? null : n.id)}
             onPaneClick={() => setSelectedId(null)}
             onNodeDragStart={() => snap()}
-            onEdgesDelete={() => setSavedAt(null)}
+            onEdgesDelete={touch}
             onNodesDelete={(deleted) => {
               setSelectedId((id) => (deleted.some((n) => n.id === id) ? null : id));
               touch();

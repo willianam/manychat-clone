@@ -36,7 +36,8 @@ export function ContactHeader({
   const toggle = (next: boolean) => {
     setLocal(next);
     start(async () => {
-      const ok = await withToast(() => setSubscribed(contact.id, next).then(() => true), {
+      // `?? true` keeps a failure value intact for withToast to show.
+      const ok = await withToast(() => setSubscribed(contact.id, next).then((r) => r ?? true), {
         success: next ? "Contato inscrito." : "Contato descadastrado.",
         error: "Não foi possível alterar a inscrição.",
       });

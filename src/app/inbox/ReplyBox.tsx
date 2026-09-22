@@ -47,6 +47,16 @@ export function ReplyBox({
   // what the operator typed.
   const [pickerDismissed, setPickerDismissed] = useState(false);
   const [manageOpen, setManageOpen] = useState(false);
+  /**
+   * A touch keyboard has no ⇧Enter, so on a phone Enter has to break the line:
+   * otherwise the second paragraph of a reply leaves as half a message to a
+   * real person. There, ⌘/Ctrl+Enter sends — the shortcut the button already
+   * advertises. Read after mount so the server render stays stable.
+   */
+  const [touchKeyboard, setTouchKeyboard] = useState(false);
+  useEffect(() => {
+    setTouchKeyboard(window.matchMedia?.("(pointer: coarse)").matches === true);
+  }, []);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Tick the counter from the moment this render's value arrived.
@@ -127,7 +137,12 @@ export function ReplyBox({
         return;
       }
     }
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      void send();
+      return;
+    }
+    if (e.key === "Enter" && !e.shiftKey && !touchKeyboard) {
       e.preventDefault();
       void send();
     }
@@ -222,7 +237,11 @@ export function ReplyBox({
             onClick={() => void send()}
             disabled={!canSend || !text.trim() || sending}
             aria-label="Enviar"
-            title="Enter ou ⌘Enter para enviar · ⇧Enter quebra a linha"
+            title={
+              touchKeyboard
+                ? "⌘Enter envia · Enter quebra a linha"
+                : "Enter ou ⌘Enter para enviar · ⇧Enter quebra a linha"
+            }
           >
             <Send aria-hidden />
           </Button>

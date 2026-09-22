@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
+import type { z } from "zod";
 import { FlowGraph, armLabel } from "../lib/flow-schema";
 
 /**
@@ -19,16 +20,32 @@ export type ArmStats = {
   rate: number | null;
 };
 
+/**
+ * The published graph, already read and validated by the caller.
+ *
+ * editorMetrics parses it once to find the randomizer nodes; without this
+ * parameter every arm in the loop re-read the same Flow row — the graph JSON
+ * is the heaviest column in the schema — and re-ran the same Zod parse.
+ */
+export type ResolvedGraph = z.infer<typeof FlowGraph>;
+
 export async function abStats(
   db: PrismaClient,
   flowId: string,
   nodeId: string,
+  resolved?: ResolvedGraph,
 ): Promise<ArmStats[]> {
-  const flow = await db.flow.findUnique({ where: { id: flowId } });
-  if (!flow) return [];
-  const graph = FlowGraph.safeParse(flow.graph);
-  if (!graph.success) return [];
-  const node = graph.data.nodes.find((n) => n.id === nodeId);
+  let graphData: ResolvedGraph;
+  if (resolved) {
+    graphData = resolved;
+  } else {
+    const flow = await db.flow.findUnique({ where: { id: flowId } });
+    if (!flow) return [];
+    const parsed = FlowGraph.safeParse(flow.graph);
+    if (!parsed.success) return [];
+    graphData = parsed.data;
+  }
+  const node = graphData.nodes.find((n) => n.id === nodeId);
   if (!node || node.data.kind !== "random") return [];
   const d = node.data;
 

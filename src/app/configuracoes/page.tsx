@@ -13,6 +13,7 @@ import { checkHealth } from "../../server/health";
 import { listQuickReplies } from "../../server/inbox";
 import { connectionStatus } from "../../server/connection-status";
 import { KIND_LABEL, WEBHOOK_FIELDS, webhookStatus } from "../../server/webhook-status";
+import { getSubscribedApps, SUBSCRIBED_FIELDS } from "../../server/subscribed-apps";
 import { accountTimeZone, formatInTimeZone } from "../../lib/timezone";
 import {
   ESCAPE_KEYWORDS,
@@ -23,6 +24,7 @@ import {
 } from "../../lib/global-keywords";
 import { ProfileForms } from "./ProfileForms";
 import { QuickRepliesManager } from "./QuickRepliesManager";
+import { SubscribeAppButton } from "./SubscribeAppButton";
 import { Callout } from "@/components/ui/callout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
@@ -60,26 +62,39 @@ export default async function ConfiguracoesPage({
   const now = new Date();
   const timeZone = accountTimeZone();
 
-  const [profile, flows, token, health, connection, webhook, defaults, welcomes, quickReplies] =
-    await Promise.all([
-      loadProfile(),
-      db.flow.findMany({ orderBy: { name: "asc" } }),
-      tokenStatus(db, now),
-      checkHealth(db, now),
-      connectionStatus(db, now),
-      webhookStatus(db, now),
-      db.trigger.findMany({
-        where: { kind: "DEFAULT" },
-        include: { flow: { select: { name: true, enabled: true } } },
-        orderBy: { priority: "desc" },
-      }),
-      db.trigger.findMany({
-        where: { kind: "WELCOME" },
-        include: { flow: { select: { name: true, enabled: true } } },
-        orderBy: { priority: "desc" },
-      }),
-      listQuickReplies(db),
-    ]);
+  const [
+    profile,
+    flows,
+    token,
+    health,
+    connection,
+    webhook,
+    defaults,
+    welcomes,
+    quickReplies,
+    subscription,
+  ] = await Promise.all([
+    loadProfile(),
+    db.flow.findMany({ orderBy: { name: "asc" } }),
+    tokenStatus(db, now),
+    checkHealth(db, now),
+    connectionStatus(db, now),
+    webhookStatus(db, now),
+    db.trigger.findMany({
+      where: { kind: "DEFAULT" },
+      include: { flow: { select: { name: true, enabled: true } } },
+      orderBy: { priority: "desc" },
+    }),
+    db.trigger.findMany({
+      where: { kind: "WELCOME" },
+      include: { flow: { select: { name: true, enabled: true } } },
+      orderBy: { priority: "desc" },
+    }),
+    listQuickReplies(db),
+    // Uma chamada à Meta por carregamento da tela: é a única forma honesta de
+    // dizer se a conta está inscrita. Falha vira "não deu para consultar".
+    getSubscribedApps(db),
+  ]);
 
   // The stored JSON is re-parsed rather than trusted: a schema change or a
   // hand-edited row must not crash the settings screen.
@@ -242,6 +257,61 @@ export default async function ConfiguracoesPage({
                   </TableBody>
                 </Table>
               </div>
+              <div className="mt-4 rounded-lg border p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-sm font-medium">Inscrição do app na conta</h3>
+                  <StatusPill
+                    tone={
+                      subscription.status === "subscribed"
+                        ? subscription.missing.length > 0
+                          ? "warning"
+                          : "success"
+                        : subscription.status === "not_subscribed"
+                          ? "destructive"
+                          : "neutral"
+                    }
+                  >
+                    {subscription.status === "subscribed"
+                      ? subscription.missing.length > 0
+                        ? "inscrita, faltam campos"
+                        : "inscrita"
+                      : subscription.status === "not_subscribed"
+                        ? "não inscrita"
+                        : "não foi possível consultar"}
+                  </StatusPill>
+                </div>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Assinar os campos no painel da Meta não basta: o app precisa ser inscrito na conta
+                  por API. Enquanto isso não acontece o webhook responde 200 normalmente e evento
+                  nenhum chega — é a falha silenciosa mais comum deste projeto.
+                </p>
+                {subscription.status === "subscribed" && (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Campos inscritos: {subscription.fields.join(", ")}.
+                    {subscription.missing.length > 0 &&
+                      ` Faltando: ${subscription.missing.join(", ")} — clique para inscrever de novo.`}
+                  </p>
+                )}
+                {subscription.status === "unknown" && (
+                  <p className="mt-2 text-xs text-amber-700">
+                    {subscription.reason} Sem essa resposta não dá para saber se a conta está
+                    inscrita; o botão continua valendo, e é seguro clicar mais de uma vez.
+                  </p>
+                )}
+                <div className="mt-3">
+                  <SubscribeAppButton
+                    label={
+                      subscription.status === "subscribed"
+                        ? "Inscrever de novo"
+                        : "Inscrever esta conta"
+                    }
+                  />
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Inscreve {SUBSCRIBED_FIELDS.join(", ")}. Repetir a inscrição não duplica nada.
+                </p>
+              </div>
+
               <p className="mt-2 text-xs text-muted-foreground">
                 {webhook.received24h} evento(s) nas últimas 24h, {webhook.failed24h} com falha no
                 processamento.{" "}

@@ -3,27 +3,26 @@ import { Megaphone, Plus } from "lucide-react";
 import { db } from "../../server/db";
 import { previewAudience, audienceOf } from "../../server/broadcast-worker";
 import { queueBroadcast, deleteBroadcast } from "./actions";
+import { QueueBroadcastForm } from "./QueueBroadcastForm";
 import { accountTimeZone, formatInTimeZone } from "../../lib/timezone";
+import { formError } from "../../lib/ui/form-error";
 import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
 import { Card, CardContent } from "@/components/ui/card";
 import { ConfirmSubmitButton } from "@/components/ui/confirm-submit-button";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Label } from "@/components/ui/label";
 import { PageHeader } from "@/components/ui/page-header";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { StatusPill } from "@/components/ui/status-pill";
-import { SubmitButton } from "@/components/ui/submit-button";
 import { broadcastStatusLabel, broadcastStatusTone } from "@/lib/ui/labels";
 
 export const dynamic = "force-dynamic";
 
-export default async function BroadcastsPage() {
+export default async function BroadcastsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ erro?: string }>;
+}) {
+  const erro = formError((await searchParams).erro);
   const timeZone = accountTimeZone();
   const now = new Date();
   const broadcasts = await db.broadcast.findMany({
@@ -60,6 +59,12 @@ export default async function BroadcastsPage() {
           </Button>
         }
       />
+
+      {erro && (
+        <Callout tone="destructive" className="mt-6">
+          {erro}
+        </Callout>
+      )}
 
       {broadcasts.length === 0 && (
         <EmptyState
@@ -133,7 +138,7 @@ export default async function BroadcastsPage() {
                     </div>
                   )}
 
-                  {p && (
+                  {b.status !== "DRAFT" && p && (
                     <div
                       className={`mt-2 text-xs ${p.mostlyOutOfWindow ? "text-amber-800" : "text-neutral-600"}`}
                     >
@@ -143,26 +148,14 @@ export default async function BroadcastsPage() {
                   )}
 
                   {b.status === "DRAFT" && (
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <form action={queueBroadcast} className="flex flex-wrap items-center gap-2">
-                        <input type="hidden" name="id" value={b.id} />
-                        <Label htmlFor={`window-${b.id}`} className="sr-only">
-                          Filtro da janela
-                        </Label>
-                        <Select name="window" defaultValue="in">
-                          <SelectTrigger id={`window-${b.id}`} className="h-8 w-72 text-xs">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="in">Só quem está dentro da janela</SelectItem>
-                            <SelectItem value="all">Todos (fora da janela vai falhar)</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <SubmitButton size="sm" pendingLabel="Enfileirando…">
-                          {b.scheduledAt ? "Agendar" : "Enfileirar"}
-                        </SubmitButton>
-                      </form>
-                      <form action={deleteBroadcast}>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <QueueBroadcastForm
+                        id={b.id}
+                        action={queueBroadcast}
+                        scheduled={Boolean(b.scheduledAt)}
+                        preview={p ?? null}
+                      />
+                      <form action={deleteBroadcast} className="mt-3">
                         <input type="hidden" name="id" value={b.id} />
                         <ConfirmSubmitButton
                           variant="outline"

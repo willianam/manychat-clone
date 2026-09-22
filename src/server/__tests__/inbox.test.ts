@@ -138,6 +138,22 @@ function fakeDb(state: {
   };
 
   const db = {
+    /**
+     * unreadConversationCount is one raw aggregate (a Message joined to its
+     * own contact's read mark — a comparison Prisma cannot express). The
+     * fake reproduces that predicate in JS so the badge's semantics stay
+     * covered here; the SQL text itself is exercised against Postgres.
+     */
+    $queryRaw: vi.fn(async () => {
+      const unread = new Set<string>();
+      for (const m of state.messages) {
+        if (m.direction !== "INBOUND") continue;
+        const c = state.contacts.find((x) => x.id === m.contactId);
+        if (!c) continue;
+        if (!c.lastReadAt || m.createdAt > c.lastReadAt) unread.add(m.contactId);
+      }
+      return [{ n: unread.size }];
+    }),
     contact: {
       findMany: vi.fn(
         async ({

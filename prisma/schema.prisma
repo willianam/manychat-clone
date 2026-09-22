@@ -210,6 +210,11 @@ model Message {
   contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
   @@index([contactId, createdAt])
+  /// Serves rollupDay (INBOUND/OUTBOUND counts over a day range, on every
+  /// webhook) and connectionStatus (newest OUTBOUND, on every page request).
+  /// Neither can use [contactId, createdAt]. See migration
+  /// 20260921000000_message_direction_created_at — NOT yet applied.
+  @@index([direction, createdAt])
 }
 
 /// A conversational flow. `graph` holds the React Flow document

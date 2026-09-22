@@ -16,7 +16,10 @@ import {
 } from "../broadcast-worker";
 import { sendMessage } from "../instagram";
 
-const NOW = new Date("2026-08-25T12:00:00Z");
+/// Live, not a frozen literal: the fixture's recipient must sit INSIDE the
+/// 24h messaging window, which canSend() measures against the real clock.
+/// A hardcoded date silently rots the suite the day after it is written.
+const NOW = new Date();
 const WINDOW_ERR =
   "Outside the 24h messaging window (last inbound 30h ago). Use a message tag or wait for the contact to write again.";
 
@@ -67,6 +70,9 @@ function fakeDb(
     broadcastRecipient: {
       findMany: vi.fn(async ({ where }: { where: { status?: string } }) =>
         rows.filter((r) => !where.status || r.status === where.status),
+      ),
+      count: vi.fn(async ({ where }: { where: { status?: string } }) =>
+        rows.filter((r) => !where.status || r.status === where.status).length,
       ),
       update: vi.fn(async ({ where, data }: { where: { id: string }; data: object }) => {
         Object.assign(

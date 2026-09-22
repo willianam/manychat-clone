@@ -4,6 +4,7 @@ import { useState } from "react";
 import { usePathname } from "next/navigation";
 import { Menu, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
 import { GuardedLink } from "@/components/ui/guarded-link";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { SidebarNav } from "./sidebar-nav";
@@ -62,6 +63,31 @@ export function AppShell({
 
           <ConnectionStatus status={connection} />
         </header>
+
+        {/*
+          A dead connection means no automation is answering anyone, and the
+          pill alone does not say that loudly enough — its reasons live in a
+          tooltip, which never opens on a touch screen. The banner states them
+          in the page, on every screen, and points at the one place that fixes
+          them.
+        */}
+        {connection.level === "down" && (
+          <Callout tone="destructive" className="mx-4 mt-4 md:mx-6">
+            <p className="font-medium">
+              O Instagram não está conectado: nenhum fluxo, gatilho ou disparo está respondendo.
+            </p>
+            {connection.detail.length > 0 && (
+              <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                {connection.detail.map((d) => (
+                  <li key={d}>{d}</li>
+                ))}
+              </ul>
+            )}
+            <GuardedLink href="/configuracoes" className="mt-1 inline-block font-medium underline">
+              Abrir Conexão nas configurações
+            </GuardedLink>
+          </Callout>
+        )}
 
         <div className="flex min-w-0 flex-1 flex-col">{children}</div>
       </div>
