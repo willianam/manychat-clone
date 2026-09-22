@@ -71,6 +71,9 @@ function fakeDb(
       findMany: vi.fn(async ({ where }: { where: { status?: string } }) =>
         rows.filter((r) => !where.status || r.status === where.status),
       ),
+      count: vi.fn(async ({ where }: { where: { status?: string } }) =>
+        rows.filter((r) => !where.status || r.status === where.status).length,
+      ),
       update: vi.fn(async ({ where, data }: { where: { id: string }; data: object }) => {
         Object.assign(
           rows.find((r) => r.id === where.id)!,

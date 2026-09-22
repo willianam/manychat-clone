@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "../../../../server/db";
 import {
   runBroadcast,
+  CRON_DRAIN_BUDGET_MS,
   tickDelayedSessions,
   sweepStaleSessions,
 } from "../../../../server/broadcast-worker";
@@ -62,9 +63,16 @@ export async function GET(req: NextRequest) {
     take: 1,
   });
 
-  let broadcast: { name: string; sent: number; skipped: number; failed: number } | null = null;
+  let broadcast: {
+    name: string;
+    sent: number;
+    skipped: number;
+    failed: number;
+    stopped: string;
+    remaining: number;
+  } | null = null;
   if (queued[0]) {
-    const r = await runBroadcast(db, queued[0].id);
+    const r = await runBroadcast(db, queued[0].id, { budgetMs: CRON_DRAIN_BUDGET_MS });
     broadcast = { name: queued[0].name, ...r };
   }
 

@@ -24,6 +24,7 @@ import {
   tickDelayedSessions,
   sweepStaleSessions,
   runBroadcast,
+  WEBHOOK_DRAIN_BUDGET_MS,
 } from "../../../../server/broadcast-worker";
 import { rollupRecent } from "../../../../server/rollup";
 import { recordError } from "../../../../server/error-events";
@@ -223,7 +224,9 @@ async function drainDueWork(): Promise<void> {
         OR: [{ scheduledAt: null }, { scheduledAt: { lte: new Date() } }],
       },
     });
-    if (queued) await runBroadcast(db, queued.id);
+    // Budgeted: the drain must return the lock before Vercel kills this
+    // function at maxDuration. Whatever is left resumes on the next webhook.
+    if (queued) await runBroadcast(db, queued.id, { budgetMs: WEBHOOK_DRAIN_BUDGET_MS });
 
     await rollupRecent(db);
   } catch (err) {

@@ -100,9 +100,20 @@ function fakeDb(broadcast: Record<string, unknown>) {
       update: vi.fn(async ({ data }: { data: object }) => Object.assign(b, data)),
     },
     broadcastRecipient: {
-      findMany: vi.fn(async () => recipients),
-      update: vi.fn(async ({ data }: { data: object }) => {
-        Object.assign(recipients[0]!, data);
+      // Honours the status filter: the drain pages over PENDING and relies on
+      // a processed row leaving it, so a fake that always returns the same
+      // row would loop forever.
+      findMany: vi.fn(async ({ where }: { where: { status?: string } }) =>
+        recipients.filter((r) => !where.status || r.status === where.status),
+      ),
+      count: vi.fn(async ({ where }: { where: { status?: string } }) =>
+        recipients.filter((r) => !where.status || r.status === where.status).length,
+      ),
+      update: vi.fn(async ({ where, data }: { where: { id: string }; data: object }) => {
+        Object.assign(
+          recipients.find((r) => r.id === where.id) ?? recipients[0]!,
+          data,
+        );
         return {};
       }),
     },
