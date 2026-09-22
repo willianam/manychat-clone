@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { SlidersHorizontal } from "lucide-react";
 import { db } from "../../server/db";
+import { formError } from "../../lib/ui/form-error";
 import { contactCountsByField, listCustomFields } from "../../server/custom-fields";
 import { fieldKeysInGraph } from "../../lib/field-usage";
 import { createField, updateField, deleteField } from "./actions";
 import { TypeSelect } from "./TypeSelect";
+import { Callout } from "@/components/ui/callout";
 import { Card, CardContent } from "@/components/ui/card";
 import { ConfirmSubmitButton } from "@/components/ui/confirm-submit-button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -28,7 +30,12 @@ const FIELD_TYPE_LABEL = {
  * write the key and how many contacts hold a value, delete when nothing
  * writes it. The key itself is immutable — flows reference it by name.
  */
-export default async function CamposPage() {
+export default async function CamposPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ erro?: string }>;
+}) {
+  const erro = formError((await searchParams).erro);
   const [fields, flows, counts] = await Promise.all([
     listCustomFields(db),
     db.flow.findMany({ select: { id: true, name: true, graph: true } }),
@@ -48,6 +55,12 @@ export default async function CamposPage() {
         title="Campos"
         description="Campos guardam o que os contatos respondem. Um fluxo que salva um campo novo o registra aqui sozinho; o tipo decide como condições e segmentos comparam o valor."
       />
+
+      {erro && (
+        <Callout tone="destructive" className="mt-6">
+          {erro}
+        </Callout>
+      )}
 
       <Card className="mt-6">
         <CardContent className="p-4">

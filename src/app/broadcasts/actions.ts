@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { failForm } from "../../lib/ui/form-error";
 import { redirect } from "next/navigation";
 import { db } from "../../server/db";
 import { enqueueBroadcast } from "../../server/broadcast-worker";
@@ -48,7 +49,7 @@ export async function createBroadcast(formData: FormData) {
     if (count === 0) {
       // enqueueBroadcast marks an empty audience DONE; a draft is more useful.
       await db.broadcast.update({ where: { id: b.id }, data: { status: "DRAFT" } });
-      throw new Error(
+      failForm("/broadcasts", 
         "Nenhum contato se encaixa nesse filtro agora. O disparo ficou salvo como rascunho.",
       );
     }
@@ -68,11 +69,11 @@ export async function createBroadcast(formData: FormData) {
  */
 export async function queueBroadcast(formData: FormData) {
   const id = String(formData.get("id") ?? "");
-  if (!id) throw new Error("Disparo não informado.");
+  if (!id) failForm("/broadcasts", "Disparo não informado.");
 
   const count = await enqueueBroadcast(db, id, { window: parseWindow(formData.get("window")) });
   if (count === 0) {
-    throw new Error(
+    failForm("/broadcasts", 
       "Nenhum contato se encaixa nesse filtro agora. Ajuste as etiquetas ou espere alguém escrever.",
     );
   }
@@ -82,7 +83,7 @@ export async function queueBroadcast(formData: FormData) {
 
 export async function deleteBroadcast(formData: FormData) {
   const id = String(formData.get("id") ?? "");
-  if (!id) throw new Error("Disparo não informado.");
+  if (!id) failForm("/broadcasts", "Disparo não informado.");
   await db.broadcast.delete({ where: { id } });
   revalidatePath("/broadcasts");
 }

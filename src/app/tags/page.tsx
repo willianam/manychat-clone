@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { Tag, Users } from "lucide-react";
 import { db } from "../../server/db";
+import { formError } from "../../lib/ui/form-error";
 import { createTag, renameTag, deleteTag, mergeTags } from "./actions";
 import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
 import { Card, CardContent } from "@/components/ui/card";
 import { ConfirmSubmitButton } from "@/components/ui/confirm-submit-button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -27,7 +29,12 @@ export const dynamic = "force-dynamic";
  * The contact count is the point of the screen: a tag with zero contacts is
  * usually a typo of one that has hundreds, which is what "mesclar" is for.
  */
-export default async function TagsPage() {
+export default async function TagsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ erro?: string }>;
+}) {
+  const erro = formError((await searchParams).erro);
   const tags = await db.tag.findMany({
     orderBy: { name: "asc" },
     include: { _count: { select: { contacts: true } } },
@@ -49,6 +56,12 @@ export default async function TagsPage() {
         title="Etiquetas"
         description="Etiquetas marcam contatos e são usadas por fluxos e disparos. Renomear atualiza os fluxos que citam a etiqueta; excluir avisa antes se ela estiver em uso."
       />
+
+      {erro && (
+        <Callout tone="destructive" className="mt-6">
+          {erro}
+        </Callout>
+      )}
 
       <Card className="mt-6">
         <CardContent className="p-4">

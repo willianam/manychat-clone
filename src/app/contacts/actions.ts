@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { actionFailure, isActionFailure, type ActionFailure } from "../../lib/ui/action-result";
 import { db } from "../../server/db";
 import {
   addTagToContact,
@@ -12,11 +13,17 @@ import { startFlow } from "../../server/flow-runner";
 
 const MAX_BULK = 500;
 
-function cleanIds(ids: unknown): string[] {
-  if (!Array.isArray(ids)) throw new Error("Nenhum contato selecionado.");
+/**
+ * The selection, or the sentence explaining why it is not usable. Returned
+ * rather than thrown: the message has to survive the production build.
+ */
+function cleanIds(ids: unknown): string[] | ActionFailure {
+  if (!Array.isArray(ids)) return actionFailure("Nenhum contato selecionado.");
   const clean = Array.from(new Set(ids.filter((i): i is string => typeof i === "string" && !!i)));
-  if (clean.length === 0) throw new Error("Nenhum contato selecionado.");
-  if (clean.length > MAX_BULK) throw new Error(`Selecione no máximo ${MAX_BULK} contatos por vez.`);
+  if (clean.length === 0) return actionFailure("Nenhum contato selecionado.");
+  if (clean.length > MAX_BULK) {
+    return actionFailure(`Selecione no máximo ${MAX_BULK} contatos por vez.`);
+  }
   return clean;
 }
 
@@ -25,8 +32,11 @@ function cleanIds(ids: unknown): string[] {
  * keyword: unsubscribing abandons open sessions, and the change lands on the
  * contact's timeline.
  */
-export async function setSubscribed(contactId: string, subscribed: boolean): Promise<void> {
-  if (!contactId) throw new Error("Contato não informado.");
+export async function setSubscribed(
+  contactId: string,
+  subscribed: boolean,
+): Promise<void | ActionFailure> {
+  if (!contactId) return actionFailure("Contato não informado.");
   await setContactSubscribed(db, contactId, subscribed, "panel");
   revalidatePath("/contacts");
   revalidatePath(`/contacts/${contactId}`);
@@ -37,10 +47,11 @@ export async function bulkTag(
   ids: string[],
   tagName: string,
   mode: "add" | "remove",
-): Promise<number> {
+): Promise<number | ActionFailure> {
   const contactIds = cleanIds(ids);
+  if (isActionFailure(contactIds)) return contactIds;
   const name = tagName.trim();
-  if (!name) throw new Error("Escolha uma etiqueta.");
+  if (!name) return actionFailure("Escolha uma etiqueta.");
 
   let changed = 0;
   for (const id of contactIds) {
@@ -54,8 +65,13 @@ export async function bulkTag(
   return changed;
 }
 
-export async function bulkSetSubscribed(ids: string[], subscribed: boolean): Promise<void> {
-  for (const id of cleanIds(ids)) await setContactSubscribed(db, id, subscribed, "panel");
+export async function bulkSetSubscribed(
+  ids: string[],
+  subscribed: boolean,
+): Promise<void | ActionFailure> {
+  const contactIds = cleanIds(ids);
+  if (isActionFailure(contactIds)) return contactIds;
+  for (const id of contactIds) await setContactSubscribed(db, id, subscribed, "panel");
   revalidatePath("/contacts");
 }
 
@@ -67,11 +83,13 @@ export async function bulkSetSubscribed(ids: string[], subscribed: boolean): Pro
 export async function bulkStartFlow(
   ids: string[],
   flowId: string,
-): Promise<{ started: number; skipped: number }> {
-  if (!flowId) throw new Error("Escolha um fluxo.");
+): Promise<{ started: number; skipped: number } | ActionFailure> {
+  if (!flowId) return actionFailure("Escolha um fluxo.");
+  const contactIds = cleanIds(ids);
+  if (isActionFailure(contactIds)) return contactIds;
   let started = 0;
   let skipped = 0;
-  for (const id of cleanIds(ids)) {
+  for (const id of contactIds) {
     const result = await startFlow(db, flowId, id);
     if (result) started++;
     else skipped++;
@@ -81,6 +99,8 @@ export async function bulkStartFlow(
 }
 
 /** CSV of the selected contacts, for the client to download. */
-export async function exportSelectionCsv(ids: string[]): Promise<string> {
-  return exportContactsCsv(db, { where: { id: { in: cleanIds(ids) } } });
+export async function exportSelectionCsv(ids: string[]): Promise<string | ActionFailure> {
+  const contactIds = cleanIds(ids);
+  if (isActionFailure(contactIds)) return contactIds;
+  return exportContactsCsv(db, { where: { id: { in: contactIds } } });
 }

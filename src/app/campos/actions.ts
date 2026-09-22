@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { failForm } from "../../lib/ui/form-error";
 import { db } from "../../server/db";
 import {
   createCustomField,
@@ -28,7 +29,7 @@ export async function createField(formData: FormData) {
 
 export async function updateField(formData: FormData) {
   const id = String(formData.get("id") ?? "");
-  if (!id) throw new Error("Campo não informado.");
+  if (!id) failForm("/campos", "Campo não informado.");
   await updateCustomField(db, id, {
     label: String(formData.get("label") ?? ""),
     type: readType(formData.get("type")),
@@ -40,7 +41,7 @@ export async function updateField(formData: FormData) {
 
 export async function deleteField(formData: FormData) {
   const id = String(formData.get("id") ?? "");
-  if (!id) throw new Error("Campo não informado.");
+  if (!id) failForm("/campos", "Campo não informado.");
   await deleteCustomField(db, id);
   revalidatePath("/campos");
 }
