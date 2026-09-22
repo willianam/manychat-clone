@@ -48,6 +48,11 @@ const nextConfig = {
   // is the route into the sharp/libvips AVIF advisories.
   images: { unoptimized: true },
 
+  // Next 16 writes AGENTS.md and CLAUDE.md into the project root on `next dev`.
+  // The repo already carries its own agent contract; the framework must not
+  // overwrite it.
+  agentRules: false,
+
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
