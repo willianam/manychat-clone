@@ -247,9 +247,10 @@ Duas diferenças em relação à Vercel, e as duas importam:
   TLS — defina `TRUST_PROXY=1`. Se expuser a 3000 direto na internet, não
   defina, e reveja essa escolha.
 
-> O `docker-compose.yml` do repositório não repassa `AUTH_SECRET`,
-> `TRUST_PROXY`, `LOG_LEVEL`, `SENDER_ACTIONS` nem `HUMAN_AGENT` para os
-> containers. Acrescente as que você usar no bloco `environment` antes de subir.
+> O `docker-compose.yml` repassa todas as variáveis do `.env.example` — as
+> obrigatórias sem padrão, as opcionais com o mesmo padrão do código. A exceção
+> é a família `FLOW_SECRET_*`: só o `FLOW_SECRET_CRM` do exemplo está lá, e cada
+> segredo novo do nó de Requisição pede uma linha no bloco `environment`.
 
 ---
 
