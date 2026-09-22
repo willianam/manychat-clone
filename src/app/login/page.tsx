@@ -4,6 +4,7 @@ import { MessageCircle } from "lucide-react";
 import { authSecret, constantTimeEqual, signToken, SESSION_TTL_MS } from "../../lib/auth-token";
 import { loginRateLimiter } from "../../lib/login-rate-limit";
 import { clientIp } from "../../lib/client-ip";
+import { safeNext } from "./safe-next";
 import { Callout } from "@/components/ui/callout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -25,13 +26,14 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<{ next?: string; error?: string }>;
 }) {
-  const { next = "/", error } = await searchParams;
+  const { next: rawNext, error } = await searchParams;
+  const next = safeNext(rawNext);
 
   async function login(formData: FormData) {
     "use server";
     const submitted = String(formData.get("password") ?? "");
     const expected = process.env.ADMIN_PASSWORD;
-    const target = String(formData.get("next") ?? "/");
+    const target = safeNext(formData.get("next"));
     const ip = clientIp(await headers());
 
     if (!loginRateLimiter.allows(ip)) {

@@ -9,6 +9,7 @@ import { maybeRefreshToken } from "../../../../server/token-refresh";
 import { rollupRecent } from "../../../../server/rollup";
 import { reprocessFailed } from "../../../../server/webhook-events";
 import { purgeOldDiagnostics } from "../../../../server/retention";
+import { constantTimeEqual } from "../../../../lib/auth-token";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,10 +38,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "CRON_SECRET not set" }, { status: 503 });
   }
 
-  // Vercel Cron sends this header; a manual curl can pass ?secret=.
-  const auth = req.headers.get("authorization");
-  const qs = req.nextUrl.searchParams.get("secret");
-  if (auth !== `Bearer ${secret}` && qs !== secret) {
+  // Header only. A `?secret=` fallback used to exist for manual curls, but a
+  // secret in a query string is written to the Vercel access log, to every
+  // proxy in between and to the shell history — read the log once and you own
+  // the endpoint that sends real messages. Use:
+  //   curl -H "Authorization: Bearer $CRON_SECRET" .../api/cron/tick
+  const auth = req.headers.get("authorization") ?? "";
+  if (!auth.startsWith("Bearer ") || !(await constantTimeEqual(auth.slice(7), secret))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

@@ -18,13 +18,17 @@ import { authSecret, verifyToken } from "./lib/auth-token";
 // Meta fetches /privacidade unauthenticated while reviewing the app, so a
 // login wall there reads as a missing policy and blocks publishing.
 // /api/health is public for uptime monitors; it returns statuses, no values.
+// Only /_next/static is public: the build assets the login page itself needs.
+// The wider "/_next" used to wave through /_next/image, an unauthenticated
+// native image decoder (the optimizer is off in next.config.mjs now, and the
+// matcher below no longer exempts it either).
 const PUBLIC_PREFIXES = [
   "/api/webhook",
   "/api/cron",
   "/api/health",
   "/login",
   "/privacidade",
-  "/_next",
+  "/_next/static",
   "/favicon",
 ];
 const COOKIE = "mc_auth";
@@ -61,5 +65,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!_next/static|favicon.ico).*)"],
 };

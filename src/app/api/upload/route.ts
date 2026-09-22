@@ -59,12 +59,16 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // An absent Content-Type is a FAILURE, not a pass. The client writes the
+  // multipart part header, so `if (file.type && ...)` let a Blob with no type
+  // skip the format check entirely.
   const accepted = ACCEPTED[type]!;
-  if (file.type && !accepted.test(file.type)) {
+  if (!file.type || !accepted.test(file.type)) {
     return NextResponse.json(
       {
-        error:
-          type === "file"
+        error: !file.type
+          ? "O arquivo veio sem tipo (Content-Type). Reenvie pelo seletor de arquivos."
+          : type === "file"
             ? "O Instagram aceita apenas PDF neste bloco."
             : `Formato ${file.type} não é aceito para ${type}.`,
       },
