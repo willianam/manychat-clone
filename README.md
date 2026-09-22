@@ -380,9 +380,18 @@ dias restantes e se o último refresh falhou, jamais o valor.
 
 ---
 
-## Pendência conhecida
+## As quatro rotas HTTP
 
-`docs/openapi.yaml` descreve rotas `/api/admin/*` que **não existem**. O painel
-lê o banco direto por server components, então tudo que você vê funciona — só
-não há API REST para automação externa. O arquivo está desatualizado nessa
-parte; trate-o como intenção antiga, não como contrato.
+O painel não tem API REST: cada tela é um server component lendo o Prisma, e
+cada ação é uma server action. Rota HTTP só existe quando quem chama é de
+fora — são quatro, e cada uma se autentica de um jeito:
+
+| Rota | Quem chama | Como se autentica |
+| --- | --- | --- |
+| `POST/GET /api/webhook/instagram` | Meta | assinatura HMAC (`IG_APP_SECRET`) |
+| `GET /api/cron/tick` | Vercel Cron | `Authorization: Bearer $CRON_SECRET` |
+| `POST /api/upload` | o painel no navegador | cookie de sessão |
+| `GET /api/health` | monitor externo | nada, de propósito |
+
+[`docs/openapi.yaml`](docs/openapi.yaml) descreve as quatro com os códigos de
+resposta de cada uma.

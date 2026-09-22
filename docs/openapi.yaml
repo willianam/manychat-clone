@@ -1,22 +1,37 @@
 openapi: 3.1.0
 info:
-  title: ManyChat Clone — Instagram DM Automation
-  version: 0.1.0
+  title: ManyChat Clone — HTTP endpoints
+  version: 1.0.0
   description: >
-    Personal Instagram DM automation. The webhook endpoints are called by
-    Meta; everything under /api/admin is the local cockpit and assumes the
-    app is bound to localhost (no auth layer — do not expose it publicly).
+    The four HTTP endpoints this app exposes, and nothing else.
+
+
+    There is no REST API for the panel. Every screen is a server component
+    reading Prisma directly, and every action is a Next server action, so an
+    endpoint only exists here when the caller is external: Meta, Vercel Cron,
+    an uptime monitor, or the browser posting a file. See
+    docs/arquitetura.md, "rota de API ou server action".
+
+
+    Each one authenticates differently, which is the part worth reading:
+    the webhook by HMAC signature, the cron by bearer secret, the upload by
+    the admin session cookie, and /api/health by nothing at all, on purpose.
 
 servers:
   - url: http://localhost:3000
-    description: Local Docker
+    description: Local (npm run dev, or docker compose up)
+  - url: https://SEU-APP.vercel.app
+    description: Production
 
 tags:
   - name: webhook
-    description: Called by Meta. Signature-verified.
-  - name: contacts
-  - name: flows
-  - name: broadcasts
+    description: Called by Meta. HMAC-verified.
+  - name: cron
+    description: Called by Vercel Cron, or by hand with the secret.
+  - name: painel
+    description: Called by the panel in the browser, behind the session cookie.
+  - name: monitoramento
+    description: Public. Status only, never values.
 
 paths:
   /api/webhook/instagram:
@@ -26,6 +41,11 @@ paths:
       description: >
         Meta calls this once when you save the callback URL. Echoes
         hub.challenge when hub.verify_token matches IG_VERIFY_TOKEN.
+
+
+        A 200 here does NOT mean events will arrive: the app must also be
+        subscribed to the account (Configurações → Conexão). That is the
+        failure that looks like success.
       parameters:
         - { in: query, name: hub.mode, schema: { type: string }, example: subscribe }
         - { in: query, name: hub.verify_token, schema: { type: string } }
@@ -37,19 +57,30 @@ paths:
             text/plain:
               schema: { type: string }
         "403": { description: Token mismatch }
+        "503":
+          description: >
+            IG_VERIFY_TOKEN is not set. The endpoint locks itself rather than
+            handing the handshake to whoever asks first.
     post:
       tags: [webhook]
-      summary: Receive messages and comments
+      summary: Event delivery
       description: >
-        Verified with HMAC-SHA256 over the raw body. Returns 200 immediately
-        and processes asynchronously — Meta retries anything slower than
-        ~20s. Deliveries are deduped by message id / comment id.
+        Every inbound event: DMs, postbacks, comments, story replies and
+        mentions, ref links, read receipts.
+
+
+        The raw body is read before parsing, because re-serializing the JSON
+        would break the HMAC. Events are stored and claimed before being
+        processed, so Meta's retry of the same batch does not run a flow
+        twice. The response is an immediate ack; the handler also drains due
+        background work within WEBHOOK_DRAIN_BUDGET_MS (9s) against a 15s
+        function ceiling.
       parameters:
         - in: header
           name: x-hub-signature-256
           required: true
-          schema: { type: string }
-          example: sha256=8f2a...
+          schema: { type: string, example: "sha256=..." }
+          description: HMAC-SHA256 of the raw body, keyed with IG_APP_SECRET.
       requestBody:
         required: true
         content:
@@ -57,228 +88,178 @@ paths:
             schema: { $ref: "#/components/schemas/MetaWebhookPayload" }
       responses:
         "200":
-          description: Accepted
+          description: Acknowledged. Always 200 once the signature checks out.
           content:
             application/json:
               schema:
                 type: object
                 properties: { received: { type: boolean } }
-        "401": { description: Invalid or missing signature }
+        "400": { description: Signed, but the body is not JSON }
+        "401": { description: Signature missing or invalid }
+        "503": { description: IG_APP_SECRET is not set; the endpoint is locked }
 
-  /api/admin/contacts:
+  /api/cron/tick:
     get:
-      tags: [contacts]
-      summary: List contacts
-      parameters:
-        - { in: query, name: tag, schema: { type: string } }
-        - { in: query, name: subscribed, schema: { type: boolean } }
-        - { in: query, name: take, schema: { type: integer, default: 50, maximum: 200 } }
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: array
-                items: { $ref: "#/components/schemas/Contact" }
-
-  /api/admin/contacts/{id}/tags:
-    post:
-      tags: [contacts]
-      summary: Add a tag
-      parameters:
-        - { in: path, name: id, required: true, schema: { type: string } }
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [tagName]
-              properties: { tagName: { type: string } }
-      responses:
-        "200": { description: Tag applied }
-        "404": { description: Contact not found }
-
-  /api/admin/flows:
-    get:
-      tags: [flows]
-      summary: List flows
-      responses:
-        "200":
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: array
-                items: { $ref: "#/components/schemas/Flow" }
-    post:
-      tags: [flows]
-      summary: Create a flow
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [name, graph]
-              properties:
-                name: { type: string }
-                graph: { $ref: "#/components/schemas/FlowGraph" }
-      responses:
-        "201": { description: Created }
-        "422": { description: Graph failed structural validation }
-
-  /api/admin/flows/{id}:
-    put:
-      tags: [flows]
-      summary: Update a flow graph
+      tags: [cron]
+      summary: One round of background work
       description: >
-        Rejects a graph with structural errors (dangling edge, condition
-        missing a branch, no entry node) so a live conversation can't be
-        stranded mid-run.
-      parameters:
-        - { in: path, name: id, required: true, schema: { type: string } }
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                name: { type: string }
-                enabled: { type: boolean }
-                graph: { $ref: "#/components/schemas/FlowGraph" }
-      responses:
-        "200": { description: Saved }
-        "422":
-          description: Validation failed
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  issues:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        level: { type: string, enum: [error, warning] }
-                        message: { type: string }
+        The serverless stand-in for the worker: refresh the token if it is
+        due, resume delayed sessions, sweep stale ones, drain one queued
+        broadcast within CRON_DRAIN_BUDGET_MS (45s against a 60s ceiling),
+        retry webhook events whose handler failed, roll up daily aggregates
+        and purge old diagnostics.
 
-  /api/admin/broadcasts:
-    post:
-      tags: [broadcasts]
-      summary: Create and queue a broadcast
-      description: >
-        Queues immediately unless scheduledAt is set. The worker drains the
-        queue at BROADCAST_RATE messages per second and skips recipients
-        outside the 24h window rather than burning API calls on them.
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [name, text]
-              properties:
-                name: { type: string }
-                text: { type: string, maxLength: 1000 }
-                filterTagIds:
-                  type: array
-                  items: { type: string }
-                scheduledAt: { type: string, format: date-time }
-      responses:
-        "201":
-          description: Queued
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  id: { type: string }
-                  queued: { type: integer, description: Recipients enqueued }
 
-  /api/admin/broadcasts/{id}:
-    get:
-      tags: [broadcasts]
-      summary: Broadcast status and delivery report
+        Vercel Cron calls it once a day on the Hobby plan, which is the floor
+        for an idle account, not the main path — the main path is the same
+        drain inside the webhook. Re-entering is safe: it only ever reads
+        PENDING rows.
       parameters:
-        - { in: path, name: id, required: true, schema: { type: string } }
+        - in: header
+          name: Authorization
+          required: true
+          schema: { type: string, example: "Bearer $CRON_SECRET" }
+          description: >
+            Header only. A ?secret= query parameter used to exist and was
+            removed: a secret in a URL lands in the Vercel access log, in
+            every proxy along the way and in shell history, and whoever reads
+            it can make the account send messages.
       responses:
         "200":
-          description: OK
+          description: What the round did
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TickResult" }
+        "401": { description: Missing or wrong bearer secret }
+        "503": { description: CRON_SECRET is not set }
+
+  /api/upload:
+    post:
+      tags: [painel]
+      summary: Send a file to Meta and get a reusable attachment id
+      description: >
+        What lets a flow use a local image or audio file without hosting it
+        anywhere. The returned id is reusable, so a broadcast sends it to any
+        number of contacts without uploading again.
+
+
+        Behind the admin session like the rest of the panel: the middleware
+        exempts only the webhook, the cron and /api/health. Size and format
+        are checked before the upload is spent, because Meta rejects them
+        more slowly and less clearly.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, type]
+              properties:
+                file: { type: string, format: binary }
+                type:
+                  type: string
+                  enum: [image, audio, video, file]
+                  description: >
+                    Ceilings are Meta's: 8 MB for image, 25 MB for audio,
+                    video and file. `file` accepts PDF only.
+      responses:
+        "200":
+          description: Uploaded
           content:
             application/json:
               schema:
                 type: object
-                properties:
-                  status:
-                    type: string
-                    enum: [DRAFT, QUEUED, SENDING, DONE, FAILED]
-                  sent: { type: integer }
-                  skipped:
-                    type: integer
-                    description: Outside the messaging window
-                  failed: { type: integer }
+                properties: { attachmentId: { type: string } }
+        "400": { description: No file, unknown type, or malformed form }
+        "413": { description: Over the ceiling for that type }
+        "415":
+          description: >
+            Format not accepted for that type, or the file arrived with no
+            Content-Type — which is a failure, not a pass.
+        "502": { description: Meta refused the upload; the message is passed through }
+        "307": { description: No session cookie; the middleware redirects to /login }
+
+  /api/health:
+    get:
+      tags: [monitoramento]
+      summary: Liveness and readiness, for an external monitor
+      description: >
+        Public on purpose, with no secret and no cookie, so an uptime monitor
+        can watch it. Everything it returns is a status and never a value: how
+        many days the token has left, never the token; how many errors in 24h
+        and in which scope, never a stack or a payload.
+      responses:
+        "200":
+          description: Database reachable
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+        "503":
+          description: >
+            Database unreachable. The status code alone is enough to alert on;
+            the body keeps the same shape, zeroed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
 
 components:
   schemas:
-    Contact:
+    Health:
       type: object
+      description: server/health.ts — the type is the contract.
       properties:
-        id: { type: string }
-        igScopedId: { type: string }
-        username: { type: string, nullable: true }
-        name: { type: string, nullable: true }
-        lastInboundAt:
-          type: string
-          format: date-time
+        ok: { type: boolean }
+        db: { type: string, enum: [ok, down] }
+        token:
+          type: object
+          properties:
+            configured: { type: boolean }
+            daysLeft: { type: integer, nullable: true }
+            refreshedAt: { type: string, format: date-time, nullable: true }
+            needsAttention: { type: boolean }
+            lastRefreshFailed:
+              type: boolean
+              description: Whether the last refresh failed. The message stays private.
+        lastMetaCall:
+          type: object
           nullable: true
-          description: Start of the 24h messaging window.
-        subscribed: { type: boolean }
-        tags:
-          type: array
-          items: { type: string }
+          description: Last message the app tried to send through the Graph API.
+          properties:
+            at: { type: string, format: date-time }
+            ok: { type: boolean }
+        errors24h:
+          type: object
+          properties:
+            count: { type: integer }
+            lastScope: { type: string, nullable: true }
+            lastAt: { type: string, format: date-time, nullable: true }
+        checkedAt: { type: string, format: date-time }
 
-    Flow:
+    TickResult:
       type: object
       properties:
-        id: { type: string }
-        name: { type: string }
-        enabled: { type: boolean }
-        graph: { $ref: "#/components/schemas/FlowGraph" }
-
-    FlowGraph:
-      type: object
-      required: [nodes, edges]
-      description: React Flow document, persisted verbatim.
-      properties:
-        nodes:
-          type: array
-          items:
-            type: object
-            required: [id, type, position, data]
-            properties:
-              id: { type: string }
-              type:
-                type: string
-                enum: [message, question, condition, delay, tag, end]
-              position:
-                type: object
-                properties: { x: { type: number }, y: { type: number } }
-              data:
-                type: object
-                description: Discriminated on `kind`; see lib/flow-schema.ts.
-        edges:
-          type: array
-          items:
-            type: object
-            required: [id, source, target]
-            properties:
-              id: { type: string }
-              source: { type: string }
-              target: { type: string }
-              sourceHandle:
-                type: string
-                nullable: true
-                description: '"true" / "false" on condition nodes.'
+        ok: { type: boolean }
+        token:
+          type: string
+          enum: [unconfigured, skipped, refreshed, failed]
+        resumed: { type: integer, description: Delayed sessions resumed. }
+        swept: { type: integer, description: Stale sessions closed. }
+        broadcast:
+          type: object
+          nullable: true
+          description: Present only when a broadcast was queued and drained.
+          properties:
+            name: { type: string }
+            sent: { type: integer }
+            skipped: { type: integer }
+            failed: { type: integer }
+            stopped:
+              type: string
+              description: Why the drain stopped — budget, rate limit or completion.
+            remaining: { type: integer }
+        reprocessed: { type: integer }
+        rolled: { type: integer }
+        purged: { type: integer }
 
     MetaWebhookPayload:
       type: object
