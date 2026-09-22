@@ -1,4 +1,5 @@
-import type { Prisma, PrismaClient, QuickReplyTemplate } from "@prisma/client";
+import type { PrismaClient, QuickReplyTemplate } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { windowRemainingMs, HUMAN_AGENT_WINDOW_MS } from "../lib/messaging-window";
 import { FlowGraph, type NodeKind } from "../lib/flow-schema";
 import { sendHumanAgentMessage, sendMessage, sendText } from "./instagram";
@@ -177,23 +178,25 @@ async function unreadCounts(
 /**
  * How many conversations have something unread — the sidebar badge.
  *
- * Candidates are contacts whose last inbound is newer than their read mark
- * (cheap, in memory over a small projection); the count is then confirmed
- * against the messages so a comment-to-DM contact — whose lastInboundAt
- * moved without an inbound Message — is not counted.
+ * One aggregate, no rows on the wire. This used to pull EVERY contact that
+ * had ever written into memory and then build a groupBy with one OR branch
+ * per contact — a WHERE with thousands of disjunctions, on every request,
+ * because the root layout is force-dynamic and the inbox refreshes it every
+ * 10s. The comparison it needs (a Message against its own contact's read
+ * mark) is a join, which is why Prisma could not express it; raw SQL can.
+ *
+ * A comment-to-DM contact, whose lastInboundAt moved without an inbound
+ * Message ever being written, is still excluded: the count is driven by
+ * Message rows, not by the watermark.
  */
 export async function unreadConversationCount(db: PrismaClient): Promise<number> {
-  const contacts = await db.contact.findMany({
-    where: { lastInboundAt: { not: null } },
-    select: { id: true, lastReadAt: true, lastInboundAt: true },
-  });
-  const candidates = contacts.filter(
-    (c) => !c.lastReadAt || (c.lastInboundAt && c.lastInboundAt > c.lastReadAt),
-  );
-  const counts = await unreadCounts(db, candidates);
-  let n = 0;
-  for (const v of counts.values()) if (v > 0) n++;
-  return n;
+  const rows = await db.$queryRaw<Array<{ n: bigint | number }>>(Prisma.sql`
+    SELECT COUNT(DISTINCT m."contactId")::int AS n
+    FROM "Message" m
+    JOIN "Contact" c ON c.id = m."contactId"
+    WHERE m.direction = 'INBOUND'
+      AND (c."lastReadAt" IS NULL OR m."createdAt" > c."lastReadAt")`);
+  return Number(rows[0]?.n ?? 0);
 }
 
 // ---------------------------------------------------------------------------

@@ -31,13 +31,18 @@ export async function editorMetrics(
 
   const flow = await db.flow.findUnique({ where: { id: flowId } });
   const graph = flow ? FlowGraph.safeParse(flow.graph) : null;
-  const randomIds = graph?.success
-    ? graph.data.nodes.filter((n) => n.data.kind === "random").map((n) => n.id)
+  const resolved = graph?.success ? graph.data : undefined;
+  const randomIds = resolved
+    ? resolved.nodes.filter((n) => n.data.kind === "random").map((n) => n.id)
     : [];
 
   const [stats, arms, funnel] = await Promise.all([
     flowStats(db, flowId, { from, to }),
-    Promise.all(randomIds.map(async (id) => [id, await abStats(db, flowId, id)] as const)),
+    // The graph is already parsed above; hand it to every arm instead of
+    // making each one re-read and re-validate the same Flow row.
+    Promise.all(
+      randomIds.map(async (id) => [id, await abStats(db, flowId, id, resolved)] as const),
+    ),
     flowFunnel(db, flowId, from ?? new Date(0), to),
   ]);
 

@@ -64,8 +64,40 @@ describe("broadcastDetail", () => {
       contact: { username: "e", name: null },
     },
   ];
+  /**
+   * The counts now come from `groupBy` plus one `count` for the window
+   * failures, and the table from a `where`d/`take`n query — the service no
+   * longer pulls every recipient and filters in JS. The fake applies the
+   * same status/error predicates the database would.
+   */
+  const matches = (
+    row: (typeof rows)[number],
+    where: Record<string, unknown> | undefined,
+  ): boolean => {
+    if (!where) return true;
+    if (where.status && row.status !== where.status) return false;
+    const phraseHit = (clause: { OR: Array<{ error: { contains: string } }> }) =>
+      clause.OR.some((o) => (row.error ?? "").toLowerCase().includes(o.error.contains.toLowerCase()));
+    if (where.OR && !phraseHit(where as { OR: Array<{ error: { contains: string } }> })) return false;
+    if (where.NOT && phraseHit(where.NOT as { OR: Array<{ error: { contains: string } }> }))
+      return false;
+    return true;
+  };
+
   const db = {
-    broadcastRecipient: { findMany: vi.fn().mockResolvedValue(rows) },
+    broadcastRecipient: {
+      groupBy: vi.fn(async () => {
+        const counts = new Map<string, number>();
+        for (const r of rows) counts.set(r.status, (counts.get(r.status) ?? 0) + 1);
+        return [...counts].map(([status, n]) => ({ status, _count: { _all: n } }));
+      }),
+      count: vi.fn(async ({ where }: { where: Record<string, unknown> }) =>
+        rows.filter((r) => matches(r, where)).length,
+      ),
+      findMany: vi.fn(async ({ where, take }: { where: Record<string, unknown>; take: number }) =>
+        rows.filter((r) => matches(r, where)).slice(0, take),
+      ),
+    },
   } as unknown as PrismaClient;
 
   it("counts every bucket and returns all rows unfiltered", async () => {

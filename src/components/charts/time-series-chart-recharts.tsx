@@ -24,19 +24,15 @@ const axis = { tick: { fontSize: 11, fill: AXIS_TEXT }, axisLine: false, tickLin
  * 2px lines, thin columns with a 2px surface gap between stacked segments,
  * hairline grid, one axis — and every chart ships a tooltip and a table.
  */
-export function TimeSeriesChart({
-  rows,
-  series,
-  kind,
-  title,
-  height = 220,
-}: {
+export type Props = {
   rows: Row[];
   series: Series[];
   kind: "line" | "stacked";
   title: string;
   height?: number;
-}) {
+};
+
+export function TimeSeriesChart({ rows, series, kind, title, height = 220 }: Props) {
   const empty = rows.every((r) => series.every((s) => !r[s.key]));
   return (
     <figure aria-label={title}>
