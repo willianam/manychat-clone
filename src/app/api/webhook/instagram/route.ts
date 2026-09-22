@@ -36,24 +36,52 @@ export const dynamic = "force-dynamic";
 /** Meta retries past ~20s; stay under it. */
 export const maxDuration = 15;
 
+/**
+ * A missing secret must LOCK the endpoint, not open it.
+ *
+ * An empty string is a perfectly valid HMAC key: `?? ""` used to let anyone
+ * sign a body with the empty key and drive the whole pipeline when the env
+ * var was not set. Same for the verify token, which would otherwise hand the
+ * subscription handshake to a stranger. Fail closed, like middleware.ts does.
+ */
+function requiredEnv(name: "IG_APP_SECRET" | "IG_VERIFY_TOKEN"): string | null {
+  const value = process.env[name];
+  return value && value.length > 0 ? value : null;
+}
+
 /** Meta's subscription handshake. */
 export async function GET(req: NextRequest) {
-  const challenge = verifyChallenge(req.nextUrl.searchParams, process.env.IG_VERIFY_TOKEN ?? "");
+  const token = requiredEnv("IG_VERIFY_TOKEN");
+  if (!token) {
+    return new NextResponse("IG_VERIFY_TOKEN is not set; the webhook is locked.", { status: 503 });
+  }
+  const challenge = verifyChallenge(req.nextUrl.searchParams, token);
   if (!challenge) return new NextResponse("Forbidden", { status: 403 });
   return new NextResponse(challenge, { status: 200 });
 }
 
 export async function POST(req: NextRequest) {
+  const appSecret = requiredEnv("IG_APP_SECRET");
+  if (!appSecret) {
+    return new NextResponse("IG_APP_SECRET is not set; the webhook is locked.", { status: 503 });
+  }
+
   // Raw body first — parsing then re-serializing breaks the HMAC.
   const raw = await req.text();
 
-  if (
-    !verifySignature(raw, req.headers.get("x-hub-signature-256"), process.env.IG_APP_SECRET ?? "")
-  ) {
+  if (!verifySignature(raw, req.headers.get("x-hub-signature-256"), appSecret)) {
     return new NextResponse("Invalid signature", { status: 401 });
   }
 
-  const payload = JSON.parse(raw) as MetaWebhook;
+  // Parse inside the guard: a signed-but-malformed body must be a 400 we
+  // record, not an unhandled 500 that makes Meta retry the same batch.
+  let payload: MetaWebhook;
+  try {
+    payload = JSON.parse(raw) as MetaWebhook;
+  } catch (err) {
+    await recordError(db, "webhook", err, { reason: "invalid-json" });
+    return new NextResponse("Invalid JSON", { status: 400 });
+  }
 
   // Must finish BEFORE responding. A serverless function is frozen the
   // moment its response is sent, so fire-and-forget work is simply dropped
