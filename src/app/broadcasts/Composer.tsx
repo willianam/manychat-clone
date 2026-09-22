@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CalendarClock, Save, Send } from "lucide-react";
+import { CalendarClock, FlaskConical, Save, Send } from "lucide-react";
 import type { FlowGraph } from "../../lib/flow-schema";
 import { MESSAGE_TAGS, MESSAGE_TAG_LABELS, type MessageTag } from "../../lib/messaging-window";
 import { contentIssues, previewGraph, type ComposerBody } from "../../lib/broadcast-preview";
@@ -9,6 +9,9 @@ import { PreviewPhone } from "../flows/[id]/preview/PreviewPhone";
 import { AudiencePicker } from "./AudiencePicker";
 import { BlockEditor, blankBlock, type Block } from "./BlockEditor";
 import { createBroadcast } from "./actions";
+import { TestBroadcastDialog } from "./TestBroadcastDialog";
+import type { PickableContact } from "@/components/ContactPicker";
+import type { BroadcastTestDraft } from "../../server/broadcast-test";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,6 +25,7 @@ import {
 import { ConfirmSubmitButton } from "@/components/ui/confirm-submit-button";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
 import { withToast } from "@/lib/ui/action-toast";
 import { cn } from "@/lib/ui/cn";
 
@@ -64,6 +68,11 @@ export function Composer({
   // Reported by the AudiencePicker so the send confirmation can name the
   // number of people about to be messaged. Null while the count is loading.
   const [targeted, setTargeted] = useState<number | null>(null);
+  // Test-send state. `lastTest` stays on screen after the toast fades: the
+  // one thing the operator must not be unsure about is whether what just
+  // left was the test or the broadcast, and to whom.
+  const [testing, setTesting] = useState(false);
+  const [lastTest, setLastTest] = useState<PickableContact | null>(null);
 
   const body = useMemo<ComposerBody>(() => {
     if (mode === "text") return { mode: "text", text };
@@ -77,6 +86,14 @@ export function Composer({
     (mode === "text" && text.trim() === "") ||
     (mode === "flow" && !flowId) ||
     (mode === "content" && issues.length > 0);
+
+  /** The composed body in the shape the test action validates. */
+  const testDraft = (): BroadcastTestDraft => ({
+    text: mode === "text" ? text : null,
+    content: mode === "content" ? block : null,
+    flowId: mode === "flow" ? (flowId || null) : null,
+    tag: tag === NO_TAG ? null : tag,
+  });
 
   const action = async (formData: FormData) => {
     await withToast(() => createBroadcast(formData), {
@@ -237,6 +254,15 @@ export function Composer({
             messages leave, nothing brings them back. Deleting a tag already
             asks for confirmation, so sending to everyone certainly should.
           */}
+          <Button
+            type="button"
+            variant="outline"
+            disabled={emptyBody}
+            onClick={() => setTesting(true)}
+          >
+            <FlaskConical aria-hidden />
+            Enviar um teste
+          </Button>
           <ConfirmSubmitButton
             name="intent"
             value="send"
@@ -258,6 +284,20 @@ export function Composer({
             {when === "later" ? "Agendar" : "Enviar agora"}
           </ConfirmSubmitButton>
         </div>
+
+        {lastTest && (
+          <p className="text-xs text-muted-foreground" role="status">
+            Último teste enviado para @{lastTest.username ?? lastTest.id}. Foi só um teste: nenhum
+            contato da lista recebeu e nada foi registrado como disparo.
+          </p>
+        )}
+
+        <TestBroadcastDialog
+          open={testing}
+          onClose={() => setTesting(false)}
+          draft={testDraft}
+          onSent={setLastTest}
+        />
       </div>
 
       <div className="lg:sticky lg:top-20 lg:self-start">

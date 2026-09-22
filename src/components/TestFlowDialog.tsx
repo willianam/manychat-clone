@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Loader2, Search } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
@@ -14,8 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/ui/cn";
+import { ContactPicker, type PickableContact } from "@/components/ContactPicker";
 import { searchContacts, testFlowOnContact } from "../app/flows/[id]/actions";
 
 /**
@@ -27,9 +25,10 @@ import { searchContacts, testFlowOnContact } from "../app/flows/[id]/actions";
  * conversation they were mid-way through. The dialog also says when the
  * draft differs from what will run, since the runner reads the published
  * graph.
+ *
+ * The username lookup itself lives in ContactPicker, shared with the
+ * broadcast test dialog.
  */
-type Contact = { id: string; username: string | null; name: string | null };
-
 export function TestFlowDialog({
   open,
   flowId,
@@ -47,46 +46,9 @@ export function TestFlowDialog({
   search?: typeof searchContacts;
   start?: typeof testFlowOnContact;
 }) {
-  const [q, setQ] = useState("");
-  const [results, setResults] = useState<Contact[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [picked, setPicked] = useState<Contact | null>(null);
+  const [picked, setPicked] = useState<PickableContact | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [starting, setStarting] = useState(false);
-
-  // Reset on open so the next test starts from a blank search.
-  useEffect(() => {
-    if (!open) return;
-    setQ("");
-    setResults([]);
-    setPicked(null);
-  }, [open]);
-
-  // Debounced lookup; a stale response never overwrites a newer query.
-  useEffect(() => {
-    if (!open) return;
-    const needle = q.trim();
-    if (!needle) {
-      setResults([]);
-      return;
-    }
-    let live = true;
-    setSearching(true);
-    const t = setTimeout(async () => {
-      try {
-        const found = await search(needle);
-        if (live) setResults(found);
-      } catch {
-        if (live) setResults([]);
-      } finally {
-        if (live) setSearching(false);
-      }
-    }, 250);
-    return () => {
-      live = false;
-      clearTimeout(t);
-    };
-  }, [q, open, search]);
 
   const run = async () => {
     if (!picked) return;
@@ -130,57 +92,7 @@ export function TestFlowDialog({
             </Callout>
           )}
 
-          <div className="relative">
-            <Search
-              className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-neutral-400"
-              aria-hidden
-            />
-            <Input
-              value={q}
-              onChange={(e) => {
-                setQ(e.target.value);
-                setPicked(null);
-              }}
-              placeholder="@username"
-              aria-label="Buscar contato por username"
-              className="pl-8"
-              autoFocus
-            />
-            {searching && (
-              <Loader2
-                className="absolute right-2.5 top-2.5 h-4 w-4 animate-spin text-neutral-400"
-                aria-hidden
-              />
-            )}
-          </div>
-
-          {q.trim() && !searching && results.length === 0 && (
-            <p className="text-xs text-neutral-500">Nenhum contato com esse username.</p>
-          )}
-
-          {results.length > 0 && (
-            <div role="radiogroup" aria-label="Contatos" className="space-y-1">
-              {results.map((c) => {
-                const active = picked?.id === c.id;
-                return (
-                  <button
-                    key={c.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={active}
-                    onClick={() => setPicked(c)}
-                    className={cn(
-                      "flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                      active ? "border-indigo-400 bg-indigo-50" : "border-border hover:bg-accent",
-                    )}
-                  >
-                    <span className="font-medium">@{c.username ?? c.id}</span>
-                    {c.name && <span className="truncate text-xs text-neutral-500">{c.name}</span>}
-                  </button>
-                );
-              })}
-            </div>
-          )}
+          <ContactPicker active={open} value={picked} onChange={setPicked} search={search} />
 
           <DialogFooter>
             <Button variant="outline" onClick={onClose}>

@@ -6,6 +6,8 @@ import { redirect } from "next/navigation";
 import { db } from "../../server/db";
 import { enqueueBroadcast } from "../../server/broadcast-worker";
 import { parseBroadcastForm } from "../../lib/broadcast-form";
+import { sendBroadcastTest, type BroadcastTestDraft } from "../../server/broadcast-test";
+import { actionFailure, type ActionFailure } from "../../lib/ui/action-result";
 
 /**
  * Broadcast composition.
@@ -86,4 +88,41 @@ export async function deleteBroadcast(formData: FormData) {
   if (!id) failForm("/broadcasts", "Disparo não informado.");
   await db.broadcast.delete({ where: { id } });
   revalidatePath("/broadcasts");
+}
+
+/**
+ * Send the composed broadcast to one contact, as a test.
+ *
+ * Nothing about the real path changes: no Broadcast row, no recipients, no
+ * enqueue — see server/broadcast-test.ts. Failure comes back as a value
+ * because the caller is a client component, and Next replaces the message of
+ * a thrown Server Action error in production.
+ */
+export async function testBroadcast(
+  draft: BroadcastTestDraft,
+  contactId: string,
+): Promise<{ ok: true } | ActionFailure> {
+  if (!contactId) return actionFailure("Escolha um contato para receber o teste.");
+  try {
+    await sendBroadcastTest(db, draft, contactId);
+    return { ok: true };
+  } catch (err) {
+    return actionFailure(
+      err instanceof Error && err.message ? err.message : "Não foi possível enviar o teste.",
+    );
+  }
+}
+
+/** Contacts whose @username contains `q`, for the broadcast test dialog. */
+export async function searchBroadcastTestContacts(
+  q: string,
+): Promise<Array<{ id: string; username: string | null; name: string | null }>> {
+  const needle = q.trim().replace(/^@/, "");
+  if (!needle) return [];
+  return db.contact.findMany({
+    where: { username: { contains: needle, mode: "insensitive" } },
+    select: { id: true, username: true, name: true },
+    orderBy: { username: "asc" },
+    take: 8,
+  });
 }
