@@ -10,6 +10,8 @@ import {
 } from "../../lib/messenger-profile";
 import { pushIceBreakers, pushPersistentMenu } from "../../server/messenger-profile-api";
 import { maybeRefreshToken } from "../../server/token-refresh";
+import { subscribeApp } from "../../server/subscribed-apps";
+import { actionFailure, type ActionFailure } from "../../lib/ui/action-result";
 
 /**
  * Ice breakers and persistent menu.
@@ -152,4 +154,23 @@ export async function refreshTokenNow() {
   if (out.action === "unconfigured") {
     throw new Error("Não há token para renovar: defina IG_ACCESS_TOKEN.");
   }
+}
+
+/**
+ * "Inscrever esta conta" na aba de conexão.
+ *
+ * O passo mais fácil de esquecer do onboarding, e o único que falha em
+ * silêncio: sem ele o webhook verifica com 200 e nunca chega evento. A falha
+ * volta como valor — o Next troca a mensagem de um erro lançado por um digest
+ * em produção, e é justamente a mensagem que diz qual das três causas é a
+ * desta máquina.
+ */
+export async function subscribeWebhookApp(): Promise<
+  { ok: true; fields: string[] } | ActionFailure
+> {
+  const out = await subscribeApp(db);
+  if (!out.ok) return actionFailure(out.error);
+
+  revalidatePath("/configuracoes");
+  return { ok: true, fields: out.fields };
 }

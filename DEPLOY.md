@@ -163,13 +163,21 @@ túnel pela URL real.
    hora. Se falhar, quase sempre é `IG_VERIFY_TOKEN` diferente entre a Vercel e
    a Meta, ou um redeploy que não aconteceu.
 
-2. **Refaça a inscrição do app na conta**, apontando para o token de produção:
+2. **Refaça a inscrição do app na conta** com o token de produção: abra
+   `https://SEU-APP.vercel.app/configuracoes`, aba **Conexão**, bloco
+   **Inscrição do app na conta**, e clique em **Inscrever esta conta**. A
+   inscrição é por token; a que você fez em desenvolvimento não vale aqui.
+
+   <details>
+   <summary>Alternativa pelo terminal</summary>
 
    ```bash
    curl -X POST "https://graph.instagram.com/v26.0/me/subscribed_apps" \
      -d "subscribed_fields=messages,messaging_postbacks,comments,messaging_seen,messaging_referral" \
      -d "access_token=$IG_ACCESS_TOKEN"
    ```
+
+   </details>
 
 3. Mande "oi" no DM da sua conta. O fluxo tem que responder. Se não responder,
    os logs estão em **Vercel → Deployments → Functions**.
@@ -200,7 +208,7 @@ de shell, e quem ler o log passa a poder mandar mensagem no seu lugar.
 - [ ] Deploy na Vercel com todas as variáveis, `TRUST_PROXY` ausente
 - [ ] Painel abre e pede senha
 - [ ] Webhook verificado apontando para a URL da Vercel
-- [ ] `POST /me/subscribed_apps` refeito com o token de produção
+- [ ] Conta inscrita com o token de produção (Configurações → Conexão)
 - [ ] "oi" no DM dispara o fluxo
 - [ ] `/api/health` responde `ok`
 - [ ] Data do token anotada (vale 60 dias; o app renova sozinho, mas confira em
@@ -254,8 +262,9 @@ daquele deploy. Adicione e **redeploy**.
 faltou redeploy depois de adicionar a variável. Teste direto:
 `curl "https://SEU-APP.vercel.app/api/webhook/instagram?hub.mode=subscribe&hub.verify_token=SEU_TOKEN&hub.challenge=teste"` — tem que devolver `teste`.
 
-**Webhook verifica mas nada chega** — o `POST /me/subscribed_apps` da Parte 3.
-É o erro mais comum de todos.
+**Webhook verifica mas nada chega** — a inscrição do app na conta, na Parte 3.
+É o erro mais comum de todos, e o painel mostra o estado em Configurações →
+Conexão.
 
 **Webhook responde 401** — assinatura inválida: `IG_APP_SECRET` é de outro app
 ou foi copiado com espaço no fim.

@@ -225,10 +225,22 @@ Depois **assine os campos**:
 
 ### 3.6 O passo que falta em quase todo tutorial
 
-**Assinar os campos no painel não basta.** A Meta só começa a entregar
-eventos depois que o *app* é inscrito na *conta*, e isso é uma chamada de API
-que nenhuma tela faz por você. Este projeto também não a faz — você roda uma
-vez, na mão:
+**Assinar os campos no painel não basta.** A Meta só começa a entregar eventos
+depois que o *app* é inscrito na *conta*, e isso é uma chamada de API que
+nenhuma tela da Meta faz por você. Quando falta, não dá erro: o webhook
+verifica com 200, o painel fica verde e evento nenhum chega.
+
+O app faz isso por você. Abra **Configurações → Conexão**, no bloco
+**Inscrição do app na conta**: ele mostra o estado atual (inscrita, não
+inscrita, ou "não foi possível consultar" quando a Meta não responde) e o
+botão **Inscrever esta conta** faz a chamada. Repetir não duplica nada.
+
+Se a Meta recusar, o aviso diz qual é a causa — token sem a permissão certa,
+token expirado, ou conta que não é profissional — porque o conserto de cada
+uma é outro.
+
+<details>
+<summary>Alternativa pelo terminal</summary>
 
 ```bash
 curl -X POST "https://graph.instagram.com/v26.0/me/subscribed_apps" \
@@ -243,6 +255,8 @@ Conferir depois:
 curl -G "https://graph.instagram.com/v26.0/me/subscribed_apps" \
   -d "access_token=$IG_ACCESS_TOKEN"
 ```
+
+</details>
 
 Se você mandar "oi" para a sua conta e **nada** acontecer, e o log do ngrok
 não mostrar requisição nenhuma, é quase sempre isto: o webhook está salvo e
@@ -271,8 +285,7 @@ e as instruções passo a passo para o revisor.
 
 ## 4. A primeira DM
 
-Com o app rodando, o túnel de pé, o webhook verificado e o `subscribed_apps`
-feito:
+Com o app rodando, o túnel de pé, o webhook verificado e a conta inscrita:
 
 1. No painel, abra **Fluxos → Boas-vindas** (veio do seed) e confirme que
    está publicado.
@@ -285,7 +298,8 @@ Deve chegar a resposta do fluxo em segundos. No painel, o contato aparece em
 
 Não chegou? Siga nesta ordem, que vai do mais comum ao mais raro:
 
-1. **O ngrok recebeu algo?** Se não: volte para 3.6, o `subscribed_apps`.
+1. **O ngrok recebeu algo?** Se não: abra **Configurações → Conexão** e veja o
+   bloco **Inscrição do app na conta** (item 3.6).
 2. **Recebeu, mas deu 401?** A assinatura não bateu — `IG_APP_SECRET` errado
    ou de outro app.
 3. **Deu 200 e nada saiu?** Rode com `LOG_LEVEL=debug`. Provavelmente o
