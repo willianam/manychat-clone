@@ -283,8 +283,9 @@ function FlowEditorInner({
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   /** Edits since the last successful save. */
   const [dirty, setDirty] = useState(false);
+  /** Mark the graph edited: the "saved at" stamp is stale and the draft is dirty. */
   const touch = useCallback(() => {
-    touch();
+    setSavedAt(null);
     setDirty(true);
   }, []);
 
@@ -974,7 +975,7 @@ function FlowEditorInner({
             onNodeClick={(_, n) => setSelectedId(n.id === TRIGGER_NODE_ID ? null : n.id)}
             onPaneClick={() => setSelectedId(null)}
             onNodeDragStart={() => snap()}
-            onEdgesDelete={() => setSavedAt(null)}
+            onEdgesDelete={touch}
             onNodesDelete={(deleted) => {
               setSelectedId((id) => (deleted.some((n) => n.id === id) ? null : id));
               touch();
